@@ -1,0 +1,1 @@
+{ "source": "HOST_FACTS.md §4 Malformed changeset (the ellipsis is HOST_FACTS's own)", "exitCode": 1, "json": { "error": "configuration error: the changeset document does not parse: …" } }

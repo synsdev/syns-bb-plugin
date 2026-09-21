@@ -1,0 +1,1 @@
+{ "source": "HOST_FACTS.md §8 edit, --old matches nothing (the ellipsis is HOST_FACTS's own)", "exitCode": 1, "json": { "error": "configuration error: --old matched no content at version …" } }

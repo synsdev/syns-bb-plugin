@@ -1,0 +1,1 @@
+{ "source": "HOST_FACTS.md §4 Shapes worth keeping", "exitCode": 0, "json": { "owner": "acme", "name": "syns-bb-plugin-scratch", "description": "Throwaway test repository for the Syns bb plugin", "commitSha": "7ca9bc78ba047d9e7798b8d2733c254e24cfc837", "status": "draft", "visibility": "private", "fileCount": 32, "role": "owner" } }

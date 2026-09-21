@@ -1,0 +1,1 @@
+{ "source": "HOST_FACTS.md §4 Dirty checkout (the ellipses are HOST_FACTS's own)", "exitCode": 1, "json": { "error": "the checkout at … holds unpublished local changes for …" } }

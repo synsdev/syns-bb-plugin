@@ -1,0 +1,1 @@
+{ "source": "HOST_FACTS.md §8 rm of a missing path: the unchanged head, filesChanged 0", "exitCode": 0, "json": { "commitSha": "7ca9bc78ba047d9e7798b8d2733c254e24cfc837", "created": false, "filesChanged": 0, "version": 6 } }

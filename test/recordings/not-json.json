@@ -1,0 +1,1 @@
+{ "source": "S2.13: output that does not parse", "exitCode": 0, "stdout": "README.md  94 bytes\nsecret file text", "stderr": "" }

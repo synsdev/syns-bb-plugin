@@ -1,0 +1,1 @@
+{ "source": "HOST_FACTS.md §4 Success, any write; §8 checkoutBehind; §8 revert PATH --to V: a new version", "exitCode": 0, "json": { "commitSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1", "created": true, "filesChanged": 1, "version": 7, "checkoutBehind": "/Users/someone/checkout" } }

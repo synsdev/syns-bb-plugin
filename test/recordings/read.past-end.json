@@ -1,0 +1,1 @@
+{ "source": "HOST_FACTS.md §10: read with an offset past the end is success with content \"\" and the true totalLines", "exitCode": 0, "json": { "commitSha": "7ca9bc78ba047d9e7798b8d2733c254e24cfc837", "content": "", "limit": 2, "offset": 999, "path": "README.md", "sha": "7846c4f86a6274cdbd004ebed3985e953621223e", "size": 94, "totalLines": 3, "version": 6 } }

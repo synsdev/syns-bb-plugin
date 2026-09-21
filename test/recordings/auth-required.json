@@ -1,0 +1,1 @@
+{ "source": "HOST_FACTS.md §8 Logged out, whoami", "exitCode": 1, "json": { "error": "authentication required — run 'syns login' first" } }

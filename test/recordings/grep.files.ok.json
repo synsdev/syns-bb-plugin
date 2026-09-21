@@ -1,0 +1,1 @@
+{ "source": "HOST_FACTS.md §8 Read shapes, grep, --output files", "exitCode": 0, "json": { "commitSha": "7ca9bc78ba047d9e7798b8d2733c254e24cfc837", "version": 6, "pattern": "Note", "output": "files", "truncated": false, "skipped": [], "files": [ "notes/n01.md", "notes/n02.md" ] } }

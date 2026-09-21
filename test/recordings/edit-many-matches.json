@@ -1,0 +1,1 @@
+{ "source": "HOST_FACTS.md §8 edit, --old matches more than once (the ellipses are HOST_FACTS's own)", "exitCode": 1, "json": { "error": "configuration error: --old matched 33 times in …; pass --replace-all …" } }

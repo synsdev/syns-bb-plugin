@@ -1,0 +1,1 @@
+{ "source": "HOST_FACTS.md §4: the CLI's own parser prints plain text on stderr, exit 2", "exitCode": 2, "stdout": "", "stderr": "error: unexpected argument '--nope' found" }

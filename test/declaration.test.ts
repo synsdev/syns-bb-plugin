@@ -1,0 +1,236 @@
+import { readFileSync } from "node:fs";
+import { describe, expect, it } from "vitest";
+import { VERSION, buildDeclaration } from "../src/declaration.js";
+import { K64, object, reasonsOf, type Method, type Schema } from "../src/method.js";
+import { METHODS } from "../src/methods/index.js";
+import { FRAGMENT } from "../src/text/fragment.js";
+import { buildGuide } from "../src/text/guide.js";
+import { ok } from "./fake-runner.js";
+import { harness, resultOf } from "./harness.js";
+
+const FOURTEEN = ["syns.commit", "syns.diff", "syns.edit", "syns.glob", "syns.grep", "syns.history", "syns.ls", "syns.read", "syns.readMany", "syns.repo", "syns.revert", "syns.rm", "syns.whoami", "syns.write"];
+/** The keywords Thread Pages compiles; any other refuses the method (its contributed.ts). */
+const SUBSET = new Set(["type", "description", "properties", "required", "additionalProperties", "enum", "const", "minimum", "maximum", "minLength", "maxLength", "pattern", "items", "minItems", "maxItems"]);
+
+function walk(schema: Schema, visit: (node: Schema, at: string) => void, at = "$"): void {
+  visit(schema, at);
+  for (const [key, child] of Object.entries((schema.properties ?? {}) as Record<string, Schema>)) walk(child, visit, `${at}.${key}`);
+  if (schema.items) walk(schema.items as Schema, visit, `${at}[]`);
+}
+const typesOf = (node: Schema): string[] => (Array.isArray(node.type) ? (node.type as string[]) : [node.type as string]);
+const namesIn = (text: string): string[] => [...new Set(text.match(/syns\.[a-z][A-Za-z0-9]*/g) ?? [])].sort();
+
+const declaration = buildDeclaration(METHODS, { agentInstructions: true });
+
+describe("the table", () => {
+  it("holds the fourteen methods of spec 01: nine read, five write", () => {
+    expect(METHODS.map((method) => method.name).sort()).toEqual(FOURTEEN);
+    expect(METHODS.filter((method) => method.effect === "contributed-write").map((method) => method.name).sort()).toEqual(["syns.commit", "syns.edit", "syns.revert", "syns.rm", "syns.write"]);
+  });
+});
+
+describe("the declaration", () => {
+  it("carries only the keys the host accepts, the package's version, and stays under the host's 256 KiB", () => {
+    expect(Object.keys(declaration).sort()).toEqual(["guide", "instruction", "methods", "version"]);
+    expect(declaration.version).toBe(VERSION);
+    expect(VERSION).toBe((JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string }).version);
+    expect(Buffer.byteLength(JSON.stringify(declaration))).toBeLessThan(256 * 1024);
+    for (const method of declaration.methods) {
+      expect(Object.keys(method).sort(), method.name).toEqual(["description", "effect", "maxRequestBytes", "maxResponseBytes", "name", "params", "reasons", "result"]);
+    }
+  });
+
+  it("names, describes and bounds every method as the host requires (S1.8)", () => {
+    for (const method of declaration.methods) {
+      expect(method.name).toMatch(/^syns\.[a-z][A-Za-z0-9]{0,63}$/);
+      expect(method.description.length, method.name).toBeGreaterThan(0);
+      expect(method.description.length, method.name).toBeLessThanOrEqual(240);
+      expect(["read", "contributed-write"]).toContain(method.effect);
+      for (const bound of [method.maxRequestBytes, method.maxResponseBytes]) {
+        expect(Number.isSafeInteger(bound) && bound >= 1024 && bound <= 1024 * 1024, method.name).toBe(true);
+      }
+    }
+  });
+
+  it("declares the bounds of spec 01", () => {
+    const bounds = Object.fromEntries(declaration.methods.map((method) => [method.name, `${method.maxRequestBytes / 1024}/${method.maxResponseBytes / 1024}`]));
+    expect(bounds).toEqual({
+      "syns.repo": "64/64",
+      "syns.whoami": "64/64",
+      "syns.ls": "64/1024",
+      "syns.readMany": "64/1024",
+      "syns.history": "64/1024",
+      "syns.commit": "1024/64",
+      "syns.read": "64/1024",
+      "syns.glob": "64/1024",
+      "syns.grep": "64/1024",
+      "syns.diff": "64/1024",
+      "syns.write": "1024/64",
+      "syns.edit": "128/64",
+      "syns.rm": "64/64",
+      "syns.revert": "64/64",
+    });
+  });
+
+  it("every parameter schema is closed and every string in it bounded (A7, S1.1)", () => {
+    for (const method of declaration.methods) {
+      expect(typesOf(method.params)).toEqual(["object"]);
+      walk(method.params, (node, at) => {
+        if (typesOf(node).includes("object")) expect(node.additionalProperties, `${method.name} ${at}`).toBe(false);
+        if (typesOf(node).includes("string")) expect(typeof node.maxLength, `${method.name} ${at}`).toBe("number");
+      });
+    }
+  });
+
+  it("uses only the schema subset the host compiles, in params, results and details", () => {
+    for (const method of declaration.methods) {
+      const schemas = [method.params, method.result, ...Object.values(method.reasons).flatMap((reason) => (reason.detail ? [reason.detail] : []))];
+      for (const schema of schemas) {
+        walk(schema, (node, at) => {
+          for (const key of Object.keys(node)) expect(SUBSET.has(key), `${method.name} ${at} ${key}`).toBe(true);
+          expect(node.type, `${method.name} ${at}`).toBeDefined();
+          if (typesOf(node).includes("array")) expect(node.items, `${method.name} ${at}`).toBeDefined();
+          for (const key of (node.required ?? []) as string[]) expect(Object.keys((node.properties ?? {}) as object), `${method.name} ${at}`).toContain(key);
+        });
+      }
+    }
+  });
+
+  it("declares every reason a method can answer with (S3.2)", () => {
+    const reasons = Object.fromEntries(declaration.methods.map((method) => [method.name, Object.keys(method.reasons).sort()]));
+    const common = ["cli_missing", "no_access", "no_repo", "timeout"];
+    const write = ["checkout_dirty", "stale_head"];
+    expect(reasons).toEqual({
+      "syns.repo": common,
+      "syns.whoami": [...common, "not_logged_in"].sort(),
+      "syns.ls": common,
+      "syns.readMany": common,
+      "syns.history": common,
+      "syns.commit": [...common, ...write, "invalid_change"].sort(),
+      "syns.read": common,
+      "syns.glob": [...common, "bad_pattern"].sort(),
+      "syns.grep": [...common, "bad_pattern"].sort(),
+      "syns.diff": common,
+      "syns.write": [...common, ...write, "exists"].sort(),
+      "syns.edit": [...common, ...write, "many_matches", "no_match"].sort(),
+      "syns.rm": [...common, ...write].sort(),
+      "syns.revert": [...common, ...write].sort(),
+    });
+    for (const method of declaration.methods) for (const reason of Object.keys(method.reasons)) expect(reason).toMatch(/^[a-z][a-z0-9_]{0,63}$/);
+    const stale = declaration.methods.find((method) => method.name === "syns.commit")!.reasons.stale_head!;
+    expect(stale.detail).toMatchObject({ type: "object", required: ["current"] });
+    const many = declaration.methods.find((method) => method.name === "syns.edit")!.reasons.many_matches!;
+    expect(many.detail).toMatchObject({ type: "object", required: ["count"] });
+  });
+
+  it("no method takes a repository, a session, a folder, a command or a flag (S1.2)", () => {
+    for (const method of declaration.methods) {
+      walk(method.params, (node) => {
+        for (const key of Object.keys((node.properties ?? {}) as object)) expect(["repo", "repository", "session", "sessionId", "cwd", "folder", "command", "flag", "flags", "args"]).not.toContain(key);
+      });
+    }
+  });
+
+  it("every write requires base, but syns.revert, whose CLI command takes no parent (A30, S1.4, D13)", () => {
+    for (const method of declaration.methods.filter((entry) => entry.effect === "contributed-write")) {
+      if (method.name === "syns.revert") expect(Object.keys(method.params.properties as object), method.name).not.toContain("base");
+      else expect(method.params.required, method.name).toContain("base");
+    }
+  });
+
+  it("every write takes an optional message of at most 500 characters (S1.6)", () => {
+    for (const method of declaration.methods.filter((entry) => entry.effect === "contributed-write")) {
+      expect((method.params.properties as Record<string, Schema>).message, method.name).toMatchObject({ type: "string", maxLength: 500 });
+      expect(method.params.required, method.name).not.toContain("message");
+    }
+  });
+});
+
+describe("what agents are told", () => {
+  it("the fragment is at most 2 KiB and the guide at most 16 KiB (A8)", () => {
+    expect(Buffer.byteLength(declaration.instruction!)).toBeLessThanOrEqual(2 * 1024);
+    expect(Buffer.byteLength(declaration.guide)).toBeLessThanOrEqual(16 * 1024);
+    expect(declaration.instruction).toBe(FRAGMENT.trim());
+  });
+
+  it("the guide and the fragment name exactly the registered methods (A9, S4.4)", () => {
+    expect(namesIn(declaration.guide)).toEqual(FOURTEEN);
+    expect(namesIn(declaration.instruction!)).toEqual(FOURTEEN); // the fragment mentions the full set, briefly
+    for (const reason of ["exists", "no_match", "many_matches", "bad_pattern"]) expect(declaration.guide, reason).toContain(`\`${reason}\``);
+  });
+
+  it("the guide says plainly what syns.revert lacks today, and its recipes use the full set (D13, spec 04)", () => {
+    expect(declaration.guide).toMatch(/syns\.revert[^\n]*no stale check[^\n]*no provenance/);
+    expect(declaration.guide).toContain("syns.diff { from }");
+    expect(declaration.guide).toContain("create: true");
+  });
+
+  it("the fragment says in words that it applies only in a Syns repository, and where the rest is (S4.2)", () => {
+    expect(declaration.instruction).toMatch(/When this session's folder is a Syns repository/);
+    expect(declaration.instruction).toContain("bb thread-page guide");
+  });
+
+  it("the guide's statements about each method come from its declaration (S4.3)", () => {
+    for (const method of declaration.methods) {
+      expect(declaration.guide).toContain(`\`${method.name}\``);
+      expect(declaration.guide).toContain(method.description);
+      for (const reason of Object.keys(method.reasons)) expect(declaration.guide, `${method.name} ${reason}`).toContain(`\`${reason}\``);
+    }
+    expect(declaration.guide).toContain("1–200"); // history's limit, from its schema
+    expect(declaration.guide).toContain("1–64"); // readMany's paths, from its schema
+    expect(declaration.guide).toContain("1–5000"); // read's limit, from its schema
+    expect(declaration.guide).toContain("string(≤32768)"); // edit's old and new, from its schema
+  });
+
+  it("with agentInstructions off no fragment is declared; methods and guide remain (A10, S4.5)", () => {
+    const quiet = buildDeclaration(METHODS, { agentInstructions: false });
+    expect(quiet).not.toHaveProperty("instruction");
+    expect(quiet.methods).toEqual(declaration.methods);
+    expect(quiet.guide).toBe(declaration.guide);
+  });
+});
+
+describe("the skill (spec 04 §The skill)", () => {
+  const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { bb: { skills: string[] } };
+  const skill = readFileSync(new URL("../skills/syns-bb-plugin/SKILL.md", import.meta.url), "utf8");
+
+  it("is declared in the manifest, and carries a name and a description", () => {
+    expect(manifest.bb.skills).toEqual(["skills"]);
+    const frontmatter = /^---\n([\s\S]*?)\n---\n/.exec(skill)?.[1] ?? "";
+    expect(frontmatter).toMatch(/^name: syns-bb-plugin$/m);
+    expect(frontmatter).toMatch(/^description: ".{20,}"$/m);
+  });
+
+  it("covers the two settings, the CLI on each machine, and what cli_missing, no_access and timeout mean for an operator", () => {
+    for (const word of ["synsPath", "agentInstructions", "installed and logged in on every machine", "cli_missing", "no_access", "timeout"]) expect(skill, word).toContain(word);
+  });
+});
+
+describe("one table drives everything (A33, S2.21)", () => {
+  const ping: Method = {
+    name: "syns.ping",
+    description: "A method that exists only in this test.",
+    effect: "read",
+    params: object({}),
+    result: { type: "object", properties: { pong: { type: "boolean" } }, required: ["pong"] },
+    maxRequestBytes: K64,
+    maxResponseBytes: K64,
+    command: () => ({ args: ["ping", "--json"] }),
+    shape: (out) => ({ pong: out.pong }),
+  };
+  const table = [...METHODS, ping];
+
+  it("a method added to the table appears in the declaration, the guide and the dispatch with no other change", async () => {
+    expect(buildDeclaration(table, { agentInstructions: true }).methods.map((method) => method.name)).toContain("syns.ping");
+    expect(buildGuide(table)).toContain("`syns.ping`");
+    expect(buildGuide(table)).toContain(ping.description);
+    const h = harness({ ping: ok({ pong: true }) }, { table });
+    expect(resultOf(await h.call("syns.ping"))).toEqual({ pong: true });
+    expect(reasonsOf(ping)).toEqual(["no_repo", "no_access", "cli_missing", "timeout"]);
+  });
+
+  it("and is nowhere without it", async () => {
+    expect(buildGuide(METHODS)).not.toContain("syns.ping");
+    expect((await harness().call("syns.ping")).ok).toBe(false);
+  });
+});

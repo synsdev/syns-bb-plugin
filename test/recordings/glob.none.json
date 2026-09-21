@@ -1,0 +1,1 @@
+{ "source": "HOST_FACTS.md §10: glob with no match is success with matches []", "exitCode": 0, "json": { "commitSha": "7ca9bc78ba047d9e7798b8d2733c254e24cfc837", "version": 6, "pattern": "zzz*", "path": "notes", "truncated": false, "matches": [] } }

@@ -1,0 +1,42 @@
+{
+  "name": "bb-plugin-syns",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "bb": ">=0.43",
+    "bbPluginSdk": ">=0.4.104"
+  },
+  "bb": {
+    "name": "Syns",
+    "description": "Gives Thread Pages read and write access to the calling session's Syns repository, through the Syns CLI on that session's machine.",
+    "branding": {
+      "icon": "GitBranch"
+    },
+    "server": "./server.ts",
+    "host": "./host.ts",
+    "skills": [
+      "skills"
+    ]
+  },
+  "scripts": {
+    "typecheck": "tsc -p .",
+    "test": "vitest run",
+    "build": "bb plugin build"
+  },
+  "dependencies": {
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@get-bb/plugin-sdk": "0.4.104",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.1"
+  },
+  "license": "MIT",
+  "description": "A bb plugin that gives Thread Pages read and write access to the session's Syns repository, through the Syns CLI.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/synsdev/syns-bb-plugin.git"
+  }
+}

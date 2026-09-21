@@ -1,0 +1,1 @@
+{ "source": "HOST_FACTS.md §9 With --version, the CLI's not-found answers change (spec 03 row 8a); measured 2026-09-21 with `syns cat --version=<unknown sha> --json -- README.md` in the scratch checkout, CLI 0.3.3", "exitCode": 1, "json": { "error": "version not found: 1234567890abcdef1234567890abcdef12345678" } }

@@ -1,0 +1,1 @@
+{ "source": "HOST_FACTS.md §8 Read shapes", "exitCode": 0, "json": { "commitSha": "7ca9bc78ba047d9e7798b8d2733c254e24cfc837", "version": 6, "truncated": false, "entries": [ { "name": "README.md", "path": "README.md", "type": "file", "size": 94, "sha": "7846c4f86a6274cdbd004ebed3985e953621223e" }, { "name": "notes", "path": "notes", "type": "dir", "size": null, "sha": null } ] } }

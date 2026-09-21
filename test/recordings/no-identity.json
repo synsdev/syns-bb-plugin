@@ -1,0 +1,1 @@
+{ "source": "HOST_FACTS.md §4 No identity file", "exitCode": 2, "json": { "error": "cannot determine repo identity — run inside a directory at or below one holding .syns.yaml" } }
