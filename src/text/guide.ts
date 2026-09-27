@@ -24,7 +24,7 @@ Only when the session's folder is a Syns repository. At load, look for \`syns.re
 
 300 files: one \`syns.ls\` and about five \`syns.readMany\`, inside the shared 120 calls a minute.
 
-\`syns.read\` cuts a window short to fit one answer: \`limit\` says how many lines came; read on from \`offset + limit\`. Its lines are joined with \`\\n\`, without \`\\r\` or a final newline, so to write a file back exactly, read it with \`syns.readMany\`.
+\`syns.read { fit: true }\` cuts a window short to fit one answer: \`limit\` says how many lines came; read on from \`offset + limit\`. Without \`fit\` a window too large is \`response_too_large\`. Its lines are joined with \`\\n\`, without \`\\r\` or a final newline, so to write a file back exactly, read it with \`syns.readMany\`.
 
 ## Finding things
 

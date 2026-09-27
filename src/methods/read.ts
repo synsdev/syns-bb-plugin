@@ -6,8 +6,9 @@ import { ENVELOPE, K64, M1, bytes, object, path, version, type SimpleMethod } fr
  * The lines of a window that fit one answer, from its first (D22). A text crosses as a JSON string, so a
  * line is measured as it is escaped. At least one line, or response_too_large.
  */
-function fit(result: Record<string, unknown>, room: number): Record<string, unknown> {
+function fit(result: Record<string, unknown>, room: number, trim: boolean): Record<string, unknown> {
   if (bytes(result) <= room) return result;
+  if (!trim) throw new SynsError("response_too_large");
   const lines = String(result.text).split("\n");
   const fixed = bytes({ ...result, text: "" });
   let used = fixed;
@@ -24,9 +25,9 @@ function fit(result: Record<string, unknown>, room: number): Record<string, unkn
 
 export const read: SimpleMethod = {
   name: "syns.read",
-  description: "One file, a window of lines: limit lines (default 2000) from offset (default 1), at version (default head). A window too large for one answer is cut short: limit says how many lines came. Line ends come as \\n.",
+  description: "One file, a window of lines: limit lines (default 2000) from offset (default 1), at version (default head). With fit: true a window too large for one answer is cut short, limit saying how many lines came. Line ends come as \\n.",
   effect: "read",
-  params: object({ path, version, offset: { type: "integer", minimum: 1 }, limit: { type: "integer", minimum: 1, maximum: 5000 } }, ["path"]),
+  params: object({ path, version, offset: { type: "integer", minimum: 1 }, limit: { type: "integer", minimum: 1, maximum: 5000 }, fit: { type: "boolean" } }, ["path"]),
   result: {
     type: "object",
     properties: {
@@ -45,5 +46,6 @@ export const read: SimpleMethod = {
   maxRequestBytes: K64,
   maxResponseBytes: M1,
   command: (params) => ({ args: buildArgs("read", { offset: params.offset ?? 1, limit: params.limit ?? 2000, version: params.version }, [params.path]) }),
-  shape: (out) => fit({ version: out.commitSha, number: out.version, path: out.path, text: out.content, offset: out.offset, limit: out.limit, totalLines: out.totalLines, size: out.size, blob: out.sha }, M1 - ENVELOPE),
+  // Cut short only when the page asked: a page that steps by the limit it asked for would otherwise skip lines (D33).
+  shape: (out, params) => fit({ version: out.commitSha, number: out.version, path: out.path, text: out.content, offset: out.offset, limit: out.limit, totalLines: out.totalLines, size: out.size, blob: out.sha }, M1 - ENVELOPE, params.fit === true),
 };

@@ -32,14 +32,14 @@ describe("syns.edit where old equals new (D21)", () => {
   });
 });
 
-describe("syns.read trims a window too large for one answer (D22)", () => {
+describe("syns.read trims a window too large for one answer, when asked with fit (D22, D33)", () => {
   const line = "x".repeat(400_000);
   const window = (lines: string[], request: RunRequest) =>
     ok({ commitSha: HEAD, version: 6, path: pathOf(request), content: lines.join("\n"), offset: 1, limit: Number(request.args.find((arg) => arg.startsWith("--limit="))!.split("=")[1]), totalLines: 10, size: 4_000_000, sha: "b".repeat(40) });
 
   it("serves the lines that fit, and limit says how many", async () => {
     const h = harness({ read: (request) => window([line, line, line, line], request) });
-    const result = resultOf<{ text: string; limit: number; offset: number }>(await h.call("syns.read", { path: "big.json", limit: 4 }));
+    const result = resultOf<{ text: string; limit: number; offset: number }>(await h.call("syns.read", { path: "big.json", limit: 4, fit: true }));
     expect(result.limit).toBe(2);
     expect(result.text).toBe(`${line}\n${line}`);
     expect(result.offset).toBe(1);
@@ -47,19 +47,24 @@ describe("syns.read trims a window too large for one answer (D22)", () => {
 
   it("leaves a window that fits as the CLI gave it", async () => {
     const h = harness({ read: (request) => window(["a", "b"], request) });
-    const result = resultOf<{ text: string; limit: number }>(await h.call("syns.read", { path: "a.md", limit: 5 }));
+    const result = resultOf<{ text: string; limit: number }>(await h.call("syns.read", { path: "a.md", limit: 5, fit: true }));
     expect(result).toMatchObject({ text: "a\nb", limit: 5 });
   });
 
   it("measures the escaped text: a window of quotes is trimmed sooner", async () => {
     const quotes = '"'.repeat(300_000);
     const h = harness({ read: (request) => window([quotes, quotes], request) });
-    expect(resultOf<{ limit: number }>(await h.call("syns.read", { path: "q.json", limit: 2 })).limit).toBe(1);
+    expect(resultOf<{ limit: number }>(await h.call("syns.read", { path: "q.json", limit: 2, fit: true })).limit).toBe(1);
+  });
+
+  it("without fit, a window too large is response_too_large, as before 0.1.1: a page stepping by the limit it asked for never skips lines (D33)", async () => {
+    const h = harness({ read: (request) => window([line, line, line, line], request) });
+    expect(failureOf(await h.call("syns.read", { path: "big.json", limit: 4 })).code).toBe("response_too_large");
   });
 
   it("a single line too large for any answer is response_too_large", async () => {
     const h = harness({ read: (request) => window(["y".repeat(1_100_000)], request) });
-    expect(failureOf(await h.call("syns.read", { path: "one.json", limit: 1 })).code).toBe("response_too_large");
+    expect(failureOf(await h.call("syns.read", { path: "one.json", limit: 1, fit: true })).code).toBe("response_too_large");
   });
 });
 
