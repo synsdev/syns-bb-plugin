@@ -135,8 +135,8 @@ describe("syns.history", () => {
   });
   it("passes path as --file=PATH, never as a bare argument", async () => {
     const h = harness({ history: rec("history.ok") });
-    await h.call("syns.history", { path: "notes/a.md", limit: 200 });
-    expect(h.runner.calls[0]!.args).toEqual(["history", "--file=notes/a.md", "--limit=200", "--json"]);
+    await h.call("syns.history", { path: "notes/a.md", limit: 100 });
+    expect(h.runner.calls[0]!.args).toEqual(["history", "--file=notes/a.md", "--limit=100", "--json"]);
   });
   it("for one file's history, where the CLI's rows name no paths and no parent, names that file and drops its content and diff (S1.7)", async () => {
     const h = harness({ history: rec("history.file.ok") });

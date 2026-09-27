@@ -5,6 +5,7 @@ export const revert: SimpleMethod = {
   name: "syns.revert",
   description: "Put one file back to its text at the earlier version to, as a new version. Today the CLI checks no base, so the head is not checked, and records no provenance: syns.history shows this commit with by all null.",
   effect: "contributed-write",
+  unguarded: true,
   params: object({ path, to: version, message }, ["path", "to"]),
   result: { type: "object", properties: { version, number: { type: "integer" } }, required: ["version", "number"] },
   maxRequestBytes: K64,

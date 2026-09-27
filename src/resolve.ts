@@ -19,7 +19,14 @@ const text = (value: unknown): string | null => (typeof value === "string" && va
  */
 export function createResolve(sdk: SdkLike): Resolve {
   return async (sessionId) => {
-    const got = record(await sdk.threads.get({ threadId: sessionId }));
+    let got: Record<string, unknown>;
+    try {
+      got = record(await sdk.threads.get({ threadId: sessionId }));
+    } catch (error) {
+      // A session that no longer exists has no folder: no_repo, not handler_error (D29). Anything else still fails.
+      if (/\b404\b/.test(error instanceof Error ? error.message : String(error))) return null;
+      throw error;
+    }
     const environmentId = text(record(got.thread ?? got).environmentId);
     if (!environmentId) return null;
     const found = record(await sdk.environments.get({ environmentId }));

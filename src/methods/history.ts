@@ -8,7 +8,7 @@ export const history: SimpleMethod = {
   name: "syns.history",
   description: "The newest versions first: who or what made each, and the paths it changed. by.run is the bb session whose page made the commit. No paging beyond limit (default 20); total says how much there is.",
   effect: "read",
-  params: object({ path, limit: { type: "integer", minimum: 1, maximum: 200 } }),
+  params: object({ path, limit: { type: "integer", minimum: 1, maximum: 100 } }),
   result: {
     type: "object",
     properties: {

@@ -69,7 +69,7 @@ describe("syns.write", () => {
 describe("syns.edit", () => {
   it("passes old and new as option values, with the parent, the message and the provenance (S2.11, S2.12)", async () => {
     const h = harness({ edit: rec("write.one.ok") });
-    expect(resultOf(await h.call("syns.edit", { path: "notes/a.md", old: "colour", new: "color", base: HEAD }, "thr_abc"))).toEqual({ version: NEW, number: 7 });
+    expect(resultOf(await h.call("syns.edit", { path: "notes/a.md", old: "colour", new: "color", base: HEAD }, "thr_abc"))).toEqual({ version: NEW, number: 7, changed: 1 });
     expect(h.runner.calls.map((call) => call.args)).toEqual([["edit", "--old=colour", "--new=color", `--parent=${HEAD}`, "--message=Edit notes/a.md from a page", ...PROVENANCE, "--run=thr_abc", "--json", "--", "notes/a.md"]]);
     expect(h.runner.calls[0]!.stdin).toBeUndefined();
   });

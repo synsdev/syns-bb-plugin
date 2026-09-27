@@ -15,6 +15,12 @@ export type Schema = Record<string, unknown>;
 export const K64 = 64 * 1024;
 export const M1 = 1024 * 1024;
 
+/** Left for the host's envelope around a result: `{ v, id, ok, result }`, its id at most 96 characters. */
+export const ENVELOPE = 1024;
+
+/** How many bytes a value takes on the wire: its JSON, where a quote or a newline in a text is two characters. */
+export const bytes = (value: unknown): number => Buffer.byteLength(JSON.stringify(value), "utf8");
+
 /** What a method's own procedure is given. */
 export interface Context {
   /** The session the host says is calling. The provenance `run` of a write. S1.5 */
@@ -44,6 +50,8 @@ interface Common {
   reasons?: readonly Reason[];
   /** What a schema cannot say. Throws a SynsError; runs before any process. */
   check?(params: any): void;
+  /** A write whose CLI command takes no parent and has no guard (`syns.revert`, D13): it cannot answer stale_head or checkout_dirty, so it does not declare them (D29). */
+  unguarded?: true;
   /** How many paths a write names, for the plugin's log. Defaults to one when there is a `path`. S2.19 */
   pathCount?(params: any): number;
 }
@@ -61,11 +69,11 @@ export interface ProcedureMethod extends Common {
 
 export type Method = SimpleMethod | ProcedureMethod;
 
-const EVERY_METHOD: readonly Reason[] = ["no_repo", "no_access", "cli_missing", "timeout"];
-const EVERY_WRITE: readonly Reason[] = ["stale_head", "checkout_dirty"];
+export const EVERY_METHOD: readonly Reason[] = ["no_repo", "no_access", "cli_missing", "timeout"];
+export const EVERY_WRITE: readonly Reason[] = ["stale_head", "checkout_dirty"];
 
 /** Every reason a method can answer with: the common ones, a write's, and its own. S3.2 */
-export const reasonsOf = (method: Method): Reason[] => [...EVERY_METHOD, ...(method.effect === "contributed-write" ? EVERY_WRITE : []), ...(method.reasons ?? [])];
+export const reasonsOf = (method: Method): Reason[] => [...EVERY_METHOD, ...(method.effect === "contributed-write" && !method.unguarded ? EVERY_WRITE : []), ...(method.reasons ?? [])];
 
 // --- shared schema pieces ---------------------------------------------------
 

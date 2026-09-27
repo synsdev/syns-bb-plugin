@@ -1,18 +1,14 @@
 import { buildArgs, pool } from "../cli.js";
 import { SynsError } from "../errors.js";
-import { K64, M1, nullable, object, path, version, type Context, type ProcedureMethod } from "../method.js";
+import { ENVELOPE, K64, M1, bytes, nullable, object, path, version, type Context, type ProcedureMethod } from "../method.js";
 
 interface Params {
   paths: string[];
   version?: string;
 }
 
-type Entry = { path: string; text: string; size: unknown; blob: unknown } | { path: string; error: "not_found" | "too_large" | "not_text" };
+type Entry = { path: string; text: string; size: unknown; blob: unknown } | { path: string; error: "not_found" } | { path: string; error: "too_large" | "not_text"; size?: unknown; blob?: unknown };
 
-/** Left for the host's envelope around the result: `{ v, id, ok, result }`, its id at most 96 characters. */
-const ENVELOPE = 1024;
-
-const bytes = (value: unknown): number => Buffer.byteLength(JSON.stringify(value), "utf8");
 
 export const readMany: ProcedureMethod = {
   name: "syns.readMany",
@@ -27,7 +23,7 @@ export const readMany: ProcedureMethod = {
         type: "array",
         items: {
           type: "object",
-          description: "Either path, text, size and blob, or path and error.",
+          description: "Either path, text, size and blob, or path and error; too_large and not_text also carry size and blob.",
           properties: { path: { type: "string" }, text: { type: "string" }, size: { type: "integer" }, blob: nullable("string"), error: { type: "string", enum: ["not_found", "too_large", "not_text"] } },
           required: ["path"],
         },
@@ -55,7 +51,8 @@ export const readMany: ProcedureMethod = {
     const entries = await pool(params.paths, context.limits.perCall, async (filePath): Promise<Entry> => {
       try {
         const out = (await context.syns(buildArgs("cat", { version: at }, [filePath]))) as Record<string, unknown> | null;
-        if (typeof out?.content !== "string") return { path: filePath, error: "not_text" };
+        // A file that is not text is named with its size and hash, and no bytes: syns.readBinary reads those (D-088, D29).
+        if (typeof out?.content !== "string") return { path: filePath, error: "not_text", size: out?.size, blob: out?.sha ?? null };
         return { path: filePath, text: out.content, size: out.size, blob: out.sha ?? null };
       } catch (error) {
         if (error instanceof SynsError && error.code === "not_found" && error.subject !== "version") return { path: filePath, error: "not_found" };
@@ -71,7 +68,7 @@ export const readMany: ProcedureMethod = {
     let used = 0;
     for (const entry of entries) {
       // A file that alone exceeds an empty response can never be served here; the rest wait their turn.
-      const kept: Entry = bytes(entry) + 1 > room ? { path: entry.path, error: "too_large" } : entry;
+      const kept: Entry = bytes(entry) + 1 > room && "text" in entry ? { path: entry.path, error: "too_large", size: entry.size, blob: entry.blob } : entry;
       const size = bytes(kept) + 1;
       if (deferred.length > 0 || used + size > room) {
         deferred.push(entry.path);

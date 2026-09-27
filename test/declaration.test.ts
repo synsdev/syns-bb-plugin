@@ -114,7 +114,7 @@ describe("the declaration", () => {
       "syns.write": [...common, ...write, "exists"].sort(),
       "syns.edit": [...common, ...write, "many_matches", "no_match"].sort(),
       "syns.rm": [...common, ...write].sort(),
-      "syns.revert": [...common, ...write].sort(),
+      "syns.revert": common, // it cannot answer stale_head or checkout_dirty while the CLI's revert takes no parent and has no guard (D13, D29)
     });
     for (const method of declaration.methods) for (const reason of Object.keys(method.reasons)) expect(reason).toMatch(/^[a-z][a-z0-9_]{0,63}$/);
     const stale = declaration.methods.find((method) => method.name === "syns.commit")!.reasons.stale_head!;

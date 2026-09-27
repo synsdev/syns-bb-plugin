@@ -91,7 +91,7 @@ describe("syns.readMany", () => {
   it("answers too_large for a file that alone exceeds an empty response, and goes on (S1.15)", async () => {
     const h = harness({ cat: (request) => file(request, pathOf(request) === "huge.md" ? "x".repeat(1024 * 1024) : "small") });
     const result = resultOf<Result>(await h.call("syns.readMany", { paths: ["huge.md", "a.md"], version: HEAD }));
-    expect(result.files).toEqual([{ path: "huge.md", error: "too_large" }, { path: "a.md", text: "small", size: 5, blob: "b".repeat(40) }]);
+    expect(result.files).toEqual([{ path: "huge.md", error: "too_large", size: 1024 * 1024, blob: "b".repeat(40) }, { path: "a.md", text: "small", size: 5, blob: "b".repeat(40) }]);
     expect(result.deferred).toEqual([]);
   });
 
@@ -100,9 +100,9 @@ describe("syns.readMany", () => {
     expect(resultOf<Result>(await h.call("syns.readMany", { paths: ["a.md"], version: HEAD })).files).toEqual([{ path: "a.md", error: "too_large" }]);
   });
 
-  it("answers not_text for content that is not a string (the CLI's answer for a binary file is not yet measured)", async () => {
+  it("answers not_text, with size and blob, for content that is not a string (D29)", async () => {
     const h = harness({ cat: (request) => ok({ commitSha: HEAD, version: 6, path: pathOf(request), content: null, size: 3, sha: "b".repeat(40) }) });
-    expect(resultOf<Result>(await h.call("syns.readMany", { paths: ["a.png"], version: HEAD })).files).toEqual([{ path: "a.png", error: "not_text" }]);
+    expect(resultOf<Result>(await h.call("syns.readMany", { paths: ["a.png"], version: HEAD })).files).toEqual([{ path: "a.png", error: "not_text", size: 3, blob: "b".repeat(40) }]);
   });
 
   it("fails as a whole for a reason that applies to every path (S1.16)", async () => {
