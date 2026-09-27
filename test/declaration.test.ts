@@ -8,7 +8,7 @@ import { buildGuide } from "../src/text/guide.js";
 import { ok } from "./fake-runner.js";
 import { harness, resultOf } from "./harness.js";
 
-const FOURTEEN = ["syns.commit", "syns.diff", "syns.edit", "syns.glob", "syns.grep", "syns.history", "syns.ls", "syns.read", "syns.readMany", "syns.repo", "syns.revert", "syns.rm", "syns.whoami", "syns.write"];
+const SIXTEEN = ["syns.commit", "syns.diff", "syns.edit", "syns.glob", "syns.grep", "syns.history", "syns.ls", "syns.read", "syns.readBinary", "syns.readMany", "syns.repo", "syns.revert", "syns.rm", "syns.whoami", "syns.write", "syns.writeBinary"];
 /** The keywords Thread Pages compiles; any other refuses the method (its contributed.ts). */
 const SUBSET = new Set(["type", "description", "properties", "required", "additionalProperties", "enum", "const", "minimum", "maximum", "minLength", "maxLength", "pattern", "items", "minItems", "maxItems"]);
 
@@ -23,9 +23,9 @@ const namesIn = (text: string): string[] => [...new Set(text.match(/syns\.[a-z][
 const declaration = buildDeclaration(METHODS, { agentInstructions: true });
 
 describe("the table", () => {
-  it("holds the fourteen methods of spec 01: nine read, five write", () => {
-    expect(METHODS.map((method) => method.name).sort()).toEqual(FOURTEEN);
-    expect(METHODS.filter((method) => method.effect === "contributed-write").map((method) => method.name).sort()).toEqual(["syns.commit", "syns.edit", "syns.revert", "syns.rm", "syns.write"]);
+  it("holds the sixteen methods of spec 01: ten read, six write (D23)", () => {
+    expect(METHODS.map((method) => method.name).sort()).toEqual(SIXTEEN);
+    expect(METHODS.filter((method) => method.effect === "contributed-write").map((method) => method.name).sort()).toEqual(["syns.commit", "syns.edit", "syns.revert", "syns.rm", "syns.write", "syns.writeBinary"]);
   });
 });
 
@@ -69,6 +69,8 @@ describe("the declaration", () => {
       "syns.edit": "128/64",
       "syns.rm": "64/64",
       "syns.revert": "64/64",
+      "syns.readBinary": "64/1024",
+      "syns.writeBinary": "1024/64",
     });
   });
 
@@ -106,7 +108,7 @@ describe("the declaration", () => {
       "syns.ls": common,
       "syns.readMany": common,
       "syns.history": common,
-      "syns.commit": [...common, ...write, "invalid_change"].sort(),
+      "syns.commit": [...common, ...write, "bad_offset", "invalid_change"].sort(),
       "syns.read": common,
       "syns.glob": [...common, "bad_pattern"].sort(),
       "syns.grep": [...common, "bad_pattern"].sort(),
@@ -114,6 +116,8 @@ describe("the declaration", () => {
       "syns.write": [...common, ...write, "exists"].sort(),
       "syns.edit": [...common, ...write, "many_matches", "no_match"].sort(),
       "syns.rm": [...common, ...write].sort(),
+      "syns.readBinary": common,
+      "syns.writeBinary": [...common, ...write, "bad_hash", "bad_offset", "too_large"].sort(),
       "syns.revert": common, // it cannot answer stale_head or checkout_dirty while the CLI's revert takes no parent and has no guard (D13, D29)
     });
     for (const method of declaration.methods) for (const reason of Object.keys(method.reasons)) expect(reason).toMatch(/^[a-z][a-z0-9_]{0,63}$/);
@@ -154,8 +158,8 @@ describe("what agents are told", () => {
   });
 
   it("the guide and the fragment name exactly the registered methods (A9, S4.4)", () => {
-    expect(namesIn(declaration.guide)).toEqual(FOURTEEN);
-    expect(namesIn(declaration.instruction!)).toEqual(FOURTEEN); // the fragment mentions the full set, briefly
+    expect(namesIn(declaration.guide)).toEqual(SIXTEEN);
+    expect(namesIn(declaration.instruction!)).toEqual(SIXTEEN); // the fragment mentions the full set, briefly
     for (const reason of ["exists", "no_match", "many_matches", "bad_pattern"]) expect(declaration.guide, reason).toContain(`\`${reason}\``);
   });
 

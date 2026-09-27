@@ -3,6 +3,7 @@ import { SynsError, fail, interpret, toAnswer, type FailureAnswer } from "./erro
 import { validate, type Context, type Method } from "./method.js";
 import { METHODS } from "./methods/index.js";
 import type { Resolve } from "./resolve.js";
+import { createHeld, type Held } from "./held.js";
 
 /** What Thread Pages sends to `threadPagesInvoke`. */
 export interface Call {
@@ -24,6 +25,7 @@ export interface DispatchDeps {
   cli: Cli;
   resolve: Resolve;
   log: Log;
+  held?: Held;
 }
 
 /**
@@ -31,7 +33,7 @@ export interface DispatchDeps {
  * resolve the session, run the CLI, map the outcome. It knows no method by name.
  * spec S2.1, S2.2, S2.14, S2.18–S2.22
  */
-export function createDispatch({ table = METHODS, cli, resolve, log }: DispatchDeps): (call: Call) => Promise<Answer> {
+export function createDispatch({ table = METHODS, cli, resolve, log, held = createHeld() }: DispatchDeps): (call: Call) => Promise<Answer> {
   const byName = new Map(table.map((method) => [method.name, method]));
 
   async function run(method: Method, params: Record<string, unknown>, sessionId: string | null, deadline: number): Promise<unknown> {
@@ -49,6 +51,7 @@ export function createDispatch({ table = METHODS, cli, resolve, log }: DispatchD
     const context: Context = {
       sessionId,
       limits: cli.limits,
+      held,
       async syns(args, stdin) {
         const ran = await cli.run(where, args, stdin, deadline);
         // The 404 rule's `repo` runs at most once per call. S3.5

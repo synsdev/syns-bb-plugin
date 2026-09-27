@@ -5,6 +5,8 @@ import { delimiter, join } from "node:path";
 import { experimental_defineHostEntry } from "@get-bb/plugin-sdk/host";
 import { CLI_NOT_FOUND, type RunResult } from "./cli.js";
 import { hostContract } from "./contract.js";
+import { SLICE, createRelay } from "./relay.js";
+import { randomUUID } from "node:crypto";
 
 /**
  * The host half: finds the Syns CLI on this machine and runs it with the
@@ -12,8 +14,8 @@ import { hostContract } from "./contract.js";
  * access is looking for the `syns` executable. S2.6–S2.8, S2.10, S2.16
  */
 
-/** What is collected of a process's standard output before it is stopped. S2.16 */
-const MAX_OUTPUT = 4 * 1024 * 1024;
+/** What is collected of a process's standard output before it is stopped: a 25 MiB picture as base64 in JSON fits (S2.16, D27). */
+export const MAX_OUTPUT = 40 * 1024 * 1024;
 
 const executable = async (file: string): Promise<boolean> =>
   access(file, constants.X_OK).then(
@@ -33,7 +35,7 @@ export async function findSyns(synsPath: string | undefined, env: { PATH?: strin
 }
 
 /** One process, started directly with an argument array, never through a shell. S2.10 */
-export function runSyns(bin: string, args: string[], cwd: string, stdin: string | undefined, timeoutMs: number, signal: AbortSignal): Promise<RunResult> {
+export function runSyns(bin: string, args: string[], cwd: string, stdin: string | Buffer | undefined, timeoutMs: number, signal: AbortSignal): Promise<RunResult> {
   return new Promise((resolve) => {
     const out: Buffer[] = [];
     const err: Buffer[] = [];
@@ -82,13 +84,31 @@ export function runSyns(bin: string, args: string[], cwd: string, stdin: string 
   });
 }
 
+const relay = createRelay();
+
 export default experimental_defineHostEntry({
   contract: hostContract,
   handlers: {
-    run: async ({ cwd, args, stdin, timeoutMs, synsPath }, context) => {
+    run: async ({ cwd, args, stdin, stdinBase64, stdinFrom, timeoutMs, synsPath }, context) => {
       const bin = await findSyns(synsPath);
       if (!bin) return { exitCode: null, stdout: "", stderr: "", timedOut: false, spawnError: CLI_NOT_FOUND, overflowed: false };
-      return runSyns(bin, args, cwd, stdin, timeoutMs, context.signal);
+      let input: string | Buffer | undefined = stdinBase64 === undefined ? stdin : Buffer.from(stdinBase64, "base64");
+      if (stdinFrom !== undefined) {
+        const gathered = relay.take(stdinFrom);
+        if (gathered === undefined) return { exitCode: null, stdout: "", stderr: "", timedOut: false, spawnError: "the gathered standard input is no longer held", overflowed: false };
+        input = Buffer.from(gathered, "base64");
+      }
+      const result = await runSyns(bin, args, cwd, input, timeoutMs, context.signal);
+      // An answer past one host call goes back in slices (D32).
+      if (result.stdout.length <= SLICE) return result;
+      const id = randomUUID();
+      relay.hold(id, result.stdout);
+      return { ...result, stdout: result.stdout.slice(0, SLICE), rest: { id, length: result.stdout.length } };
+    },
+    stdinPart: async ({ id, base64 }) => ({ received: relay.append(id, base64) }),
+    outputPart: async ({ id, offset }) => {
+      const slice = relay.slice(id, offset);
+      return slice ? { ...slice, lost: false } : { chunk: "", done: true, lost: true };
     },
   },
 });

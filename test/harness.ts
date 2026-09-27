@@ -1,6 +1,7 @@
 import { createCli, type Limits, type RunResult, type RunRequest, type Where } from "../src/cli.js";
 import { createDispatch, type Answer } from "../src/dispatch.js";
 import type { Method } from "../src/method.js";
+import type { Held } from "../src/held.js";
 import { fakeRunner } from "./fake-runner.js";
 
 export const FAST: Limits = { processMs: 20, callMs: 60, perMachine: 16, perCall: 8 };
@@ -10,12 +11,13 @@ export const OLD = "43a6f2ca62274f4dd4e43146d232379058b32cd3";
 type Reply = RunResult | ((request: RunRequest) => RunResult | Promise<RunResult>);
 
 /** The server half above the Runner seam, with a fake runner, a fixed resolution and a captured log. */
-export function harness(replies: Record<string, Reply> = {}, options: { table?: readonly Method[]; limits?: Limits; where?: Where | null } = {}) {
+export function harness(replies: Record<string, Reply> = {}, options: { table?: readonly Method[]; limits?: Limits; where?: Where | null; held?: Held } = {}) {
   const runner = fakeRunner(replies);
   const log: string[] = [];
   const resolved: string[] = [];
   const invoke = createDispatch({
     ...(options.table ? { table: options.table } : {}),
+    ...(options.held ? { held: options.held } : {}),
     cli: createCli(runner, options.limits ?? FAST),
     resolve: async (sessionId) => {
       resolved.push(sessionId);
@@ -43,6 +45,8 @@ export const SAMPLES: Record<string, Record<string, unknown>> = {
   "syns.edit": { path: "notes/a.md", old: "a", new: "b", base: HEAD },
   "syns.rm": { path: "notes/a.md", base: HEAD },
   "syns.revert": { path: "notes/a.md", to: OLD },
+  "syns.readBinary": { path: "images/a.png" },
+  "syns.writeBinary": { path: "images/a.png", base64: "iVBORw0KGgo=", base: HEAD },
 };
 
 export const failureOf = (answer: Answer) => {

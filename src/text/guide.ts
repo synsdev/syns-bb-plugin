@@ -3,7 +3,7 @@ import { EVERY_METHOD, EVERY_WRITE, path, reasonsOf, version, type Method, type 
 
 /**
  * The guide text (spec 04), at most 16 KiB. The prose is written for the
- * fourteen methods this version registers (S4.4); the method and error sections
+ * sixteen methods this version registers (S4.4); the method and error sections
  * are generated from the table, so they cannot disagree with the declaration (S4.3).
  */
 
@@ -22,13 +22,13 @@ Only when the session's folder is a Syns repository. At load, look for \`syns.re
 1. \`syns.ls { recursive: true }\`: every file with its \`blob\`, and the \`version\` listed. \`truncated: true\` means incomplete: list folder by folder.
 2. \`syns.readMany { paths, version }\` in groups of up to 64, passing that \`version\`. Follow \`deferred\` with the same \`version\` until it is empty. An entry with \`error\` did not load. \`too_large\` carries \`size\`: the bound is on the text as JSON escapes it, a quote, backslash or newline counting twice, so a file of quotes stops near 500 KB. Read it with \`syns.read\`.
 
-300 files is one \`syns.ls\` and about five \`syns.readMany\`, inside the host's shared 120 calls a minute. One call per file is not.
+300 files: one \`syns.ls\` and about five \`syns.readMany\`, inside the shared 120 calls a minute.
 
 \`syns.read\` cuts a window short to fit one answer: \`limit\` says how many lines came; read on from \`offset + limit\`. Its lines are joined with \`\\n\`, without \`\\r\` or a final newline, so to write a file back exactly, read it with \`syns.readMany\`.
 
 ## Finding things
 
-\`syns.glob\` matches paths; \`syns.grep\` searches texts with a regular expression, answering lines (\`output: "content"\`, the default, the only one taking \`context\`), paths (\`"files"\`) or counts (\`"count"\`). \`skipped\` names files it could not read. \`syns.glob\` pages like \`syns.ls\`: follow \`nextOffset\`, passing \`version\`. \`syns.grep\` lowers the most \`headLimit\` it takes as \`context\` grows, and names it when refusing.
+\`syns.glob\` matches paths; \`syns.grep\` searches texts by regular expression, answering lines (\`output: "content"\`, the default, the only one taking \`context\`), paths (\`"files"\`) or counts (\`"count"\`). \`skipped\` names files it could not read. \`syns.glob\` pages like \`syns.ls\`: follow \`nextOffset\`, passing \`version\`. \`syns.grep\` lowers the most \`headLimit\` it takes as \`context\` grows, and names it when refusing.
 
 ## Staying current
 
@@ -36,14 +36,16 @@ Poll only \`syns.repo\`, with the host's \`watch\`. When its \`version\` differs
 
 \`syns.history { limit }\` (at most 100) says who changed what. \`by.run\` is this page's session id when the page made it, another bb session id when that session's page did, null from outside pages: an agent's push, the CLI, the web, or \`syns.revert\`. Its \`path\` matches one file exactly: a folder answers nothing.
 
+## Pictures
+
+\`syns.readBinary { path, version? }\` answers a file's bytes as base64 in pieces of up to 720 KiB: follow \`nextOffset\` with the first piece's \`version\`, and join the decoded pieces. \`sha256\` and \`mediaType\` describe the whole file. \`syns.writeBinary { path, base64, base }\` stores up to 720 KiB in one call; a larger file goes in 720 KiB pieces, in order, each with \`offset\`, \`size\` and the whole file's \`sha256\`, answering \`complete: false\` and \`received\` until the last publishes it. \`bad_offset\`: send from \`detail.expected\` (0: start again). For a picture beside texts in one version, gather it with \`hold: true\` and name its \`upload\` in a \`syns.commit\` file. An 8 MiB photo is about 12 calls each way.
+
 ## Writing
 
 Every write but \`syns.revert\` carries \`base\`, the \`version\` last read. One file's text: \`syns.write\`; a new file: with \`create: true\`, which refuses rather than overwrite. One passage: \`syns.edit\`, \`old\` occurring once unless \`replaceAll\`. Remove: \`syns.rm\`. Several changes as one version: \`syns.commit\`. Writes publish at once, unconfirmed, to everyone sharing the repository: say what a control changes before it is used. A request past a method's bound (1 MiB for \`syns.write\`, measured as JSON) comes back from the bridge as \`invalid_response\`: split the change.
 
 - \`conflict\` / \`stale_head\`: the repository moved past \`base\`; nothing written; \`detail.current\` is the head. Re-read, show what changed, let the reader retry. Never retry blindly.
 - \`conflict\` / \`checkout_dirty\`: the session's folder holds unpublished edits, usually its agent mid-turn. Nothing written. Say so; retry when \`syns.repo\`'s \`version\` moves.
-- \`conflict\` / \`exists\`: \`create: true\` and the path is there. Nothing written.
-- \`no_match\`, \`many_matches\`: \`old\` is not in the file once (\`detail.count\`). Nothing written; re-read.
 - \`changed: 0\`: nothing differed (\`syns.commit\`, \`syns.edit\` with \`old\` equal to \`new\`) or the path was gone (\`syns.rm\`); no version made.
 
 After a write, the returned \`version\` is the new \`base\`.
@@ -67,7 +69,8 @@ function render(schema: Schema): string {
     if (type === "object") {
       const properties = (schema.properties ?? {}) as Record<string, Schema>;
       const required = (schema.required ?? []) as string[];
-      const fields = Object.entries(properties).map(([key, child]) => `${key}${required.includes(key) ? "" : "?"}: ${render(child)}`);
+      // A key whose type is its own name (version, path) is written once.
+      const fields = Object.entries(properties).map(([key, child]) => { const type = render(child); return `${key}${required.includes(key) ? "" : "?"}${type === key ? "" : `: ${type}`}`; });
       return fields.length > 0 ? `{ ${fields.join(", ")} }` : "{}";
     }
     if (type === "array") {
@@ -98,7 +101,7 @@ function methodSection(table: readonly Method[]): string {
       ...(own(method).length > 0 ? [`- Reasons: ${own(method).map((reason) => `\`${reason}\``).join(", ")}`] : []),
     ].join("\n"),
   );
-  return `## Every method\n\n\`path\` is repository-relative with \`/\` separators, at most 1,024 characters; it may not begin with \`/\` or \`-\`, hold a \`\\\` or a control character, or have a \`.\` or \`..\` segment. Bounds are request / response. A \`?\` marks an optional key; no other key is accepted. Every method may answer ${EVERY_METHOD.map((reason) => `\`${reason}\``).join(", ")}; every write but \`syns.revert\` also ${EVERY_WRITE.map((reason) => `\`${reason}\``).join(", ")}. Other reasons are listed.\n\n${blocks.join("\n\n")}\n`;
+  return `## Every method\n\n\`path\` is repository-relative with \`/\` separators, at most 1,024 characters; it may not begin with \`/\` or \`-\`, hold a \`\\\` or a control character, or have a \`.\` or \`..\` segment. Bounds are request / response. A \`?\` marks an optional key; a bare \`version\` or \`path\` key has that type; no other key is accepted. Every method may answer ${EVERY_METHOD.map((reason) => `\`${reason}\``).join(", ")}; every write but \`syns.revert\` also ${EVERY_WRITE.map((reason) => `\`${reason}\``).join(", ")}. Other reasons are listed.\n\n${blocks.join("\n\n")}\n`;
 }
 
 function errorSection(table: readonly Method[]): string {

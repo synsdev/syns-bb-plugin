@@ -1,5 +1,6 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { createCli, type Runner } from "./cli.js";
+import { createCli } from "./cli.js";
+import { createHostRunner } from "./host-runner.js";
 import { hostContract } from "./contract.js";
 import { buildDeclaration } from "./declaration.js";
 import { createDispatch, type Call } from "./dispatch.js";
@@ -8,9 +9,6 @@ import { createResolve } from "./resolve.js";
 
 /** Thread Pages has validated a call before it arrives; the dispatch checks it again against the table. */
 const anything = { "~standard": { version: 1 as const, vendor: "syns", validate: (value: unknown) => ({ value }) } };
-
-/** How much longer than the process a host call may take before bb gives up on it. */
-const HOST_CALL_SLACK_MS = 5_000;
 
 /**
  * The server half (S2.5): answers the host's two RPC methods. It runs no
@@ -25,17 +23,10 @@ export default function synsPlugin(bb: BbPluginApi): void {
 
   const host = bb.hosts.experimental_client({ contract: hostContract });
 
-  const runner: Runner = {
-    async run({ hostId, cwd, args, stdin, timeoutMs }) {
-      const synsPath = (await settings.get()).synsPath?.trim();
-      try {
-        return await host.call("run", { cwd, args, ...(stdin === undefined ? {} : { stdin }), timeoutMs, ...(synsPath ? { synsPath } : {}) }, { hostId, timeoutMs: timeoutMs + HOST_CALL_SLACK_MS });
-      } catch (error) {
-        // The machine could not be reached, or the host half failed. Not the CLI's doing: handler_error, logged. S3.6
-        return { exitCode: null, stdout: "", stderr: "", timedOut: false, spawnError: `host call failed: ${error instanceof Error ? error.message : String(error)}`, overflowed: false };
-      }
-    },
-  };
+  const runner = createHostRunner(
+    (method, input, options) => host.call(method, input as never, options),
+    async () => (await settings.get()).synsPath?.trim() || undefined,
+  );
 
   const invoke = createDispatch({ cli: createCli(runner), resolve: createResolve(bb.sdk), log: bb.log });
 

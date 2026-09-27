@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { CLI_NOT_FOUND } from "../src/cli.js";
-import hostEntry, { findSyns, runSyns } from "../src/host-entry.js";
+import hostEntry, { MAX_OUTPUT, findSyns, runSyns } from "../src/host-entry.js";
 
 // The SDK's host bundle loads only inside bb's host worker ("Dynamic require of child_process").
 vi.mock("@get-bb/plugin-sdk/host", () => ({ experimental_defineHostEntry: (entry: unknown) => entry }));
@@ -80,13 +80,20 @@ describe("the host half, run against a stand-in executable", () => {
     expect(Date.now() - started).toBeLessThan(3000);
   });
 
-  it("stops a process that prints more than 4 MiB, and says so (S2.16)", async () => {
-    const bin = script("loud", "head -c 6000000 /dev/zero | tr '\\0' 'x'; sleep 10");
+  it("stops a process that prints more than MAX_OUTPUT, 40 MiB, and says so (S2.16, D27)", async () => {
+    const bin = script("loud", `head -c ${MAX_OUTPUT + 2_000_000} /dev/zero | tr '\\0' 'x'; sleep 10`);
     const started = Date.now();
     const result = await runSyns(bin, [], dir, undefined, 8000, signal);
     expect(result.overflowed).toBe(true);
-    expect(result.stdout.length).toBeLessThanOrEqual(4 * 1024 * 1024);
+    expect(result.stdout.length).toBeLessThanOrEqual(MAX_OUTPUT);
     expect(Date.now() - started).toBeLessThan(5000);
+  });
+
+  it("hands bytes on standard input to the process exactly (D25)", async () => {
+    const bin = script("bytes", "od -An -tx1 | tr -d ' \\n'");
+    const bytes = Buffer.from([0xff, 0xd8, 0x00, 0x0a, 0x0d, 0x80, 0xff, 0xd9]);
+    const result = await runSyns(bin, [], dir, bytes, 5000, signal);
+    expect(result.stdout).toBe("ffd8000a0d80ffd9");
   });
 
   it("reports a process that could not be started, in words that are not CLI_NOT_FOUND", async () => {

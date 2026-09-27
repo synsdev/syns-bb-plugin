@@ -1,4 +1,5 @@
 import type { Method } from "../method.js";
+import { readBinary, writeBinary } from "./binary.js";
 import { commit } from "./commit.js";
 import { diff } from "./diff.js";
 import { edit } from "./edit.js";
@@ -19,4 +20,4 @@ import { write } from "./write.js";
  * method section and the dispatch are all derived from it. A new method is a
  * new file exporting one entry, and one line here.
  */
-export const METHODS: readonly Method[] = [repo, whoami, ls, readMany, history, commit, read, glob, grep, diff, write, edit, rm, revert];
+export const METHODS: readonly Method[] = [repo, whoami, ls, readMany, history, commit, read, glob, grep, diff, write, edit, rm, revert, readBinary, writeBinary];

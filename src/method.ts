@@ -1,4 +1,5 @@
 import type { Limits } from "./cli.js";
+import type { Held } from "./held.js";
 import type { Reason } from "./errors.js";
 
 /**
@@ -26,8 +27,10 @@ export interface Context {
   /** The session the host says is calling. The provenance `run` of a write. S1.5 */
   readonly sessionId: string;
   readonly limits: Limits;
-  /** Runs the CLI in the session's folder and returns its parsed output, or throws a SynsError. */
-  syns(args: string[], stdin?: string): Promise<unknown>;
+  /** Runs the CLI in the session's folder and returns its parsed output, or throws a SynsError. Bytes on standard input travel as bytes. */
+  syns(args: string[], stdin?: string | Buffer): Promise<unknown>;
+  /** What the plugin holds between calls (D27). */
+  readonly held: Held;
 }
 
 export interface Command {

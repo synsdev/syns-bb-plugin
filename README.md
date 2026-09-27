@@ -48,6 +48,8 @@ plugin id, and the methods are `syns.*`.
 | `syns.commit` | write | Several files and deletions as one version, all or nothing |
 | `syns.write` · `syns.edit` · `syns.rm` | write | One file's text (optionally only if new) · a replacement in it · its removal |
 | `syns.revert` | write | One file back to its text at an earlier version |
+| `syns.readBinary` | read | A file's bytes, such as a picture, as base64 in pieces of up to 720 KiB |
+| `syns.writeBinary` | write | A file's bytes: whole up to 720 KiB, or larger in ordered pieces, published after the last; up to 25 MiB |
 
 `version` is a commit SHA and opaque. Every write but `syns.revert` requires
 `base`, the version the page last read; a moved head refuses it as `conflict`
@@ -55,7 +57,9 @@ with reason `stale_head` and the current version. While an agent is mid-turn in
 the folder with unpublished edits, writes are refused as `checkout_dirty`.
 Failures carry a fixed `code` and usually a `reason`: `no_repo`, `no_access`,
 `cli_missing`, `timeout`, `stale_head`, `checkout_dirty`, `exists`, `no_match`,
-`many_matches`, `bad_pattern`, `invalid_change`.
+`many_matches`, `bad_pattern`, `invalid_change`, `bad_offset`, `bad_hash`,
+`too_large`. `syns.commit` also takes a picture's bytes beside texts, inline or
+as an upload `syns.writeBinary` gathered with `hold: true`.
 
 Page authors get the full reference, generated from the code, with
 `bb thread-page guide`, section *Capabilities from other plugins*.
@@ -68,6 +72,11 @@ Page authors get the full reference, generated from the code, with
   that a page made it. The plugin calls it as it is; the fix belongs in the CLI.
 - **`syns.rm` of a path that is not there succeeds** with `changed: 0`, as the
   CLI does.
+- **Pictures cross in pieces.** A page call carries at most 1 MiB, so bytes
+  travel as base64 in 720 KiB pieces; an 8 MiB photo is 12 calls each way. The
+  plugin holds a picture being gathered or read in memory for a minute between
+  pieces, and bb's host calls carry at most 8 MiB, so larger standard input and
+  output cross between the plugin's two halves in slices, also in memory only.
 - **Pages show published state.** An agent's edits in the folder reach a page
   after its turn ends and is pushed.
 - Thread Pages refuses any result over 10,000 JSON values, which is why `syns.ls`

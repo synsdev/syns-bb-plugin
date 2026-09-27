@@ -19,6 +19,9 @@ interface ReasonEntry {
 
 const SHA = { type: "string", pattern: "^[0-9a-f]{40}$", maxLength: 40 };
 
+/** `LIM-file-size`: the most one file in Syns may hold (D-088, HOST_FACTS §12). */
+export const FILE_MAX = 25 * 1024 * 1024;
+
 export const REASONS = {
   no_repo: {
     code: "unavailable",
@@ -76,6 +79,23 @@ export const REASONS = {
     code: "invalid_params",
     message: "The search pattern could not be understood.",
     meaning: "The regular expression or glob does not parse.",
+  },
+  bad_offset: {
+    code: "conflict",
+    message: "The picture's pieces did not arrive in order, or were dropped. Send it again from the offset expected.",
+    meaning: "The plugin holds detail.expected bytes of this picture: send the piece at that offset. 0 means start again, as after a minute's pause or when a named upload is no longer held.",
+    detail: { type: "object", properties: { expected: { type: "integer", minimum: 0 } }, required: ["expected"] },
+  },
+  bad_hash: {
+    code: "invalid_params",
+    message: "The picture that arrived is not the one described. Nothing was written.",
+    meaning: "The gathered bytes' SHA-256 is not sha256. The pieces are dropped; nothing is published.",
+  },
+  too_large: {
+    code: "invalid_params",
+    message: "The file is larger than one file in Syns may be. Nothing was written.",
+    meaning: "Past detail.max bytes, the most one file may hold (25 MiB).",
+    detail: { type: "object", properties: { max: { type: "integer" } }, required: ["max"] },
   },
   invalid_change: {
     code: "invalid_params",
@@ -175,6 +195,8 @@ export async function interpret(run: RunResult, declared: readonly string[], run
     throw fail("no_access");
   }
   if (exit === 1 && error.includes("invalid pattern")) throw fail("bad_pattern");
+  // Row 8b: a file past the one-file limit, refused by the CLI before anything is sent (HOST_FACTS §12).
+  if (exit === 1 && error.startsWith("payload_too_large")) throw fail("too_large", { max: FILE_MAX });
   // Row 8a: with --version the CLI answers a missing path, and an unknown version, in words of its own
   // rather than with the 404.
   if (exit === 1 && error.includes("path not found at version")) throw new SynsError("not_found");

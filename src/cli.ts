@@ -9,6 +9,8 @@ export interface RunRequest {
   cwd: string;
   args: string[];
   stdin?: string;
+  /** Standard input as bytes, base64 across the host call, for `write --bytes` (D25). Never beside `stdin`. */
+  stdinBase64?: string;
   /** The host half stops the process after this long. S2.14 */
   timeoutMs: number;
 }
@@ -71,7 +73,7 @@ export function buildArgs(verb: string, options: Record<string, OptionValue> = {
 export interface Cli {
   readonly limits: Limits;
   /** One CLI process, inside the limits. `deadline` is when the page's call must have answered. */
-  run(where: Where, args: string[], stdin: string | undefined, deadline: number): Promise<RunResult>;
+  run(where: Where, args: string[], stdin: string | Buffer | undefined, deadline: number): Promise<RunResult>;
 }
 
 const TIMED_OUT: RunResult = { exitCode: null, stdout: "", stderr: "", timedOut: true, spawnError: null, overflowed: false };
@@ -91,7 +93,8 @@ export function createCli(runner: Runner, limits: Limits = LIMITS): Cli {
       try {
         const left = deadline - Date.now();
         if (left <= 0) return TIMED_OUT;
-        return await runner.run({ hostId: where.hostId, cwd: where.cwd, args, ...(stdin === undefined ? {} : { stdin }), timeoutMs: Math.min(limits.processMs, left) });
+        const input = stdin === undefined ? {} : typeof stdin === "string" ? { stdin } : { stdinBase64: stdin.toString("base64") };
+        return await runner.run({ hostId: where.hostId, cwd: where.cwd, args, ...input, timeoutMs: Math.min(limits.processMs, left) });
       } finally {
         const next = slots.waiting.shift();
         if (next) next();

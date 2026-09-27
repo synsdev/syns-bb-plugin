@@ -11,7 +11,7 @@ writing a page that calls `syns.*` needs `bb thread-page guide`, section
 
 ## What it is
 
-Plugin id `syns` (package `bb-plugin-syns`). It contributes fourteen `syns.*`
+Plugin id `syns` (package `bb-plugin-syns`). It contributes sixteen `syns.*`
 capabilities to Thread Pages. A page's call reaches the plugin's server half,
 which finds the calling session's machine and folder and asks its host half, on
 that machine, to run the Syns CLI there. The repository is always the one that
@@ -81,6 +81,8 @@ bb plugin rpc call syns threadPagesInvoke --input-file /tmp/syns-call.json --jso
 | `conflict` / `checkout_dirty` | The session's folder holds unpublished edits, usually because its agent is mid-turn. The CLI refuses writes until they are pushed. | Nothing to fix: it clears when the turn's push lands. A folder left dirty by hand: `syns status` there, then publish the edits with `syns sync` or restore the files. |
 | `handler_error` | Anything the plugin did not recognise: an unexpected CLI message, output that is not JSON, a host call that failed. | The log line names the exit code and the output. A CLI release that rewords a message shows up here; the plugin recognises several refusals by their English text. |
 | `response_too_large` | Thread Pages refuses a result over its response bound or over 10,000 JSON values. | The page asks for less: a narrower `path`, a smaller `limit` or `headLimit`. |
+| `conflict` / `bad_offset` | A picture's pieces arrived out of order, or the plugin dropped them after a minute's pause, or since the plugin reloaded; `detail.expected` is where to resume, 0 to start again. | The page resends from `expected`. Many in a row: the page is sending pieces in parallel, or pausing between them. |
+| `handler_error` naming `host output … exceeds 8388608 bytes` | A plugin older than 0.2.0 reading or writing a picture past one bb host call. | Update the plugin: 0.2.0 slices it (D32). |
 
 ## Known limits, the CLI's own
 
