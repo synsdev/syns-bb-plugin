@@ -234,7 +234,7 @@ describe("the tool-first skill (spec 04 §The skills, D35)", () => {
   });
 
   it("puts a tool's session in the holder's own bb project, its environment the folder; a project at the folder only when the holder has none (the lead's ruling)", () => {
-    for (const word of ["in the holding repository's own bb project, with its\nenvironment set to the tool's folder", "taken off its end", "select(any(.sources[]; .path == $root))", "Only when there is none, create one", "--project <the holder's project> --environment <absolute folder>", "`$BB_PROJECT_ID` is the holder's project"]) expect(skill, word).toContain(word);
+    for (const word of ["in the holding repository's own bb project, with its\nenvironment set to the tool's folder", "taken off its end", "Only when there is none, create one", "--project <the holder's project> --environment <absolute folder>", "`$BB_PROJECT_ID` is the holder's project"]) expect(skill, word).toContain(word);
     expect(skill).not.toContain("--project <project id>");
     expect(skill.indexOf("bb project create")).toBeGreaterThan(skill.indexOf("bb project list --json"));
   });
@@ -260,9 +260,17 @@ describe("the tool-first skill (spec 04 §The skills, D35)", () => {
     for (const word of ["already holds", "is no repository you can read", "`.syns.yaml` below its root", "`folder_write_unsupported`", "`folder out of place`", "**`holder root required`**"]) expect(skill, word).toContain(word);
   });
 
-  it("runs syns outside the sandbox, saying why, and needs no whoami for a fork (live check L8b)", () => {
-    for (const word of ["**`syns` runs outside the sandbox.**", "could not reach server", "the person asked for this\ntool", "`<you>` is the `owner` of the fork it answers", "outside this session's\n     folder, on purpose"]) expect(skill, word).toContain(word);
+  it("follows the lead's network rule: syns normally, one failed command rerun outside the sandbox, else a new chat with permission Full (review 1)", () => {
+    for (const word of ["Run `syns` normally.", "rerun **that command** outside the sandbox", "Syns issue 198", "start a new\nchat in bb with permission set to Full and send the same message again", "Never bypass the sandbox ahead of time."]) expect(skill, word).toContain(word);
+    expect(skill).not.toContain("Run\neach `syns` command outside the sandbox");
     expect(skill).not.toContain("syns whoami");
+  });
+
+  it("places with --json, skips enable-checks when enableChecks is null, and resolves paths before the project lookup (review 3, 4)", () => {
+    expect(skill).toContain("syns place <owner/name> <folder> --json");
+    expect(skill).toContain("When `enableChecks` is `null`, the template has no checks:\n  skip this step.");
+    expect(skill).toContain('root="$(realpath "<holder root>")"');
+    expect(skill).toContain('[ "$(realpath "$p" 2>/dev/null)" = "$root" ]');
   });
 
   it("checks for syns place only where it places, so a fork works with a CLI that has none (review N1)", () => {

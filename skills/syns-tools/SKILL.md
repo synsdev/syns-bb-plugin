@@ -16,11 +16,12 @@ a review, helper or coding session that was given a different job. It does not
 apply either when `bb thread-page init` says SKIP. Write the page as the
 Thread Pages guide says.
 
-**`syns` runs outside the sandbox.** Every `syns` command talks to syns.dev
-itself and does not go through a sandbox's network proxy. Inside a command
-sandbox it answers `could not reach server` even with the domain allowed. Run
-each `syns` command outside the sandbox, and say why: the person asked for this
-tool, and it lives in their Syns account.
+**The network rule.** Run `syns` normally. If a command answers `could not
+reach server`, rerun **that command** outside the sandbox, and say why: the
+CLI does not use the sandbox's network proxy (Syns issue 198). If running it
+outside the sandbox is refused, tell the person in plain words to start a new
+chat in bb with permission set to Full and send the same message again, then
+stop. Never bypass the sandbox ahead of time.
 
 ## 1. Find a template
 
@@ -58,7 +59,7 @@ Run `syns repo --json` in the session's folder.
   take over the folder. Otherwise:
 
   ```sh
-  syns place <owner/name> <folder>
+  syns place <owner/name> <folder> --json
   ```
 
   Run it in the session's folder, or inside a placed folder, where it places
@@ -77,8 +78,9 @@ Run `syns repo --json` in the session's folder.
 
   **Turn on the template's checks.** Placing records the checks the template
   declares under `template:` in the folder's `.syns.yaml`, where they are off.
-  With `--json`, its `checks` lists them, and `enableChecks` is the one command
-  that turns them on (`null` when there are none):
+  Its answer's `checks` lists them, and `enableChecks` is the one command that
+  turns them on. When `enableChecks` is `null`, the template has no checks:
+  skip this step. Otherwise:
 
   ```sh
   syns enable-checks <folder>
@@ -134,9 +136,12 @@ bb's sidebar, and lets a page find it again. Find that project first:
    folder's absolute path with that `path` taken off its end. For a fork, the
    root is the fork's folder, `~/.syns/<name>`.
 2. Its bb project on this machine: the project with a source at that root.
+   Compare the paths resolved with `realpath`, so that a symlink, `/tmp`
+   against `/private/tmp`, or a `~` does not hide the project:
 
    ```sh
-   bb project list --json | jq -r --arg root "<holder root>" '.[] | select(any(.sources[]; .path == $root)) | .id'
+   root="$(realpath "<holder root>")"
+   bb project list --json | jq -r '.[] | .id as $id | .sources[] | "\($id)\t\(.path)"' | while IFS=$'\t' read -r id p; do [ "$(realpath "$p" 2>/dev/null)" = "$root" ] && echo "$id"; done
    ```
 
    Only when there is none, create one: `bb project create --name <name> --root
