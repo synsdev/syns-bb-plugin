@@ -38,7 +38,7 @@ After a \`syns.read { fit: true }\` window, read on from \`offset + limit\`. Its
 
 Poll only \`syns.repo\`, with the host's \`watch\`. When its \`version\` differs from the one held, \`syns.diff { from }\` with the held one lists each changed path and \`status\` (\`added\`, \`modified\`, \`deleted\`) up to \`to.version\`. Re-read those with \`syns.readMany\` at \`to.version\` and hold it. \`patch: true\` adds each patch. There is no push.
 
-\`syns.history { limit }\` says who changed what. \`by.run\` is this page's session id when the page made it, another bb session id when that session's page did, null from outside pages: an agent's push, the CLI, the web, or \`syns.revert\`. Its \`path\` matches one file exactly: a folder answers nothing.
+\`syns.history { limit }\` says who changed what. A page's write has \`by.integration\` \`syns-bb-plugin\` and \`by.trigger\` \`thread-page\`; then \`by.run\` is the bb session whose page made it. Others set \`by.run\` too (an agent's push names its session): never read it alone as a page's. \`syns.revert\` records none. Its \`path\` matches one file exactly.
 
 ## Pictures
 

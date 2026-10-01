@@ -155,6 +155,15 @@ describe("syns.history", () => {
     expect(result.entries[1]).toMatchObject({ parent: null, by: { integration: null, run: null, trigger: null } });
     expect(h.runner.calls[0]!.args).toEqual(["history", "--limit=20", "--json"]);
   });
+  it("passes an agent's push as recorded: by.run set, but neither the plugin's integration nor its trigger (Syns issue 214)", async () => {
+    const entries = resultOf<{ entries: { by: Record<string, unknown> }[] }>(await harness({ history: rec("history.agent-push") }).call("syns.history")).entries;
+    expect(entries.map((entry) => entry.by)).toEqual([
+      { integration: "claude-code", run: "d0280c76-0000-4000-8000-000000000001", trigger: "finish" },
+      { integration: "claude-code", run: "3db5c4eb-0000-4000-8000-000000000002", trigger: "agent" },
+    ]);
+    // What marks a page's write is the pair below, which only the plugin sets; a run alone does not.
+    for (const entry of entries) expect(entry.by.integration === "syns-bb-plugin" && entry.by.trigger === "thread-page").toBe(false);
+  });
   it("passes path as --file=PATH, never as a bare argument", async () => {
     const h = harness({ history: rec("history.ok") });
     await h.call("syns.history", { path: "notes/a.md", limit: 100 });

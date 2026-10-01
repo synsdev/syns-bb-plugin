@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { rec } from "./fake-runner.js";
-import { HEAD, OLD, failureOf, harness, resultOf } from "./harness.js";
+import { HEAD, OLD, SAMPLES, failureOf, harness, resultOf } from "./harness.js";
 
 const PROVENANCE = ["--integration=syns-bb-plugin", "--trigger=thread-page"];
 const NEW = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1";
@@ -184,6 +184,19 @@ describe("a page can set none of a write's provenance (S1.5)", () => {
       const h = harness();
       for (const key of ["integration", "trigger", "run", "taskRef"]) expect(failureOf(await h.call(method, { ...params, [key]: "x" })).code, key).toBe("invalid_params");
       expect(failureOf(await h.call(method, { ...params, message: "m".repeat(501) })).code).toBe("invalid_params");
+    });
+  }
+});
+
+describe("every page write carries the page's mark, which no other publisher sets (D6, Syns issue 214)", () => {
+  // Pages tell their own writes by integration and trigger together: run alone is set by agents' pushes too.
+  for (const method of ["syns.write", "syns.edit", "syns.rm", "syns.commit", "syns.writeBinary"]) {
+    it(method, async () => {
+      const h = harness();
+      await h.call(method, SAMPLES[method], "thr_page");
+      const published = h.runner.calls.filter((call) => call.args.includes("--integration=syns-bb-plugin"));
+      expect(published, method).toHaveLength(1);
+      expect(published[0]!.args).toEqual(expect.arrayContaining(["--integration=syns-bb-plugin", "--trigger=thread-page", "--run=thr_page"]));
     });
   }
 });

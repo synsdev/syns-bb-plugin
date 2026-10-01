@@ -6,7 +6,7 @@ const record = (value: unknown): Record<string, unknown> => (typeof value === "o
 
 export const history: SimpleMethod = {
   name: "syns.history",
-  description: "The newest versions first: who or what made each, and the paths it changed. by.run is the bb session whose page made the commit. No paging beyond limit (default 20); total says how much there is.",
+  description: "Newest versions first: who or what made each, and the paths it changed. A page's commit has by.integration syns-bb-plugin and by.trigger thread-page. No paging past limit (default 20); total says how many.",
   effect: "read",
   params: object({ path, limit: { type: "integer", minimum: 1, maximum: 100 } }),
   result: {

@@ -180,6 +180,15 @@ describe("what agents are told", () => {
     for (const reason of ["exists", "no_match", "many_matches", "bad_pattern"]) expect(declaration.guide, reason).toContain(`\`${reason}\``);
   });
 
+  it("the guide identifies a page's write by integration and trigger, never by run alone (Syns issue 214, 0.3.1)", () => {
+    expect(declaration.guide).toContain("A page's write has `by.integration` `syns-bb-plugin` and `by.trigger` `thread-page`");
+    expect(declaration.guide).toContain("never read it alone as a page's");
+    expect(declaration.guide).not.toContain("null from outside pages");
+    const history = declaration.methods.find((method) => method.name === "syns.history")!;
+    expect(history.description).toContain("by.integration syns-bb-plugin and by.trigger thread-page");
+    expect(history.description).not.toContain("by.run is the bb session");
+  });
+
   it("the guide says plainly what syns.revert lacks today, and its recipes use the full set (D13, spec 04)", () => {
     expect(declaration.guide).toMatch(/syns\.revert[^\n]*no stale check[^\n]*no provenance/);
     expect(declaration.guide).toContain("syns.diff { from }");
