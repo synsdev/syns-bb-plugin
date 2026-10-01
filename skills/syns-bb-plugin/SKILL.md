@@ -14,8 +14,8 @@ writing a page that calls `syns.*` needs `bb thread-page guide`, section
 Plugin id `syns` (package `bb-plugin-syns`). It contributes sixteen `syns.*`
 capabilities to Thread Pages. A page's call reaches the plugin's server half,
 which finds the calling session's machine and folder and asks its host half, on
-that machine, to run the Syns CLI there. The repository is always the one that
-session's folder belongs to. The plugin opens no repository file and keeps no
+that machine, to run the Syns CLI there. The page sees the repository, or the placed folder, that
+session's folder belongs to, with paths counted from there. The plugin opens no repository file and keeps no
 state about a repository.
 
 ## What each machine needs
@@ -26,7 +26,9 @@ state about a repository.
   machine under the account logged in there, so access is whatever that account
   can reach. Check on that machine: `syns --version`, `syns whoami`.
 - A session whose folder is inside a Syns checkout (a folder at or below one
-  holding `.syns.yaml`). Anywhere else every method answers `no_repo`, by design.
+  holding `.syns.yaml`). Where the nearest `.syns.yaml` names a `holder` and a
+  `path`, the folder is a placed folder and the page sees only it. Anywhere else
+  every method answers `no_repo`, by design.
 
 ## Installing and updating
 

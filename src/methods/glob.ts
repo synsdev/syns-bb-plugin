@@ -8,7 +8,7 @@ const record = (value: unknown): Record<string, unknown> => (typeof value === "o
 
 export const glob: SimpleMethod = {
   name: "syns.glob",
-  description: "The files whose whole repository-relative path matches a glob pattern such as notes/**/*.md, under path (default root), at version (default head). No match: an empty list. Paged: up to 2000 from offset; nextOffset is null on the last page.",
+  description: "The files whose whole path matches a glob pattern such as notes/**/*.md, under path (default root), at version (default head). No match: an empty list. Paged: up to 2000 from offset; nextOffset is null on the last page.",
   effect: "read",
   params: object({ pattern: { type: "string", minLength: 1, maxLength: 512 }, path, version, offset: { type: "integer", minimum: 0 }, limit: { type: "integer", minimum: 1, maximum: PAGE } }, ["pattern"]),
   result: {

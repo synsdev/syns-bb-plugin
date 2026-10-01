@@ -26,7 +26,7 @@ export const REASONS = {
   no_repo: {
     code: "unavailable",
     message: "This session's folder is not a Syns repository.",
-    meaning: "The session's folder holds no Syns repository, or the caller is the home page. Say so on the page and keep the rest working.",
+    meaning: "The session's folder holds no Syns repository, or the caller is the home page.",
   },
   no_access: {
     code: "unavailable",
@@ -51,13 +51,13 @@ export const REASONS = {
   stale_head: {
     code: "conflict",
     message: "The repository changed since this page last read it. Nothing was written.",
-    meaning: "base is no longer the head; detail.current is the head now. Re-read, show the reader what changed, let them try again.",
+    meaning: "The repository, or the placed folder, changed after base. Nothing written; detail.current is the head. Re-read, show the reader what changed, let them retry; never blindly.",
     detail: { type: "object", properties: { current: SHA }, required: ["current"] },
   },
   checkout_dirty: {
     code: "conflict",
     message: "An agent is working in this session's folder and has unpublished edits. Nothing was written; try again when its turn ends.",
-    meaning: "The session's folder has unpublished edits, usually an agent mid-turn. Say the agent is working; try again when syns.repo's version moves.",
+    meaning: "The session's folder has unpublished edits, usually an agent mid-turn. Nothing written. Say the agent is working; try again when syns.repo's version moves.",
   },
   exists: {
     code: "conflict",
@@ -83,7 +83,7 @@ export const REASONS = {
   bad_offset: {
     code: "conflict",
     message: "The picture's pieces did not arrive in order, or were dropped. Send it again from the offset expected.",
-    meaning: "The plugin holds detail.expected bytes of this picture: send the piece at that offset. 0 means start again, as after a minute's pause or when a named upload is no longer held.",
+    meaning: "Send the piece at offset detail.expected; 0 means start again, as after a minute's pause or when a named upload is no longer held.",
     detail: { type: "object", properties: { expected: { type: "integer", minimum: 0 } }, required: ["expected"] },
   },
   bad_hash: {

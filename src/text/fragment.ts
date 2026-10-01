@@ -1,17 +1,20 @@
 /**
  * The instruction fragment (spec 04): read by every eligible session, every
- * time, so at most 2 KiB. It names all sixteen methods, briefly, and none other (S4.4),
- * and says in words when it applies (S4.2). Declared to the host with the
- * method list, and injected nowhere else (S4.1).
+ * time. The host allows 2 KiB, but bb cuts the whole Thread Pages instruction
+ * at 4,096 characters, and after its standing instruction 1,505 are left
+ * (HOST_FACTS §13), so the fragment stays within FRAGMENT_MAX (D35). It says in words when the rest
+ * applies (S4.2), names only methods this version registers (S4.4), and is
+ * declared to the host with the method list and injected nowhere else (S4.1).
  */
-export const FRAGMENT = `**Syns repository.** When this session's folder is a Syns repository, your page can read and write that repository through \`syns.*\` capabilities. Check \`context.get\` for them when the page loads; if they are absent, or a call answers \`unavailable\` with reason \`no_repo\`, say so on the page and keep the rest working. Never show invented data in their place.
+export const FRAGMENT = `**Syns repository.** When this session's folder is a Syns repository, or a folder placed in one, the page reads and writes it through \`syns.*\`. Check \`context.get\` at load; absent, or \`unavailable\` / \`no_repo\`: say so and keep the rest working. Never show invented data.
 
-- **The page never names a repository.** It is the one this session's folder belongs to.
-- **Pages show published state.** Files you edit in the folder reach the page after your turn ends and is pushed. Do not expect a page to show an edit you have just made.
-- **Every write needs \`base\`:** the \`version\` the page last read from \`syns.repo\`. \`syns.write\` (one file; \`create: true\` for a new one), \`syns.edit\`, \`syns.rm\`, or \`syns.commit\` for several changes as one. \`syns.revert\` alone checks no base today. If the repository has moved, the write fails with \`conflict\` and reason \`stale_head\`; re-read, show the reader what changed, and let them try again. While an agent is mid-turn in this folder, writes fail with reason \`checkout_dirty\`; say the agent is working and try again when the version moves.
-- **Load with \`syns.ls\` and \`syns.readMany\`,** not one call per file. Poll only \`syns.repo\` with \`watch\`, and when its \`version\` changes ask \`syns.diff\` which files to re-read. \`syns.read\` windows a large file, \`syns.readBinary\` and \`syns.writeBinary\` move a picture's bytes, \`syns.glob\` finds paths, \`syns.grep\` searches texts; \`syns.history\` says who or what made a change, \`syns.whoami\` who the reader is.
+- **The page names no repository.** It sees the repository, or the placed folder, its session's folder belongs to; paths count from there.
+- **Pages show pushed state:** your edits reach the page after your turn is pushed.
+- **Every write needs \`base\`,** the \`version\` last read from \`syns.repo\`. \`conflict\` / \`stale_head\`: re-read, show what changed, let the reader retry. \`checkout_dirty\`: an agent is mid-turn; retry when \`version\` moves.
+- **Load with \`syns.ls\` and \`syns.readMany\`;** poll only \`syns.repo\` with \`watch\`. Writes publish at once to all who share the repository: say what a control changes.
 
-Writes happen at once, with no confirmation, and are published to everyone who shares the repository. Make clear on the page what a control will change before the reader touches it.
-
-Parameters, results and errors of every method: \`bb thread-page guide\`, section *Capabilities from other plugins*.
+Every method: \`bb thread-page guide\`, *Capabilities from other plugins*.
 `;
+
+/** What survives bb's 4,096-character cut after Thread Pages 1.7.0's standing instruction (2,575) and the heading "## From syns" (HOST_FACTS §13), less a margin. */
+export const FRAGMENT_MAX = 1450;

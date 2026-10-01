@@ -12,6 +12,24 @@ describe("syns.repo", () => {
     const h = harness({ repo: ok({ owner: "o", name: "n", commitSha: null, role: "owner", visibility: "private", fileCount: 0 }) });
     expect(resultOf(await h.call("syns.repo")).version).toBeNull();
   });
+  it("passes on a placed folder's holder, path and version number, and the holder's identity beside them (A55, D34)", async () => {
+    const h = harness({ repo: rec("repo.folder") });
+    expect(resultOf(await h.call("syns.repo"))).toEqual({ owner: "acme", name: "work", version: "7a1e39bf2c8b1642ce9bccded11e1754c51a0a5d", number: 12, role: "owner", visibility: "private", fileCount: 20, holder: "acme/work", path: "clients/vela/q3-board" });
+    expect(h.runner.calls.map((call) => call.args)).toEqual([["repo", "--json"]]);
+  });
+  it("leaves holder, path and number absent where the CLI reports none, as at a repository's root today (D34)", async () => {
+    const result = resultOf(await harness({ repo: rec("repo.ok") }).call("syns.repo"));
+    for (const key of ["holder", "path", "number"]) expect(result, key).not.toHaveProperty(key);
+  });
+  it("passes number at a root too, once the CLI reports it there, and null with no commit yet (D34)", async () => {
+    expect(resultOf(await harness({ repo: ok({ owner: "o", name: "n", commitSha: HEAD, version: 3, role: "owner", visibility: "private", fileCount: 1 }) }).call("syns.repo"))).toMatchObject({ version: HEAD, number: 3 });
+    const empty = resultOf(await harness({ repo: ok({ owner: "o", name: "n", commitSha: null, version: null, holder: "o/n", path: "a", role: "owner", visibility: "private", fileCount: 0 }) }).call("syns.repo"));
+    expect(empty).toMatchObject({ version: null, number: null, holder: "o/n", path: "a" });
+  });
+  it("passes on no field the CLI reports beyond the named ones, and none of the wrong type (S1.7)", async () => {
+    const result = resultOf(await harness({ repo: ok({ owner: "o", name: "n", commitSha: HEAD, version: "12", holder: 7, path: null, description: "d", tags: ["x"], role: "owner", visibility: "private", fileCount: 1 }) }).call("syns.repo"));
+    expect(Object.keys(result).sort()).toEqual(["fileCount", "name", "owner", "role", "version", "visibility"]);
+  });
   it("answers no_access when the CLI prints the 404 and repo, asked again, fails too (S3.5)", async () => {
     const h = harness({ repo: rec("not-found-404") });
     expect(failureOf(await h.call("syns.repo"))).toMatchObject({ code: "unavailable", reason: "no_access" });

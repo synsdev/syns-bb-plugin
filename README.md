@@ -30,14 +30,14 @@ plugin id, and the methods are `syns.*`.
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| `agentInstructions` | `true` | Tell every eligible session about `syns.*`, in about 1.8 KiB joined to the Thread Pages instruction |
+| `agentInstructions` | `true` | Tell every eligible session about `syns.*`, in about 0.9 KiB joined to the Thread Pages instruction, which bb cuts at 4,096 characters |
 | `synsPath` | unset | Absolute path of the `syns` executable, when it is not on the daemon's `PATH` or in `~/.cargo/bin`, `~/.local/bin`, `/usr/local/bin`, `/opt/homebrew/bin` |
 
 ## The methods
 
 | Method | Effect | What it does |
 | --- | --- | --- |
-| `syns.repo` | read | Owner, name and head `version`. The call a page polls with `watch` |
+| `syns.repo` | read | Owner, name and head `version`; in a placed folder also `holder`, `path` and `number`. The call a page polls with `watch` |
 | `syns.whoami` | read | The account logged in on that machine |
 | `syns.ls` | read | Files and folders, each file with a content hash, `blob`. Paged |
 | `syns.readMany` | read | Up to 64 whole files at one version; what did not fit comes back as `deferred` |
@@ -79,6 +79,10 @@ Page authors get the full reference, generated from the code, with
   output cross between the plugin's two halves in slices, also in memory only.
 - **Pages show published state.** An agent's edits in the folder reach a page
   after its turn ends and is pushed.
+- **A placed folder is all its page sees.** Run in a folder whose `.syns.yaml`
+  names a `holder` and a `path`, every path is counted from the folder, and
+  `syns.repo` reports the holder's head, which moves with any change to the
+  holder. This needs a Syns CLI with folders (roadmap 239–241).
 - Thread Pages refuses any result over 10,000 JSON values, which is why `syns.ls`
   and `syns.glob` are paged and `syns.grep` lowers its row limit as context grows.
 - Proven on one machine. A session on a second enrolled host, a worktree
@@ -94,7 +98,7 @@ that table. Add an entry and its test; touch nothing else.
 
 ```sh
 npm install
-npm test            # 235 tests; no network, no login, no bb — the CLI is replayed from recordings
+npm test            # 286 tests; no network, no login — the CLI is replayed from recordings; one test reads the instruction from this machine's bb, skipped without one
 npm run typecheck
 npm run build       # bb plugin build
 ```

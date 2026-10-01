@@ -10,9 +10,12 @@ machine. This plugin adds sixteen `syns.*` capabilities to every page, so a page
 built over a Syns repository — a wiki, a task board, a notebook — can list, read,
 search and change that repository's files.
 
-The page never names a repository. It gets the one its session's folder belongs
-to, with whatever access the Syns account logged in on that machine has. In a
-folder that is no Syns repository, every call answers `no_repo`.
+The page never names a repository. It sees the repository, or the placed
+folder, its session's folder belongs to, with paths counted from there and
+whatever access the Syns account logged in on that machine has. A placed folder
+is a Syns app template copied into a repository as a tool: its page sees that
+folder alone. In a folder that is no Syns repository, every call answers
+`no_repo`.
 
 ## How it works
 

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { VERSION, buildDeclaration } from "../src/declaration.js";
 import { K64, object, reasonsOf, type Method, type Schema } from "../src/method.js";
 import { METHODS } from "../src/methods/index.js";
-import { FRAGMENT } from "../src/text/fragment.js";
+import { FRAGMENT, FRAGMENT_MAX } from "../src/text/fragment.js";
 import { buildGuide } from "../src/text/guide.js";
 import { ok } from "./fake-runner.js";
 import { harness, resultOf } from "./harness.js";
@@ -151,15 +151,26 @@ describe("the declaration", () => {
 });
 
 describe("what agents are told", () => {
-  it("the fragment is at most 2 KiB and the guide at most 16 KiB (A8)", () => {
+  it("the fragment is within FRAGMENT_MAX, and the guide 16 KiB (A8, S4.6); the space bb leaves is checked live in instruction-cap.test.ts", () => {
+    expect(declaration.instruction!.length).toBeLessThanOrEqual(FRAGMENT_MAX);
     expect(Buffer.byteLength(declaration.instruction!)).toBeLessThanOrEqual(2 * 1024);
     expect(Buffer.byteLength(declaration.guide)).toBeLessThanOrEqual(16 * 1024);
     expect(declaration.instruction).toBe(FRAGMENT.trim());
   });
 
-  it("the guide and the fragment name exactly the registered methods (A9, S4.4)", () => {
+  it("the fragment and the guide say the folder rule: a placed folder is what the page sees, paths counted from it (A57, D36)", () => {
+    expect(declaration.instruction).toMatch(/or a folder placed in one/);
+    expect(declaration.instruction).toContain("It sees the repository, or the placed folder, its session's folder belongs to; paths count from there.");
+    expect(declaration.instruction).not.toMatch(/never names a repository\.\*\* It is the one/);
+    expect(declaration.guide).toContain("## A placed folder");
+    for (const word of ["`holder`", "counted from it", "the holder's", "Once the CLI checks writes against the folder only, a write is `stale_head` only when the folder changed after `base`"]) expect(declaration.guide, word).toContain(word);
+    expect(declaration.guide).not.toContain("repository-relative");
+    expect(declaration.guide).not.toContain("Choose a repository: it is the session's.");
+  });
+
+  it("the guide names exactly the registered methods, the fragment none other (A9, S4.4)", () => {
     expect(namesIn(declaration.guide)).toEqual(SIXTEEN);
-    expect(namesIn(declaration.instruction!)).toEqual(SIXTEEN); // the fragment mentions the full set, briefly
+    for (const name of namesIn(declaration.instruction!)) expect(SIXTEEN).toContain(name);
     for (const reason of ["exists", "no_match", "many_matches", "bad_pattern"]) expect(declaration.guide, reason).toContain(`\`${reason}\``);
   });
 
@@ -194,7 +205,7 @@ describe("what agents are told", () => {
   });
 });
 
-describe("the skill (spec 04 §The skill)", () => {
+describe("the skill (spec 04 §The skills)", () => {
   const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { bb: { skills: string[] } };
   const skill = readFileSync(new URL("../skills/syns-bb-plugin/SKILL.md", import.meta.url), "utf8");
 
