@@ -30,8 +30,17 @@ plugin id, and the methods are `syns.*`.
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| `agentInstructions` | `true` | Tell every eligible session about `syns.*`, in about 0.9 KiB joined to the Thread Pages instruction, which bb cuts at 4,096 characters |
+| `agentInstructions` | `true` | Tell every eligible session about `syns.*`, in about 1.2 KiB joined to the Thread Pages instruction, which bb cuts at 4,096 characters |
 | `synsPath` | unset | Absolute path of the `syns` executable, when it is not on the daemon's `PATH` or in `~/.cargo/bin`, `~/.local/bin`, `/usr/local/bin`, `/opt/homebrew/bin` |
+
+## A tool first
+
+The plugin ships a second skill, `syns-tools`, besides the operator's
+`syns-bb-plugin`. Given a task a Syns app could serve (a brainstorm, a plan, a
+deck, a board…), an agent finds a `syns-app` template, places it as a folder
+with `syns place` (or forks it when the session is in no Syns repository), makes
+the template's `.page/loader.html` its page byte for byte, and follows the
+folder's `AGENTS.md`. The instruction fragment leads with that trigger.
 
 ## The methods
 
@@ -98,7 +107,7 @@ that table. Add an entry and its test; touch nothing else.
 
 ```sh
 npm install
-npm test            # 286 tests; no network, no login — the CLI is replayed from recordings; one test reads the instruction from this machine's bb, skipped without one
+npm test            # 288 tests; no network, no login, no bb — the CLI is replayed from recordings
 npm run typecheck
 npm run build       # bb plugin build
 ```

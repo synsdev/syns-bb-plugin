@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { VERSION, buildDeclaration } from "../src/declaration.js";
 import { K64, object, reasonsOf, type Method, type Schema } from "../src/method.js";
@@ -151,11 +151,18 @@ describe("the declaration", () => {
 });
 
 describe("what agents are told", () => {
-  it("the fragment is within FRAGMENT_MAX, and the guide 16 KiB (A8, S4.6); the space bb leaves is checked live in instruction-cap.test.ts", () => {
+  it("the fragment fits what bb lets through after the standing instruction, and the guide 16 KiB (A8, D35)", () => {
     expect(declaration.instruction!.length).toBeLessThanOrEqual(FRAGMENT_MAX);
+    expect(FRAGMENT_MAX).toBeLessThanOrEqual(4096 - 2575 - "\n\n## From syns\n\n".length); // HOST_FACTS §13
     expect(Buffer.byteLength(declaration.instruction!)).toBeLessThanOrEqual(2 * 1024);
     expect(Buffer.byteLength(declaration.guide)).toBeLessThanOrEqual(16 * 1024);
     expect(declaration.instruction).toBe(FRAGMENT.trim());
+  });
+
+  it("the fragment leads with a tool first, naming the skill that holds the steps (A56, D35)", () => {
+    expect(declaration.instruction!.startsWith("**A tool first.**")).toBe(true);
+    expect(declaration.instruction!.indexOf("`syns-tools`")).toBeLessThan(400);
+    expect(existsSync(new URL("../skills/syns-tools/SKILL.md", import.meta.url))).toBe(true);
   });
 
   it("the fragment and the guide say the folder rule: a placed folder is what the page sees, paths counted from it (A57, D36)", () => {
@@ -163,7 +170,7 @@ describe("what agents are told", () => {
     expect(declaration.instruction).toContain("It sees the repository, or the placed folder, its session's folder belongs to; paths count from there.");
     expect(declaration.instruction).not.toMatch(/never names a repository\.\*\* It is the one/);
     expect(declaration.guide).toContain("## A placed folder");
-    for (const word of ["`holder`", "counted from it", "the holder's", "Once the CLI checks writes against the folder only, a write is `stale_head` only when the folder changed after `base`"]) expect(declaration.guide, word).toContain(word);
+    for (const word of ["`holder`", "counted from it", "the holder's", "only when the folder changed after `base`"]) expect(declaration.guide, word).toContain(word);
     expect(declaration.guide).not.toContain("repository-relative");
     expect(declaration.guide).not.toContain("Choose a repository: it is the session's.");
   });
@@ -202,6 +209,21 @@ describe("what agents are told", () => {
     expect(quiet).not.toHaveProperty("instruction");
     expect(quiet.methods).toEqual(declaration.methods);
     expect(quiet.guide).toBe(declaration.guide);
+  });
+});
+
+describe("the tool-first skill (spec 04 §The skills, D35)", () => {
+  const skill = readFileSync(new URL("../skills/syns-tools/SKILL.md", import.meta.url), "utf8");
+
+  it("carries a name and a description that is itself the trigger", () => {
+    const frontmatter = /^---\n([\s\S]*?)\n---\n/.exec(skill)?.[1] ?? "";
+    expect(frontmatter).toMatch(/^name: syns-tools$/m);
+    expect(frontmatter).toMatch(/^description: ".{20,1024}"$/m);
+    for (const word of ["Before writing a Thread Page", "brainstorm", "deck", "template"]) expect(frontmatter, word).toContain(word);
+  });
+
+  it("holds the steps: find, pick, place or fork, the loader byte for byte, move or start a session, AGENTS.md", () => {
+    for (const word of ["syns explore -t syns-app -q", "issue 207", '.tags | index("syns-app")', "only `bartsoj/` templates", "write the page as the Thread Pages guide says", "syns place <owner/name> <folder>", "cannot determine repo identity", "syns fork", "--visibility private", ".page/loader.html", "byte for byte", "update_environment_directory", "already has its own page", "bb thread spawn", "Give no parent", "AGENTS.md", "Ask the person nothing"]) expect(skill, word).toContain(word);
   });
 });
 
