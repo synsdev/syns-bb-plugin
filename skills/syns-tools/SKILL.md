@@ -40,15 +40,15 @@ here and write the page as the Thread Pages guide says.
 
 ## 3. Place it
 
-First, `syns place --help`. If the CLI answers `unrecognized subcommand
-'place'`, the CLI is too old. Say so in one line on the page and write the page
-as today. Never copy a template's files by hand: its `.syns.yaml` would take
-over the folder.
-
-Then run `syns repo --json` in the session's folder.
+Run `syns repo --json` in the session's folder.
 
 - **It answers a repository** (the folder is a Syns repository, or a folder
   placed in one, which has a `holder`):
+
+  First, `syns place --help`. If the CLI answers `unrecognized subcommand
+  'place'`, the CLI is too old. Say so in one line on the page and write the
+  page as today. Never copy a template's files by hand: its `.syns.yaml` would
+  take over the folder. Otherwise:
 
   ```sh
   syns place <owner/name> <folder>
@@ -60,8 +60,8 @@ Then run `syns repo --json` in the session's folder.
   to disk.
 
 - **It answers `cannot determine repo identity`** (not a Syns repository):
-  fork the template into a new private repository. Do every step in this
-  order:
+  fork the template into a new private repository. This needs no
+  `syns place`, so it works with any CLI. Do every step in this order:
 
   1. Fork from an empty folder:
      `tmp="$(mktemp -d)" && (cd "$tmp" && syns fork <owner/name> --name <name>); rm -rf "$tmp"`.

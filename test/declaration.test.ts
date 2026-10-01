@@ -238,8 +238,15 @@ describe("the tool-first skill (spec 04 §The skills, D35)", () => {
     expect(skill).toContain("**every fork**: outside a Syns repository, never move the\n  session");
   });
 
+  it("checks for syns place only where it places, so a fork works with a CLI that has none (review N1)", () => {
+    const check = skill.indexOf("First, `syns place --help`.");
+    expect(check).toBeGreaterThan(skill.indexOf("**It answers a repository**"));
+    expect(check).toBeLessThan(skill.indexOf("**It answers `cannot determine repo identity`**"));
+    expect(skill.indexOf("syns place --help")).toBe(check + "First, `".length);
+  });
+
   it("falls back to today's page when the CLI has no place, and on any other answer, and never copies by hand (review 3, 7)", () => {
-    for (const word of ["unrecognized subcommand\n'place'", "the CLI is too old", "Never copy a template's files by hand", "`not_found` (404)", "`authentication required`", "Do not place and do not fork"]) expect(skill, word).toContain(word);
+    for (const word of ["unrecognized subcommand\n  'place'", "the CLI is too old", "Never copy a template's files by hand", "`not_found` (404)", "`authentication required`", "Do not place and do not fork"]) expect(skill, word).toContain(word);
   });
 });
 

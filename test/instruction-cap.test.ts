@@ -17,23 +17,31 @@ const HEADING = "## From syns\n\n";
 /** Room the fragment must keep below the cut, so that a small edit before it is noticed here first. */
 const MARGIN = 50;
 
+/** The instruction a new session gets, or null when there is no bb to ask. Output from a bb that does not parse is a failure, not a skip. */
 function liveInstruction(): string | null {
   if (process.env.SYNS_SKIP_BB === "1") return null;
+  let out: string;
   try {
-    const out = execFileSync("bb", ["thread-page", "status"], { encoding: "utf8", timeout: 15_000, stdio: ["ignore", "pipe", "ignore"] });
-    const start = out.indexOf("## Instruction a new eligible session receives now\n\n");
-    if (start < 0) return null;
-    const body = out.slice(start).split("\n\n").slice(1).join("\n\n");
-    const end = body.indexOf("\n\n## This session");
-    return end < 0 ? body : body.slice(0, end);
+    out = execFileSync("bb", ["thread-page", "status"], { encoding: "utf8", timeout: 15_000, stdio: ["ignore", "pipe", "ignore"] });
   } catch {
-    return null;
+    return null; // no bb, or no Thread Pages on it
   }
+  const marker = "## Instruction a new eligible session receives now\n\n";
+  const start = out.indexOf(marker);
+  const end = out.indexOf("\n\n## This session", start);
+  if (start < 0 || end < 0) return UNPARSED;
+  return out.slice(start + marker.length, end);
 }
+
+const UNPARSED = "\u0000unparsed";
 
 const instruction = liveInstruction();
 
-describe.skipIf(instruction === null || instruction.startsWith("(none"))("the fragment against this machine's Thread Pages instruction (D35, S4.6)", () => {
+it.skipIf(instruction === null)("bb's thread-page status, where there is a bb, prints the instruction where this test looks for it", () => {
+  expect(instruction, "bb thread-page status no longer prints '## Instruction a new eligible session receives now' followed by '## This session'").not.toBe(UNPARSED);
+});
+
+describe.skipIf(instruction === null || instruction === UNPARSED || instruction.startsWith("(none"))("the fragment against this machine's Thread Pages instruction (D35, S4.6)", () => {
   it("fits whole below bb's cut, with room to spare, after everything that stands before it", () => {
     const text = instruction!;
     const ours = text.indexOf(HEADING);
