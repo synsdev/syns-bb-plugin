@@ -17,9 +17,10 @@ is a Syns app template copied into a repository as a tool: its page sees that
 folder alone. In a folder that is no Syns repository, every call answers
 `no_repo`.
 
-The plugin also tells agents to look for such a tool first: given a task a Syns
-app could serve, an agent places a template as a folder and makes its app the
-page, following the plugin's `syns-tools` skill.
+The plugin also tells agents to look for such a tool first. When the person asks
+for a piece of work they will go on working in, such as a board, deck or
+document, the agent places a template as a folder and makes its app the page,
+following the plugin's `syns-tools` skill.
 
 ## How it works
 

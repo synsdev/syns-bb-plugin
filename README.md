@@ -36,11 +36,16 @@ plugin id, and the methods are `syns.*`.
 ## A tool first
 
 The plugin ships a second skill, `syns-tools`, besides the operator's
-`syns-bb-plugin`. Given a task a Syns app could serve (a brainstorm, a plan, a
-deck, a board…), an agent finds a `syns-app` template, places it as a folder
-with `syns place` (or forks it when the session is in no Syns repository), makes
-the template's `.page/loader.html` its page byte for byte, and follows the
-folder's `AGENTS.md`. The instruction fragment leads with that trigger.
+`syns-bb-plugin`. When the person asks for a piece of work they will go on
+working in (a board, a deck, a document, a plan…), an agent finds a `syns-app`
+template and places it as a folder with `syns place`. When the session is in no
+Syns repository, it forks the template into a new private repository instead.
+The template's `.page/loader.html` becomes the page, byte for byte, and the
+folder's `AGENTS.md` governs. The agent moves its own session only when the
+session was started for that work in a Syns repository; otherwise it starts a
+new session. Not for a page that reports on other work, nor in a review, helper
+or coding session. With a CLI too old for `syns place`, the agent says so and
+writes the page as before. The instruction fragment leads with that trigger.
 
 ## The methods
 
@@ -107,7 +112,7 @@ that table. Add an entry and its test; touch nothing else.
 
 ```sh
 npm install
-npm test            # 288 tests; no network, no login, no bb — the CLI is replayed from recordings
+npm test            # 292 tests; no network, no login — the CLI is replayed from recordings; one test reads the instruction from this machine's bb, skipped without one
 npm run typecheck
 npm run build       # bb plugin build
 ```

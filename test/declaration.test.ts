@@ -151,9 +151,8 @@ describe("the declaration", () => {
 });
 
 describe("what agents are told", () => {
-  it("the fragment fits what bb lets through after the standing instruction, and the guide 16 KiB (A8, D35)", () => {
+  it("the fragment is within FRAGMENT_MAX, and the guide 16 KiB (A8, S4.6); the space bb leaves is checked live in instruction-cap.test.ts", () => {
     expect(declaration.instruction!.length).toBeLessThanOrEqual(FRAGMENT_MAX);
-    expect(FRAGMENT_MAX).toBeLessThanOrEqual(4096 - 2575 - "\n\n## From syns\n\n".length); // HOST_FACTS §13
     expect(Buffer.byteLength(declaration.instruction!)).toBeLessThanOrEqual(2 * 1024);
     expect(Buffer.byteLength(declaration.guide)).toBeLessThanOrEqual(16 * 1024);
     expect(declaration.instruction).toBe(FRAGMENT.trim());
@@ -170,7 +169,7 @@ describe("what agents are told", () => {
     expect(declaration.instruction).toContain("It sees the repository, or the placed folder, its session's folder belongs to; paths count from there.");
     expect(declaration.instruction).not.toMatch(/never names a repository\.\*\* It is the one/);
     expect(declaration.guide).toContain("## A placed folder");
-    for (const word of ["`holder`", "counted from it", "the holder's", "only when the folder changed after `base`"]) expect(declaration.guide, word).toContain(word);
+    for (const word of ["`holder`", "counted from it", "the holder's", "Once the CLI checks writes against the folder only, a write is `stale_head` only when the folder changed after `base`"]) expect(declaration.guide, word).toContain(word);
     expect(declaration.guide).not.toContain("repository-relative");
     expect(declaration.guide).not.toContain("Choose a repository: it is the session's.");
   });
@@ -215,15 +214,32 @@ describe("what agents are told", () => {
 describe("the tool-first skill (spec 04 §The skills, D35)", () => {
   const skill = readFileSync(new URL("../skills/syns-tools/SKILL.md", import.meta.url), "utf8");
 
-  it("carries a name and a description that is itself the trigger", () => {
+  it("carries a name and a description that is itself the trigger, narrowed to work the person will go on working in", () => {
     const frontmatter = /^---\n([\s\S]*?)\n---\n/.exec(skill)?.[1] ?? "";
     expect(frontmatter).toMatch(/^name: syns-tools$/m);
     expect(frontmatter).toMatch(/^description: ".{20,1024}"$/m);
-    for (const word of ["Before writing a Thread Page", "brainstorm", "deck", "template"]) expect(frontmatter, word).toContain(word);
+    for (const word of ["asks for a piece of work they will go on working in", "board", "deck", "template", "Not when a page only reports on other work", "review, helper or coding session"]) expect(frontmatter, word).toContain(word);
   });
 
-  it("holds the steps: find, pick, place or fork, the loader byte for byte, move or start a session, AGENTS.md", () => {
-    for (const word of ["syns explore -t syns-app -q", "issue 207", '.tags | index("syns-app")', "only `bartsoj/` templates", "write the page as the Thread Pages guide says", "syns place <owner/name> <folder>", "cannot determine repo identity", "syns fork", "--visibility private", ".page/loader.html", "byte for byte", "update_environment_directory", "already has its own page", "bb thread spawn", "Give no parent", "AGENTS.md", "Ask the person nothing"]) expect(skill, word).toContain(word);
+  it("holds the steps: find (paged), pick, place or fork, the loader byte for byte, move or start a session, AGENTS.md", () => {
+    for (const word of ["syns explore -t syns-app -q", "issue 207", '.tags | index("syns-app")', "--offset", "`total`", "only `bartsoj/` templates", "write the page as the Thread Pages guide says", "syns place <owner/name> <folder>", "cannot determine repo identity", "syns fork", "--visibility private", ".page/loader.html", "byte for byte", "update_environment_directory", "already has a page", "bb thread spawn", "Give no parent", "AGENTS.md", "Ask the person\nnothing"]) expect(skill, word).toContain(word);
+  });
+
+  it("checks a fork's identity before any command that acts on the repository, as the templates order it (review 1)", () => {
+    const identity = skill.indexOf("Check its identity before any other `syns` command there.");
+    expect(identity).toBeGreaterThan(skill.indexOf("syns pull <you>/<name>"));
+    expect(skill.indexOf("syns status")).toBeGreaterThan(identity);
+    expect(skill.indexOf("syns repo --visibility private")).toBeGreaterThan(skill.indexOf("syns status"));
+    expect(skill.indexOf('syns push -m "Name the fork in .syns.yaml"')).toBeLessThan(skill.indexOf("syns repo --visibility private"));
+  });
+
+  it("never moves a session outside a Syns repository, nor one started for something else (review 2)", () => {
+    expect(skill).toContain("only when it was started for this\n  piece of work and its folder is a Syns repository");
+    expect(skill).toContain("**every fork**: outside a Syns repository, never move the\n  session");
+  });
+
+  it("falls back to today's page when the CLI has no place, and on any other answer, and never copies by hand (review 3, 7)", () => {
+    for (const word of ["unrecognized subcommand\n'place'", "the CLI is too old", "Never copy a template's files by hand", "`not_found` (404)", "`authentication required`", "Do not place and do not fork"]) expect(skill, word).toContain(word);
   });
 });
 

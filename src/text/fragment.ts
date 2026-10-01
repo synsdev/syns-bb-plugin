@@ -7,12 +7,12 @@
  * applies (S4.2), names only methods this version registers (S4.4), and is
  * declared to the host with the method list and injected nowhere else (S4.1).
  */
-export const FRAGMENT = `**A tool first.** Given a task a Syns app could serve (a brainstorm, plan, deck, document, sheet, board, site…), look for one before writing a page of your own: skill \`syns-tools\` says how to place it and make its app this page.
+export const FRAGMENT = `**A tool first.** When the person asks for a piece of work they will go on working in (a board, deck, document, sheet, plan, brainstorm…), look for a Syns app before writing a page of your own: skill \`syns-tools\`. Not when the page reports on other work, nor in a review, helper or coding session given another job.
 
 **Syns repository.** When this session's folder is a Syns repository, or a folder placed in one, the page reads and writes it through \`syns.*\`. Check \`context.get\` at load; absent, or \`unavailable\` / \`no_repo\`: say so and keep the rest working. Never show invented data.
 
 - **The page names no repository.** It sees the repository, or the placed folder, its session's folder belongs to; paths count from there.
-- **Pages show pushed state:** your edits reach the page after your turn.
+- **Pages show pushed state:** your edits reach the page after your turn is pushed.
 - **Every write needs \`base\`,** the \`version\` last read from \`syns.repo\`. \`conflict\` / \`stale_head\`: re-read, show what changed, let the reader retry. \`checkout_dirty\`: an agent is mid-turn; retry when \`version\` moves.
 - **Load with \`syns.ls\` and \`syns.readMany\`;** poll only \`syns.repo\` with \`watch\`. Writes publish at once to all who share the repository: say what a control changes.
 

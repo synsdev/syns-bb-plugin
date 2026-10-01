@@ -15,7 +15,7 @@ Only when the session's folder is a Syns repository, or a folder placed in one. 
 
 ## A placed folder
 
-A folder placed in a repository (a tool) is all the page sees: every \`path\` sent or answered is counted from it; nothing outside is reachable. \`syns.repo\` adds \`holder\` (OWNER/NAME) and \`path\`, where the folder stands: show those. \`owner\`, \`name\`, \`role\`, \`visibility\` and \`fileCount\` are the holder's; build no path or link from them. \`version\` is the holder's head, moving with any change to the holder, so \`syns.diff\` may list nothing. A write is \`stale_head\` only when the folder changed after \`base\`; it publishes to all who share the holder.
+A folder placed in a repository (a tool) is all the page sees: every \`path\` sent or answered is counted from it; nothing outside is reachable. \`syns.repo\` adds \`holder\` (OWNER/NAME) and \`path\`, where the folder stands: show those. \`owner\`, \`name\`, \`role\`, \`visibility\` and \`fileCount\` are the holder's; build no path or link from them. \`version\` is the holder's head, moving with any change to the holder, so \`syns.diff\` may list nothing. Once the CLI checks writes against the folder only, a write is \`stale_head\` only when the folder changed after \`base\`; before, any change to the holder. Writes publish to all who share the holder.
 
 ## Versions
 
