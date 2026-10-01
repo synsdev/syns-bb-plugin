@@ -260,6 +260,11 @@ describe("the tool-first skill (spec 04 §The skills, D35)", () => {
     for (const word of ["already holds", "is no repository you can read", "`.syns.yaml` below its root", "`folder_write_unsupported`", "`folder out of place`", "**`holder root required`**"]) expect(skill, word).toContain(word);
   });
 
+  it("runs syns outside the sandbox, saying why, and needs no whoami for a fork (live check L8b)", () => {
+    for (const word of ["**`syns` runs outside the sandbox.**", "could not reach server", "the person asked for this\ntool", "`<you>` is the `owner` of the fork it answers", "outside this session's\n     folder, on purpose"]) expect(skill, word).toContain(word);
+    expect(skill).not.toContain("syns whoami");
+  });
+
   it("checks for syns place only where it places, so a fork works with a CLI that has none (review N1)", () => {
     const check = skill.indexOf("First, `syns place --help`.");
     expect(check).toBeGreaterThan(skill.indexOf("**It answers a repository**"));

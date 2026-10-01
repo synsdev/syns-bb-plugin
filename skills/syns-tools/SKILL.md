@@ -16,6 +16,12 @@ a review, helper or coding session that was given a different job. It does not
 apply either when `bb thread-page init` says SKIP. Write the page as the
 Thread Pages guide says.
 
+**`syns` runs outside the sandbox.** Every `syns` command talks to syns.dev
+itself and does not go through a sandbox's network proxy. Inside a command
+sandbox it answers `could not reach server` even with the domain allowed. Run
+each `syns` command outside the sandbox, and say why: the person asked for this
+tool, and it lives in their Syns account.
+
 ## 1. Find a template
 
 With `syns --version` at 0.3.6 or later:
@@ -87,10 +93,11 @@ Run `syns repo --json` in the session's folder.
   `syns place`, so it works with any CLI. Do every step in this order:
 
   1. Fork from an empty folder:
-     `tmp="$(mktemp -d)" && (cd "$tmp" && syns fork <owner/name> --name <name>); rm -rf "$tmp"`.
-     `<you>` is `syns whoami --json`'s `username`.
+     `tmp="$(mktemp -d)" && (cd "$tmp" && syns fork <owner/name> --name <name> --json); rm -rf "$tmp"`.
+     `<you>` is the `owner` of the fork it answers.
   2. Pull it into a folder that does not exist yet:
-     `syns pull <you>/<name> ~/.syns/<name>`.
+     `syns pull <you>/<name> ~/.syns/<name>`. That is outside this session's
+     folder, on purpose: the person's Syns repositories live under `~/.syns/`.
   3. **Check its identity before any other `syns` command there.** A checkout
      of a fork receives the template's `.syns.yaml` (Syns issue 161), so every
      command would address the template. Read `~/.syns/<name>/.syns.yaml`. If
