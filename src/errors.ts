@@ -48,6 +48,16 @@ export const REASONS = {
     message: "Syns did not answer in time. Try again.",
     meaning: "The CLI did not answer within the plugin's limits. Safe to retry a read; after a write, re-read syns.repo first.",
   },
+  folder_out_of_place: {
+    code: "unavailable",
+    message: "This session's folder is not where its repository records it, so Syns will not use it.",
+    meaning: "A placed folder stands elsewhere than the path its identity file records. An operator moves it back; nothing the page can fix.",
+  },
+  folder_write_unsupported: {
+    code: "unavailable",
+    message: "The Syns server cannot take writes from inside a placed folder yet. Nothing was written.",
+    meaning: "The server is too old for writes in a placed folder. Nothing written; reads work.",
+  },
   stale_head: {
     code: "conflict",
     message: "The repository changed since this page last read it. Nothing was written.",
@@ -183,6 +193,9 @@ export async function interpret(run: RunResult, declared: readonly string[], run
   // The recognition table, in the order S3.4 gives.
   if (exit === 7 && typeof document.currentSha === "string") throw fail("stale_head", { current: document.currentSha });
   if (exit === 2 && error.includes("cannot determine repo identity")) throw fail("no_repo");
+  // A placed folder moved away from its recorded path, and a server without folder writes (HOST_FACTS §14, D38).
+  if (exit === 2 && error.startsWith("folder out of place")) throw fail("folder_out_of_place");
+  if (exit === 1 && error.startsWith("folder_write_unsupported")) throw fail("folder_write_unsupported");
   if (exit === 1 && error.includes("holds unpublished local changes")) throw fail("checkout_dirty");
   if (exit === 1 && error.includes("authentication required")) throw fail(declared.includes("not_logged_in") ? "not_logged_in" : "no_access");
   if (exit === 1 && error.includes("--old matched no content")) throw fail("no_match");

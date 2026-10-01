@@ -100,8 +100,8 @@ describe("the declaration", () => {
 
   it("declares every reason a method can answer with (S3.2)", () => {
     const reasons = Object.fromEntries(declaration.methods.map((method) => [method.name, Object.keys(method.reasons).sort()]));
-    const common = ["cli_missing", "no_access", "no_repo", "timeout"];
-    const write = ["checkout_dirty", "stale_head"];
+    const common = ["cli_missing", "folder_out_of_place", "no_access", "no_repo", "timeout"];
+    const write = ["checkout_dirty", "folder_write_unsupported", "stale_head"];
     expect(reasons).toEqual({
       "syns.repo": common,
       "syns.whoami": [...common, "not_logged_in"].sort(),
@@ -118,7 +118,7 @@ describe("the declaration", () => {
       "syns.rm": [...common, ...write].sort(),
       "syns.readBinary": common,
       "syns.writeBinary": [...common, ...write, "bad_hash", "bad_offset", "too_large"].sort(),
-      "syns.revert": common, // it cannot answer stale_head or checkout_dirty while the CLI's revert takes no parent and has no guard (D13, D29)
+      "syns.revert": [...common, "folder_write_unsupported"].sort(), // it cannot answer stale_head or checkout_dirty while the CLI's revert takes no parent and has no guard (D13, D29)
     });
     for (const method of declaration.methods) for (const reason of Object.keys(method.reasons)) expect(reason).toMatch(/^[a-z][a-z0-9_]{0,63}$/);
     const stale = declaration.methods.find((method) => method.name === "syns.commit")!.reasons.stale_head!;
@@ -249,7 +249,15 @@ describe("the tool-first skill (spec 04 §The skills, D35)", () => {
     const step = skill.indexOf("**Turn on the template's checks.**");
     expect(step).toBeGreaterThan(skill.indexOf("syns place <owner/name> <folder>"));
     expect(step).toBeLessThan(skill.indexOf("**It answers `cannot determine repo identity`**"));
-    for (const word of ["inactive", "prints the one command", "For a `bartsoj/` template, run that command without\n  asking", "run it only after they say yes"]) expect(skill, word).toContain(word);
+    for (const word of ["where they are off", "is the one command", "For a `bartsoj/` template, run it without asking", "run it only after they say\n  yes"]) expect(skill, word).toContain(word);
+  });
+
+  it("uses the CLI's tag filter from 0.3.6, keeping the listing filter for older CLIs, and enable-checks after placing (CLI 0.3.6)", () => {
+    for (const word of ["0.3.6 or later", "An older CLI ignores `-t` and `-q`", "syns enable-checks <folder>", "`enableChecks`", "run it without asking", "only after they say\n  yes"]) expect(skill, word).toContain(word);
+  });
+
+  it("handles the CLI's folder refusals: occupied, unreadable, nested identity, old server, out of place, holder root (CLI 0.3.6)", () => {
+    for (const word of ["already holds", "is no repository you can read", "`.syns.yaml` below its root", "`folder_write_unsupported`", "`folder out of place`", "**`holder root required`**"]) expect(skill, word).toContain(word);
   });
 
   it("checks for syns place only where it places, so a fork works with a CLI that has none (review N1)", () => {
@@ -260,7 +268,7 @@ describe("the tool-first skill (spec 04 §The skills, D35)", () => {
   });
 
   it("falls back to today's page when the CLI has no place, and on any other answer, and never copies by hand (review 3, 7)", () => {
-    for (const word of ["unrecognized subcommand\n  'place'", "the CLI is too old", "Never copy a template's files by hand", "`not_found` (404)", "`authentication required`", "Do not place and do not fork"]) expect(skill, word).toContain(word);
+    for (const word of ["unrecognized subcommand\n  'place'", "the CLI is too old", "Never copy a template's files by hand", "`not_found` (404)", "`authentication required`", "do not place and do not fork"]) expect(skill, word).toContain(word);
   });
 });
 
@@ -300,7 +308,7 @@ describe("one table drives everything (A33, S2.21)", () => {
     expect(buildGuide(table)).toContain(ping.description);
     const h = harness({ ping: ok({ pong: true }) }, { table });
     expect(resultOf(await h.call("syns.ping"))).toEqual({ pong: true });
-    expect(reasonsOf(ping)).toEqual(["no_repo", "no_access", "cli_missing", "timeout"]);
+    expect(reasonsOf(ping)).toEqual(["no_repo", "no_access", "cli_missing", "timeout", "folder_out_of_place"]);
   });
 
   it("and is nowhere without it", async () => {

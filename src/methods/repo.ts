@@ -19,7 +19,7 @@ export const repo: SimpleMethod = {
       owner: { type: "string" },
       name: { type: "string" },
       version: { ...version, type: ["string", "null"], description: "The head. null for a repository with no commit yet." },
-      number: { ...nullable("integer"), description: "The head as a number, for display. Present where the CLI reports it: in a placed folder." },
+      number: { ...nullable("integer"), description: "The head as a number, for display. Present where the CLI reports it: CLI 0.3.6 and later." },
       role: nullable("string"),
       visibility: { type: "string" },
       fileCount: { type: "integer" },

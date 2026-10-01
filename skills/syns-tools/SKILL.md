@@ -18,14 +18,15 @@ Thread Pages guide says.
 
 ## 1. Find a template
 
+With `syns --version` at 0.3.6 or later:
+
 ```sh
 syns explore -t syns-app -q "<two or three words of the task>" --json
 ```
 
-The CLI ignores `-t` and `-q` until the fix for Syns issue 207 is released. If
-the answer holds rows without the `syns-app` tag, list them all, page by page,
-and filter them yourself. Raise `--offset` by 100 until it reaches the answer's
-`total`:
+An older CLI ignores `-t` and `-q` (Syns issue 207). There, list every row,
+page by page, and filter them yourself. Raise `--offset` by 100 until it
+reaches the answer's `total`:
 
 ```sh
 syns explore --json --limit 100 --offset 0 | jq -r '.total, (.data[] | select(.owner == "bartsoj" and (.tags | index("syns-app"))) | "\(.owner)/\(.name)\t\(.description)")'
@@ -54,16 +55,32 @@ Run `syns repo --json` in the session's folder.
   syns place <owner/name> <folder>
   ```
 
-  Run it in the session's folder. `<folder>` is a new folder, counted from
-  there, named for the task and standing where the work belongs, such as
+  Run it in the session's folder, or inside a placed folder, where it places
+  relative to that folder. `<folder>` is a new folder, counted from there,
+  named for the task and standing where the work belongs, such as
   `clients/vela/q3-board`. Placing publishes one version and writes the files
   to disk.
 
+  If it refuses:
+  - **`… already holds …`**: the folder is taken. Choose another name.
+  - **`not_found: … is no repository you can read`**: pick another template.
+  - **A template holding a `.syns.yaml` below its root**: pick another
+    template.
+  - **`folder_write_unsupported`**: the Syns server is too old for this. Say
+    so in one line, and write the page as today.
+
   **Turn on the template's checks.** Placing records the checks the template
-  declares in the folder's `.syns.yaml`, inactive, and prints the one command
-  that turns them on. For a `bartsoj/` template, run that command without
-  asking. For any other template, show the person the checks and that command,
-  and run it only after they say yes; until then the checks stay inactive.
+  declares under `template:` in the folder's `.syns.yaml`, where they are off.
+  With `--json`, its `checks` lists them, and `enableChecks` is the one command
+  that turns them on (`null` when there are none):
+
+  ```sh
+  syns enable-checks <folder>
+  ```
+
+  For a `bartsoj/` template, run it without asking. For any other template,
+  show the person the checks and that command, and run it only after they say
+  yes. Until then the checks stay off.
 
 - **It answers `cannot determine repo identity`** (not a Syns repository):
   fork the template into a new private repository. This needs no
@@ -85,11 +102,19 @@ Run `syns repo --json` in the session's folder.
 
   The folder is `~/.syns/<name>`.
 
-- **It answers anything else**, such as `not_found` (404) from a `.syns.yaml`
-  naming a repository you cannot reach, or `authentication required`
-  (logged out). Do not place and do not fork. Say in one line what the CLI
-  answered (for a logout, that `syns login` is needed), and write the page as
-  today.
+- **It answers anything else**: do not place and do not fork. Say in one
+  line what the CLI answered, and write the page as today. Such answers
+  include:
+  - `not_found` (404), from a `.syns.yaml` naming a repository you cannot
+    reach;
+  - `authentication required`: you are logged out, and `syns login` is needed;
+  - `folder out of place`: a placed folder that moved away from the path its
+    `.syns.yaml` records. Moving it back is the person's call.
+
+**`holder root required`** answers any command that changes the holding
+repository (`fork`, `forks`, `repo --visibility` and the like) run inside a
+placed folder. Never run those from inside a folder. If one is needed, it
+belongs at the root of the holder's checkout.
 
 ## 4. Open it
 

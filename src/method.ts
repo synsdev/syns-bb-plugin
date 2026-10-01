@@ -72,11 +72,13 @@ export interface ProcedureMethod extends Common {
 
 export type Method = SimpleMethod | ProcedureMethod;
 
-export const EVERY_METHOD: readonly Reason[] = ["no_repo", "no_access", "cli_missing", "timeout"];
+export const EVERY_METHOD: readonly Reason[] = ["no_repo", "no_access", "cli_missing", "timeout", "folder_out_of_place"];
+/** Every write, syns.revert included: a placed folder's write against a server without folder writes (D38). */
+export const EVERY_CHANGE: readonly Reason[] = ["folder_write_unsupported"];
 export const EVERY_WRITE: readonly Reason[] = ["stale_head", "checkout_dirty"];
 
 /** Every reason a method can answer with: the common ones, a write's, and its own. S3.2 */
-export const reasonsOf = (method: Method): Reason[] => [...EVERY_METHOD, ...(method.effect === "contributed-write" && !method.unguarded ? EVERY_WRITE : []), ...(method.reasons ?? [])];
+export const reasonsOf = (method: Method): Reason[] => [...EVERY_METHOD, ...(method.effect === "contributed-write" ? EVERY_CHANGE : []), ...(method.effect === "contributed-write" && !method.unguarded ? EVERY_WRITE : []), ...(method.reasons ?? [])];
 
 // --- shared schema pieces ---------------------------------------------------
 

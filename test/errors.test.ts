@@ -25,6 +25,12 @@ describe("the recognition table (S3.4, A36)", () => {
   it("row 2: exit 2 with 'cannot determine repo identity' is no_repo", async () => {
     expect(toAnswer(await failure(rec("no-identity"))).error).toMatchObject({ code: "unavailable", reason: "no_repo" });
   });
+  it("row 2a: exit 2 with 'folder out of place' is folder_out_of_place (D38)", async () => {
+    expect(toAnswer(await failure(rec("folder-out-of-place"))).error).toMatchObject({ code: "unavailable", reason: "folder_out_of_place" });
+  });
+  it("row 2b: exit 1 with 'folder_write_unsupported' is folder_write_unsupported (D38)", async () => {
+    expect(toAnswer(await failure(rec("folder-write-unsupported"))).error).toMatchObject({ code: "unavailable", reason: "folder_write_unsupported" });
+  });
   it("row 3: 'holds unpublished local changes' is checkout_dirty", async () => {
     expect(toAnswer(await failure(rec("checkout-dirty"))).error).toMatchObject({ code: "conflict", reason: "checkout_dirty" });
   });

@@ -21,6 +21,10 @@ describe("syns.repo", () => {
     const result = resultOf(await harness({ repo: rec("repo.ok") }).call("syns.repo"));
     for (const key of ["holder", "path", "number"]) expect(result, key).not.toHaveProperty(key);
   });
+  it("passes number at a root, as CLI 0.3.6 reports it there, with no holder or path (A55, D34)", async () => {
+    const result = resultOf(await harness({ repo: rec("repo.root-036") }).call("syns.repo"));
+    expect(result).toEqual({ owner: "acme", name: "work", version: "970e5fa7cc0dee1b8946862e1a27107a5ceecc62", number: 5, role: "owner", visibility: "private", fileCount: 34 });
+  });
   it("passes number at a root too, once the CLI reports it there, and null with no commit yet (D34)", async () => {
     expect(resultOf(await harness({ repo: ok({ owner: "o", name: "n", commitSha: HEAD, version: 3, role: "owner", visibility: "private", fileCount: 1 }) }).call("syns.repo"))).toMatchObject({ version: HEAD, number: 3 });
     const empty = resultOf(await harness({ repo: ok({ owner: "o", name: "n", commitSha: null, version: null, holder: "o/n", path: "a", role: "owner", visibility: "private", fileCount: 0 }) }).call("syns.repo"));

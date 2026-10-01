@@ -1,5 +1,5 @@
 import { REASONS } from "../errors.js";
-import { EVERY_METHOD, EVERY_WRITE, path, reasonsOf, version, type Method, type Schema } from "../method.js";
+import { EVERY_CHANGE, EVERY_METHOD, EVERY_WRITE, path, reasonsOf, version, type Method, type Schema } from "../method.js";
 
 /**
  * The guide text (spec 04), at most 16 KiB. The prose is written for the
@@ -28,7 +28,7 @@ A folder placed in a repository (a tool) is all the page sees: every \`path\` se
 
 300 files: one \`syns.ls\` and about five \`syns.readMany\`, inside the shared 120 calls a minute.
 
-\`syns.read { fit: true }\` cuts a window short to fit one answer: \`limit\` says how many lines came; read on from \`offset + limit\`. Without \`fit\` a window too large is \`response_too_large\`. Its lines are joined with \`\\n\`, without \`\\r\` or a final newline, so to write a file back exactly, read it with \`syns.readMany\`.
+After a \`syns.read { fit: true }\` window, read on from \`offset + limit\`. Its lines are joined with \`\\n\`, without \`\\r\` or a final newline, so to write a file back exactly, read it with \`syns.readMany\`.
 
 ## Finding things
 
@@ -42,7 +42,7 @@ Poll only \`syns.repo\`, with the host's \`watch\`. When its \`version\` differs
 
 ## Pictures
 
-\`syns.readBinary { path, version? }\` answers a file's bytes as base64 in pieces of up to 720 KiB: follow \`nextOffset\` with the first piece's \`version\`, and join the decoded pieces. \`sha256\` and \`mediaType\` describe the whole file. \`syns.writeBinary { path, base64, base }\` stores up to 720 KiB in one call; a larger file goes in 720 KiB pieces, in order, each with \`offset\`, \`size\` and the whole file's \`sha256\`, answering \`complete: false\` and \`received\` until the last publishes it. \`bad_offset\`: send from \`detail.expected\` (0: start again). For a picture beside texts in one version, gather it with \`hold: true\` and name its \`upload\` in a \`syns.commit\` file.
+Join the decoded pieces of \`syns.readBinary\`; \`sha256\` and \`mediaType\` describe the whole file. \`syns.writeBinary { path, base64, base }\` stores up to 720 KiB in one call; a larger file goes in 720 KiB pieces, in order, each with \`offset\`, \`size\` and the whole file's \`sha256\`, answering \`complete: false\` and \`received\` until the last publishes it. \`bad_offset\`: send from \`detail.expected\` (0: start again). For a picture beside texts in one version, gather it with \`hold: true\` and name its \`upload\` in a \`syns.commit\` file.
 
 ## Writing
 
@@ -57,7 +57,7 @@ After a write, the returned \`version\` is the new \`base\`.
 
 const CANNOT = `## What a page cannot do here
 
-Choose a repository, or reach outside a placed folder: the session's folder decides. Read unpublished edits: only pushed state is visible. Be pushed a change: poll \`syns.repo\`. Write without a \`base\`, but for \`syns.revert\` today. Set a commit's provenance: the plugin records the page's session on every commit but a revert's. Run a CLI command: each method is one fixed operation.
+Choose a repository, or reach outside a placed folder: the session's folder decides. Read unpublished edits. Write without a \`base\`, but for \`syns.revert\`. Set a commit's provenance. Run a CLI command: each method is one fixed operation.
 `;
 
 const kib = (bytes: number): string => (bytes >= 1024 * 1024 ? `${bytes / (1024 * 1024)}M` : `${bytes / 1024}K`);
@@ -89,7 +89,7 @@ function render(schema: Schema): string {
 
 /** A method's reasons beyond the ones every method, and every guarded write, answers: those are said once. */
 const own = (method: Method): string[] => {
-  const shared = new Set<string>([...EVERY_METHOD, ...(method.effect === "contributed-write" && !method.unguarded ? EVERY_WRITE : [])]);
+  const shared = new Set<string>([...EVERY_METHOD, ...(method.effect === "contributed-write" ? EVERY_CHANGE : []), ...(method.effect === "contributed-write" && !method.unguarded ? EVERY_WRITE : [])]);
   return reasonsOf(method).filter((reason) => !shared.has(reason));
 };
 
@@ -103,7 +103,7 @@ function methodSection(table: readonly Method[]): string {
       ...(own(method).length > 0 ? [`- Reasons: ${own(method).map((reason) => `\`${reason}\``).join(", ")}`] : []),
     ].join("\n"),
   );
-  return `## Every method\n\n\`path\` is counted from the repository's root, or the placed folder, with \`/\` separators, at most 1,024 characters; it may not begin with \`/\` or \`-\`, hold a \`\\\` or a control character, or have a \`.\` or \`..\` segment. Bounds are request / response. A \`?\` marks an optional key; a bare \`version\` or \`path\` key has that type; no other key is accepted. Every method may answer ${EVERY_METHOD.map((reason) => `\`${reason}\``).join(", ")}; every write but \`syns.revert\` also ${EVERY_WRITE.map((reason) => `\`${reason}\``).join(", ")}. Other reasons are listed.\n\n${blocks.join("\n\n")}\n`;
+  return `## Every method\n\n\`path\` is counted from the repository's root, or the placed folder, with \`/\` separators, at most 1,024 characters; it may not begin with \`/\` or \`-\`, hold a \`\\\` or a control character, or have a \`.\` or \`..\` segment. Bounds are request / response. A \`?\` marks an optional key; a bare \`version\` or \`path\` key has that type; no other key is accepted. Every method may answer ${EVERY_METHOD.map((reason) => `\`${reason}\``).join(", ")}; every write ${EVERY_CHANGE.map((reason) => `\`${reason}\``).join(", ")}, and all but \`syns.revert\` ${EVERY_WRITE.map((reason) => `\`${reason}\``).join(", ")}. Other reasons are listed.\n\n${blocks.join("\n\n")}\n`;
 }
 
 function errorSection(table: readonly Method[]): string {

@@ -1,0 +1,1 @@
+{ "source": "HOST_FACTS.md §14: from the CLI 0.3.6 source (src/errors.rs), not measured: syns.dev's server takes folder writes", "exitCode": 1, "json": { "error": "folder_write_unsupported: the server does not support writes inside a folder yet, so clients/vela/q3-board cannot be written from inside it" } }
