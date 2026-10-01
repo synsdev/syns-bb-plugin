@@ -245,6 +245,13 @@ describe("the tool-first skill (spec 04 §The skills, D35)", () => {
     expect(skill).toContain("**every fork**: outside a\n  Syns repository, never move the session");
   });
 
+  it("turns a placed template's checks on without asking only for bartsoj/ templates, otherwise after a yes (the lead's ruling)", () => {
+    const step = skill.indexOf("**Turn on the template's checks.**");
+    expect(step).toBeGreaterThan(skill.indexOf("syns place <owner/name> <folder>"));
+    expect(step).toBeLessThan(skill.indexOf("**It answers `cannot determine repo identity`**"));
+    for (const word of ["inactive", "prints the one command", "For a `bartsoj/` template, run that command without\n  asking", "run it only after they say yes"]) expect(skill, word).toContain(word);
+  });
+
   it("checks for syns place only where it places, so a fork works with a CLI that has none (review N1)", () => {
     const check = skill.indexOf("First, `syns place --help`.");
     expect(check).toBeGreaterThan(skill.indexOf("**It answers a repository**"));
