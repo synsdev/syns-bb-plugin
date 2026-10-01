@@ -43,7 +43,8 @@ Syns repository, it forks the template into a new private repository instead.
 The template's `.page/loader.html` becomes the page, byte for byte, and the
 folder's `AGENTS.md` governs. The agent moves its own session only when the
 session was started for that work in a Syns repository; otherwise it starts a
-new session. Not for a page that reports on other work, nor in a review, helper
+new session. Either way the session lives in the holding repository's bb
+project, with its environment set to the folder. Not for a page that reports on other work, nor in a review, helper
 or coding session. With a CLI too old for `syns place`, the agent says so and
 writes the page as before. The instruction fragment leads with that trigger.
 
@@ -112,7 +113,7 @@ that table. Add an entry and its test; touch nothing else.
 
 ```sh
 npm install
-npm test            # 294 tests; no network, no login — the CLI is replayed from recordings; one test reads the instruction from this machine's bb, skipped without one
+npm test            # 295 tests; no network, no login — the CLI is replayed from recordings; one test reads the instruction from this machine's bb, skipped without one
 npm run typecheck
 npm run build       # bb plugin build
 ```

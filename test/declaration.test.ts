@@ -233,9 +233,16 @@ describe("the tool-first skill (spec 04 §The skills, D35)", () => {
     expect(skill.indexOf('syns push -m "Name the fork in .syns.yaml"')).toBeLessThan(skill.indexOf("syns repo --visibility private"));
   });
 
+  it("puts a tool's session in the holder's own bb project, its environment the folder; a project at the folder only when the holder has none (the lead's ruling)", () => {
+    for (const word of ["in the holding repository's own bb project, with its\nenvironment set to the tool's folder", "taken off its end", "select(any(.sources[]; .path == $root))", "Only when there is none, create one", "--project <the holder's project> --environment <absolute folder>", "`$BB_PROJECT_ID` is the holder's project"]) expect(skill, word).toContain(word);
+    expect(skill).not.toContain("--project <project id>");
+    expect(skill.indexOf("bb project create")).toBeGreaterThan(skill.indexOf("bb project list --json"));
+  });
+
   it("never moves a session outside a Syns repository, nor one started for something else (review 2)", () => {
-    expect(skill).toContain("only when it was started for this\n  piece of work and its folder is a Syns repository");
-    expect(skill).toContain("**every fork**: outside a Syns repository, never move the\n  session");
+    expect(skill).toContain("it was started for this piece of work");
+    expect(skill).toContain("its folder is a Syns repository;");
+    expect(skill).toContain("**every fork**: outside a\n  Syns repository, never move the session");
   });
 
   it("checks for syns place only where it places, so a fork works with a CLI that has none (review N1)", () => {

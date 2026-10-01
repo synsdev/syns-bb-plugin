@@ -87,29 +87,51 @@ Run `syns repo --json` in the session's folder.
 
 ## 4. Open it
 
-- **This session moves into the folder** only when it was started for this
-  piece of work and its folder is a Syns repository. That means its first task
-  is this one, and `bb thread-page init` says `NEW`:
+A tool's session lives **in the holding repository's own bb project, with its
+environment set to the tool's folder**. That keeps it under the repository in
+bb's sidebar, and lets a page find it again. Find that project first:
+
+1. The holder's checkout root. In a placed folder, `syns repo --json` there
+   answers `path`, the folder's path from the holder's root: the root is the
+   folder's absolute path with that `path` taken off its end. For a fork, the
+   root is the fork's folder, `~/.syns/<name>`.
+2. Its bb project on this machine: the project with a source at that root.
+
+   ```sh
+   bb project list --json | jq -r --arg root "<holder root>" '.[] | select(any(.sources[]; .path == $root)) | .id'
+   ```
+
+   Only when there is none, create one: `bb project create --name <name> --root
+   <absolute folder> --json`, and use its id. A fork, a new repository, always
+   gets one this way.
+
+Then:
+
+- **This session moves into the folder** only when all of these hold:
+  - it was started for this piece of work, so its first task is this one and
+    `bb thread-page init` says `NEW`;
+  - its folder is a Syns repository;
+  - `$BB_PROJECT_ID` is the holder's project.
+
+  To move it:
   1. Make the template's loader the page, byte for byte:
      `cp <folder>/.page/loader.html <the page path init printed>`.
   2. Read `<folder>/AGENTS.md`. From here on it governs this session, ahead of
      the Thread Pages instruction to design a page of your own.
   3. Move the session into the folder: bb's `update_environment_directory`
-     tool, with the folder's absolute path. Then end the turn with the page's
-     link alone.
-- **In every other case, start a new top-level session in the folder.** That
-  means a session started for something else, or one that already has a page.
-  It also means **every fork**: outside a Syns repository, never move the
-  session. The person asked for this tool, and that is what lets you start a
-  session for it.
+     tool, with the folder's absolute path. It stays in its project. Then end
+     the turn with the page's link alone.
+- **In every other case, start a new top-level session** in the holder's
+  project, in the folder. That means a session started for something else, one
+  that already has a page, one in another project, and **every fork**: outside a
+  Syns repository, never move the session. The person asked for this tool, and
+  that is what lets you start a session for it.
 
   ```sh
-  bb thread spawn --project <project id> --environment <absolute folder> --title "<the task>" --prompt "Open this folder's app, following AGENTS.md."
+  bb thread spawn --project <the holder's project> --environment <absolute folder> --title "<the task>" --prompt "Open this folder's app, following AGENTS.md."
   ```
 
-  In a placed folder, the project is `$BB_PROJECT_ID`. For a fork, first run
-  `bb project create --name <name> --root ~/.syns/<name> --json` and use its
-  id. Give no parent: a child session gets no page. `bb thread wait <id>`, then
+  Give no parent: a child session gets no page. `bb thread wait <id>`, then
   link the new session from your own page as `@thread:<id>`.
 
 ## 5. Follow the folder's AGENTS.md
