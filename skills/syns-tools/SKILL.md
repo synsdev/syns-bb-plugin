@@ -16,12 +16,18 @@ a review, helper or coding session that was given a different job. It does not
 apply either when `bb thread-page init` says SKIP. Write the page as the
 Thread Pages guide says.
 
-**The network rule.** Run `syns` normally. If a command answers `could not
-reach server`, rerun **that command** outside the sandbox, and say why: the
-CLI does not use the sandbox's network proxy (Syns issue 198). If running it
-outside the sandbox is refused, tell the person in plain words to start a new
-chat in bb with permission set to Full and send the same message again, then
-stop. Never bypass the sandbox ahead of time.
+**The network rule.** First make sure the CLI is 0.3.8 or later: `syns
+--version`, and `syns upgrade` if it is older. From 0.3.8, `syns` works inside
+bb's sandbox (network, certificates, cache and lock) with nothing configured.
+If a `syns` command still answers `could not reach server`, run `syns upgrade`
+and try that command once more. If it still fails, or the sandbox refuses
+something a step needs (such as writing a fork's checkout under `~/.syns/`),
+tell the person in plain words to start a new chat in bb with permission set to
+Full and send the same message again, then stop. Never run `syns` outside the
+sandbox.
+
+A `.syns-state/` folder may appear in a working copy. It is harmless and never
+published: ignore it.
 
 ## 1. Find a template
 

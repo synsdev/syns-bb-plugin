@@ -21,7 +21,8 @@ state about a repository.
 ## What each machine needs
 
 - bb 0.43 or later, and the Thread Pages plugin 1.4.0 or later.
-- The Syns CLI, 0.3.3 or later, **installed and logged in on every machine whose
+- The Syns CLI, 0.3.3 or later (0.3.6 for placed folders, 0.3.8 for the
+  `syns-tools` steps inside bb's sandbox), **installed and logged in on every machine whose
   sessions' pages should reach a repository**. The CLI runs on the session's
   machine under the account logged in there, so access is whatever that account
   can reach. Check on that machine: `syns --version`, `syns whoami`.

@@ -17,9 +17,11 @@ Syns CLI → Syns API      the only thing that touches the repository
 
 ## Install
 
-Requires bb 0.43 or later, Thread Pages 1.4.0 or later, and the Syns CLI 0.3.3 or
-later — installed and logged in (`syns login`) on every machine whose sessions
-should reach a repository.
+Requires bb 0.43 or later, Thread Pages 1.4.0 or later, and the Syns CLI —
+installed and logged in (`syns login`) on every machine whose sessions should
+reach a repository. The page methods need 0.3.3 or later, placed folders 0.3.6,
+and the tool-first steps 0.3.8, the first that works inside bb's sandbox
+(`syns upgrade`).
 
 ```sh
 bb plugin install https://github.com/synsdev/syns-bb-plugin
