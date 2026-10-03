@@ -28,9 +28,14 @@ export interface Context {
   readonly sessionId: string;
   readonly limits: Limits;
   /** Runs the CLI in the session's folder and returns its parsed output, or throws a SynsError. Bytes on standard input travel as bytes. */
-  syns(args: string[], stdin?: string | Buffer, options?: { provenanceEnv?: true }): Promise<unknown>;
+  syns(args: string[], stdin?: string | Buffer, options?: RunOptions): Promise<unknown>;
   /** What the plugin holds between calls (D27). */
   readonly held: Held;
+}
+
+export interface RunOptions {
+  /** Set the page's provenance in the environment, for a command with no provenance flags (D44). */
+  provenanceEnv?: true;
 }
 
 export interface Command {
@@ -59,6 +64,8 @@ interface Common {
   unguarded?: true;
   /** Runs at the session's folder even when the calling document set a scope (D43): it acts on the repository as a whole. */
   atRoot?: true;
+  /** A write that changes who can reach a repository or folder, not its files (D41): no base, no message, no file-write reasons. */
+  sharing?: true;
   /** The oldest Syns CLI that can serve it, as "X.Y.Z". Older answers unavailable / cli_too_old before anything runs. */
   minCli?: string;
   /** How many paths a write names, for the plugin's log. Defaults to one when there is a `path`. S2.19 */
@@ -84,7 +91,10 @@ export const EVERY_CHANGE: readonly Reason[] = ["folder_write_unsupported"];
 export const EVERY_WRITE: readonly Reason[] = ["stale_head", "checkout_dirty"];
 
 /** Every reason a method can answer with: the common ones, a write's, and its own. S3.2 */
-export const reasonsOf = (method: Method): Reason[] => [...EVERY_METHOD, ...(method.minCli ? (["cli_too_old"] as Reason[]) : []), ...(method.effect === "contributed-write" ? EVERY_CHANGE : []), ...(method.effect === "contributed-write" && !method.unguarded ? EVERY_WRITE : []), ...(method.reasons ?? [])];
+export const reasonsOf = (method: Method): Reason[] => [...EVERY_METHOD, ...(method.minCli ? (["cli_too_old"] as Reason[]) : []), ...(fileWrite(method) ? EVERY_CHANGE : []), ...(fileWrite(method) && !method.unguarded ? EVERY_WRITE : []), ...(method.reasons ?? [])];
+
+/** A write of a repository's files, as opposed to a sharing change (D41). */
+export const fileWrite = (method: Method): boolean => method.effect === "contributed-write" && !method.sharing;
 
 // --- shared schema pieces ---------------------------------------------------
 
@@ -175,4 +185,43 @@ export function validate(schema: Schema, value: unknown, at = "$"): string | nul
     }
   }
   return null;
+}
+
+// --- passing the CLI's JSON on (D59) ----------------------------------------
+
+/**
+ * Named groups of result keys several methods share, so the guide prints each
+ * once (D56): a result holding all of a group's keys, as the same schema
+ * objects, is written `…name` there.
+ */
+export const GROUPS = new Map<string, Record<string, Schema>>();
+export const group = (name: string, properties: Record<string, Schema>): Record<string, Schema> => {
+  GROUPS.set(name, properties);
+  return properties;
+};
+
+/**
+ * The CLI's own JSON, kept to what `schema` names (S1.7): each named key whose
+ * value has a type the schema allows, objects and lists kept the same way.
+ * Nothing is renamed or made up; a key the CLI did not report stays absent,
+ * and the result's check (S3.7) refuses a required one that is missing.
+ */
+export function pick(schema: Schema, value: unknown): unknown {
+  const types = schema.type === undefined ? [] : Array.isArray(schema.type) ? (schema.type as string[]) : [schema.type as string];
+  if (value === null) return types.includes("null") ? null : undefined;
+  if (Array.isArray(value)) return types.includes("array") ? value.map((item) => pick(schema.items as Schema, item)).filter((item) => item !== undefined) : undefined;
+  if (typeof value === "object") {
+    if (!types.includes("object")) return undefined;
+    const properties = (schema.properties ?? {}) as Record<string, Schema>;
+    const record = value as Record<string, unknown>;
+    const kept: Record<string, unknown> = {};
+    for (const [key, child] of Object.entries(properties)) {
+      if (!Object.hasOwn(record, key)) continue;
+      const one = pick(child, record[key]);
+      if (one !== undefined) kept[key] = one;
+    }
+    return kept;
+  }
+  const type = typeof value === "number" && Number.isSafeInteger(value) && types.includes("integer") ? "integer" : typeof value;
+  return types.includes(type) ? value : undefined;
 }

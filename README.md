@@ -19,8 +19,9 @@ Syns CLI → Syns API      the only thing that touches the repository
 
 Requires bb 0.43 or later, Thread Pages 1.4.0 or later, and the Syns CLI —
 installed and logged in (`syns login`) on every machine whose sessions should
-reach a repository. The page methods need 0.3.3 or later, placed folders 0.3.6,
-and the tool-first steps 0.3.8, the first that works inside bb's sandbox
+reach a repository. The page methods need 0.3.3 or later, placed folders and
+checks 0.3.6, the tool-first steps 0.3.8 (the first that works inside bb's
+sandbox), sharing a folder 0.3.11, and a folder's own visibility 0.3.12
 (`syns upgrade`).
 
 ```sh
@@ -64,6 +65,17 @@ The full method reference is in `bb thread-page guide`.
 | `syns.revert` | write | One file back to its text at an earlier version |
 | `syns.readBinary` | read | A file's bytes, such as a picture, as base64 in pieces of up to 720 KiB |
 | `syns.writeBinary` | write | A file's bytes: whole up to 720 KiB, or larger in ordered pieces, published after the last; up to 25 MiB |
+| `syns.place` | write | A template placed as a new folder of the session's repository |
+| `syns.shareInfo` · `syns.share` · `syns.unshare` | read · write · write | A placed folder's sharing: shown, shared under an identity of its own, stopped |
+| `syns.folderVisibility` · `syns.repoVisibility` | write | A placed folder's own visibility · the repository's, from its root |
+| `syns.collaborators` · `syns.collaboratorAdd` · `syns.collaboratorRole` · `syns.collaboratorRemove` | read · write | The repository's people and their roles |
+| `syns.enableChecks` | write | Turn on the checks a placed folder recorded from its template |
+| `syns.explore` · `syns.users` | read | Public repositories, templates among them · people, to share with |
+
+Each of the last twelve is one CLI command run in the page's scope, its answer
+and its refusals the CLI's own: the plugin is a thin adapter. The sharing and
+visibility methods reach other people at once; a page offers them only on a
+control the reader presses, saying who gets what.
 
 `version` is a commit SHA and opaque. Every write but `syns.revert` requires
 `base`, the version the page last read; a moved head refuses it as `conflict`
@@ -97,6 +109,10 @@ Page authors get the full reference, generated from the code, with
   names a `holder` and a `path`, every path is counted from the folder, and
   `syns.repo` reports the holder's head, which moves with any change to the
   holder. This needs a Syns CLI with folders (roadmap 239–241).
+- **From a placed folder's page, people are out of reach.** The CLI refuses
+  `syns collaborators` inside a placed folder, even a shared one, so those
+  methods answer `bad_scope` there; a page at the repository's root manages the
+  repository's people.
 - Thread Pages refuses any result over 10,000 JSON values, which is why `syns.ls`
   and `syns.glob` are paged and `syns.grep` lowers its row limit as context grows.
 - Proven on one machine. A session on a second enrolled host, a worktree

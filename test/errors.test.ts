@@ -53,6 +53,17 @@ describe("the recognition table (S3.4, A36)", () => {
     expect(error.log).toContain("exit=1");
     expect(error.log).toContain("the changeset document does not parse");
   });
+  it("row 9 carries the CLI's own words as the message, at most 300 characters (D59)", async () => {
+    const error = await failure(rec("malformed-changeset"));
+    expect(error.message).toContain("the changeset document does not parse");
+    expect(error.message.length).toBeLessThanOrEqual(300);
+  });
+  it("row 9 without words of the CLI's keeps the plugin's sentence", async () => {
+    expect((await failure(rec("arg-error"))).message).toBe("Syns could not complete this. The plugin's log has the cause.");
+  });
+  it("the CLI's refusals that a command does not act in this scope are bad_scope (D59, HOST_FACTS §17)", async () => {
+    for (const recording of ["share.root-dot.0313", "enable-checks.root.0313", "repo.visibility.holder-root.0313", "collaborators.holder-root.0313"]) expect(toAnswer(await failure(rec(recording))).error, recording).toMatchObject({ code: "invalid_params", reason: "bad_scope" });
+  });
   it("row 9: the CLI's own argument error (plain text on stderr, exit 2) is handler_error", async () => {
     const error = await failure(rec("arg-error"));
     expect(error.code).toBe("handler_error");

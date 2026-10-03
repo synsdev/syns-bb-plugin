@@ -1,0 +1,1 @@
+{"source": "HOST_FACTS.md §17, CLI 0.3.13, measured 2026-10-06; names invented", "exitCode": 1, "json": {"error": "the checkout at /work/vela-workspace/q3-plan holds unpublished local changes for acme/vela-workspace; edit those files instead — they publish at the end of the turn — or publish them with syns sync, then write again"}}

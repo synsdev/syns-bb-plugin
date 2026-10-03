@@ -1,0 +1,1 @@
+{"source": "HOST_FACTS.md \u00a715: measured with CLI 0.3.11 on a private scratch holder, names invented", "exitCode": 0, "json": {"holder": "acme/work", "holderRole": "owner", "offeredName": "work-docs", "path": "docs", "shared": false}}

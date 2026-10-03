@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { base, message, object, path, validate, version } from "../src/method.js";
+import { base, message, object, path, pick, validate, version } from "../src/method.js";
 
 describe("path (S2.9, A31)", () => {
   const schema = object({ path }, ["path"]);
@@ -40,5 +40,16 @@ describe("validate, the subset the host also checks", () => {
   });
   it("lets an open object carry keys it does not declare", () => {
     expect(validate({ type: "object", properties: { a: { type: "string" } }, required: ["a"] }, { a: "x", b: 1 })).toBeNull();
+  });
+});
+
+describe("pick: the CLI's JSON, kept to what the result schema names (D59, S1.7)", () => {
+  const schema = { type: "object", properties: { a: { type: "string" }, n: { type: "integer" }, maybe: { type: ["string", "null"] }, list: { type: "array", items: { type: "object", properties: { id: { type: "string" } } } } } };
+  it("keeps named keys of an allowed type, nested too, and drops every other key", () => {
+    expect(pick(schema, { a: "x", n: 3, maybe: null, list: [{ id: "u", secret: 1 }], token: "t" })).toEqual({ a: "x", n: 3, maybe: null, list: [{ id: "u" }] });
+  });
+  it("drops a value of the wrong type rather than passing it, and makes nothing up", () => {
+    expect(pick(schema, { a: 1, n: 1.5, maybe: 2 })).toEqual({});
+    expect(pick(schema, {})).toEqual({});
   });
 });

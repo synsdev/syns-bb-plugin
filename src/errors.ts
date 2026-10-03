@@ -31,7 +31,7 @@ export const REASONS = {
   no_access: {
     code: "unavailable",
     message: "The Syns account on this session's machine cannot reach the repository, or is logged out.",
-    meaning: "The account on that machine cannot reach the repository, or is logged out. Nothing the page can fix.",
+    meaning: "The machine's account cannot reach the repository, or is logged out.",
   },
   not_logged_in: {
     code: "unavailable",
@@ -41,28 +41,28 @@ export const REASONS = {
   cli_missing: {
     code: "unavailable",
     message: "The Syns command-line tool was not found on this session's machine.",
-    meaning: "No syns executable on that machine. An operator installs it or sets the plugin's synsPath.",
+    meaning: "No syns on that machine; an operator installs it or sets synsPath.",
   },
   timeout: {
     code: "unavailable",
     message: "Syns did not answer in time. Try again.",
-    meaning: "The CLI did not answer within the plugin's limits. Safe to retry a read; after a write, re-read syns.repo first.",
-  },
-  folder_out_of_place: {
-    code: "unavailable",
-    message: "This session's folder is not where its repository records it, so Syns will not use it.",
-    meaning: "A placed folder stands elsewhere than the path its identity file records. An operator moves it back; nothing the page can fix.",
-  },
-  folder_write_unsupported: {
-    code: "unavailable",
-    message: "The Syns server cannot take writes from inside a placed folder yet. Nothing was written.",
-    meaning: "The server is too old for writes in a placed folder. Nothing written; reads work.",
+    meaning: "The CLI did not answer in time. Retry a read; after a write, re-read syns.repo first.",
   },
   cli_too_old: {
     code: "unavailable",
     message: "The Syns command-line tool on this session's machine is too old for this. Run syns upgrade there.",
     meaning: "The machine's syns is older than detail.need (detail.have): syns upgrade there.",
     detail: { type: "object", properties: { need: { type: "string" }, have: { type: ["string", "null"] } }, required: ["need", "have"] },
+  },
+  folder_out_of_place: {
+    code: "unavailable",
+    message: "This session's folder is not where its repository records it, so Syns will not use it.",
+    meaning: "A placed folder stands away from the path its identity file records; an operator moves it back.",
+  },
+  folder_write_unsupported: {
+    code: "unavailable",
+    message: "The Syns server cannot take writes from inside a placed folder yet. Nothing was written.",
+    meaning: "The server is too old for writes in a placed folder. Nothing written; reads work.",
   },
   occupied: {
     code: "conflict",
@@ -76,19 +76,19 @@ export const REASONS = {
   },
   bad_scope: {
     code: "invalid_params",
-    message: "This page asked for a folder that is not a placed folder of its session's repository.",
-    meaning: "The scope is not a folder placed in the session's own repository, with its own identity file, inside the session's folder.",
+    message: "This page asked for something its folder cannot do here: it is not a placed folder of its session's repository, or this action needs another kind of folder.",
+    meaning: "The scope is not a placed folder of the session's own repository, or the CLI does not act there: a folder action at a root, a repository action in a placed folder.",
   },
   stale_head: {
     code: "conflict",
     message: "The repository changed since this page last read it. Nothing was written.",
-    meaning: "The repository, or the placed folder, changed after base. Nothing written; detail.current is the head. Re-read, show the reader what changed, let them retry; never blindly.",
+    meaning: "The repository, or placed folder, changed after base; nothing written; detail.current is the head. Re-read, show what changed, never retry blindly.",
     detail: { type: "object", properties: { current: SHA }, required: ["current"] },
   },
   checkout_dirty: {
     code: "conflict",
     message: "An agent is working in this session's folder and has unpublished edits. Nothing was written; try again when its turn ends.",
-    meaning: "The session's folder has unpublished edits, usually an agent mid-turn. Nothing written. Say the agent is working; try again when syns.repo's version moves.",
+    meaning: "The session's folder has unpublished edits, usually its agent mid-turn. Nothing written; retry when syns.repo's version moves.",
   },
   exists: {
     code: "conflict",
@@ -114,19 +114,44 @@ export const REASONS = {
   bad_offset: {
     code: "conflict",
     message: "The picture's pieces did not arrive in order, or were dropped. Send it again from the offset expected.",
-    meaning: "Send the piece at offset detail.expected; 0 means start again, as after a minute's pause or when a named upload is no longer held.",
+    meaning: "Send the piece at detail.expected; 0 means start again (pieces or an upload are dropped after a minute).",
     detail: { type: "object", properties: { expected: { type: "integer", minimum: 0 } }, required: ["expected"] },
   },
   bad_hash: {
     code: "invalid_params",
     message: "The picture that arrived is not the one described. Nothing was written.",
-    meaning: "The gathered bytes' SHA-256 is not sha256. The pieces are dropped; nothing is published.",
+    meaning: "The gathered bytes do not match sha256; nothing published.",
   },
   too_large: {
     code: "invalid_params",
     message: "The file is larger than one file in Syns may be. Nothing was written.",
     meaning: "Past detail.max bytes, the most one file may hold (25 MiB).",
     detail: { type: "object", properties: { max: { type: "integer" } }, required: ["max"] },
+  },
+  bad_name: {
+    code: "invalid_params",
+    message: "That name cannot be used. Use lower-case letters, digits, dots, dashes and underscores.",
+    meaning: "name breaks the repository-name rule.",
+  },
+  name_taken: {
+    code: "conflict",
+    message: "That name is already taken. Nothing was shared.",
+    meaning: "Another repository holds name; offer the reader another.",
+  },
+  not_permitted: {
+    code: "unavailable",
+    message: "Only an owner or admin of the repository can change who it is shared with.",
+    meaning: "The reader is below admin on the holding repository.",
+  },
+  no_such_user: {
+    code: "not_found",
+    message: "There is no Syns user by that name or e-mail.",
+    meaning: "user names nobody on Syns.",
+  },
+  already_collaborator: {
+    code: "conflict",
+    message: "That person already has access to this folder.",
+    meaning: "user already holds a grant here; nothing changed.",
   },
   invalid_change: {
     code: "invalid_params",
@@ -225,6 +250,16 @@ export async function interpret(run: RunResult, declared: readonly string[], run
   // syns place (D43, HOST_FACTS §14).
   if (exit === 1 && error.startsWith("configuration error") && error.includes(" already holds ")) throw fail("occupied");
   if (exit === 1 && error.startsWith("not_found:") && error.includes("is no repository you can read")) throw fail("no_such_template");
+  // Sharing (D41, HOST_FACTS §15). The 409s carry no currentSha, so the method's declared reasons tell them apart.
+  // Where the CLI does not act in this scope (D59, HOST_FACTS §17): a folder's command at a root, a holder's in a placed folder.
+  if (exit === 1 && error.includes("the folder path must name a folder")) throw fail("bad_scope");
+  if (exit === 1 && error.includes("holds no folder placed from a template")) throw fail("bad_scope");
+  if (exit === 2 && error.startsWith("holder root required")) throw fail("bad_scope");
+  if (exit === 1 && error.includes("configuration error: a name holds")) throw fail("bad_name");
+  if (exit === 1 && error.includes("(403)")) throw fail(declared.includes("not_permitted") ? "not_permitted" : "no_access");
+  if (exit === 1 && error.includes("no user '")) throw fail("no_such_user");
+  if (exit === 1 && error.includes("(409)") && declared.includes("name_taken")) throw fail("name_taken");
+  if (exit === 1 && error.includes("(409)") && declared.includes("already_collaborator")) throw fail("already_collaborator");
   const times = exit === 1 ? /--old matched (\d+) times/.exec(error) : null;
   if (times) throw fail("many_matches", { count: Number(times[1]) });
   if (exit === 1 && error.includes("(404)")) {
@@ -241,5 +276,7 @@ export async function interpret(run: RunResult, declared: readonly string[], run
   if (exit === 1 && error.includes("path not found at version")) throw new SynsError("not_found");
   if (exit === 1 && error.includes("version not found")) throw new SynsError("not_found", { subject: "version" });
 
-  throw new SynsError("handler_error", { log: `exit=${exit} output=${(run.stdout + run.stderr).trim().slice(0, 500)}` });
+  // Any other refusal comes back in the CLI's own words (D59); the plugin's sentence only when it gave none.
+  const words = error.trim();
+  throw new SynsError("handler_error", { ...(words ? { message: words.slice(0, 300) } : {}), log: `exit=${exit} output=${(run.stdout + run.stderr).trim().slice(0, 500)}` });
 }

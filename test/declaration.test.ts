@@ -4,12 +4,16 @@ import { VERSION, buildDeclaration } from "../src/declaration.js";
 import { K64, object, reasonsOf, type Method, type Schema } from "../src/method.js";
 import { METHODS } from "../src/methods/index.js";
 import { FRAGMENT, FRAGMENT_MAX } from "../src/text/fragment.js";
-import { buildGuide } from "../src/text/guide.js";
+import { GUIDE_MAX, buildGuide } from "../src/text/guide.js";
 import { ok } from "./fake-runner.js";
 import { harness, resultOf } from "./harness.js";
 
+/** 0.6.0, the page surface (D49, D59). */
+const SURFACE = ["syns.collaboratorAdd", "syns.collaboratorRemove", "syns.collaboratorRole", "syns.collaborators", "syns.enableChecks", "syns.explore", "syns.folderVisibility", "syns.repoVisibility", "syns.share", "syns.shareInfo", "syns.unshare", "syns.users"];
+/** The writes that change who reaches a repository or folder, not its files: no base, no message (A61). */
+const SHARING_WRITES = ["syns.collaboratorAdd", "syns.collaboratorRemove", "syns.collaboratorRole", "syns.folderVisibility", "syns.repoVisibility", "syns.share", "syns.unshare"];
 const SIXTEEN = ["syns.commit", "syns.diff", "syns.edit", "syns.glob", "syns.grep", "syns.history", "syns.ls", "syns.read", "syns.readBinary", "syns.readMany", "syns.repo", "syns.revert", "syns.rm", "syns.whoami", "syns.write", "syns.writeBinary"];
-const ALL = [...SIXTEEN, "syns.place"].sort();
+const ALL = [...SIXTEEN, "syns.place", ...SURFACE].sort();
 /** The keywords Thread Pages compiles; any other refuses the method (its contributed.ts). */
 const SUBSET = new Set(["type", "description", "properties", "required", "additionalProperties", "enum", "const", "minimum", "maximum", "minLength", "maxLength", "pattern", "items", "minItems", "maxItems"]);
 
@@ -24,9 +28,9 @@ const namesIn = (text: string): string[] => [...new Set(text.match(/syns\.[a-z][
 const declaration = buildDeclaration(METHODS, { agentInstructions: true });
 
 describe("the table", () => {
-  it("holds the seventeen methods of spec 01: the sixteen, and syns.place (D23, D43)", () => {
+  it("holds the twenty-nine methods: the sixteen of spec 01, syns.place, and the twelve of spec 06 (D23, D43, D59)", () => {
     expect(METHODS.map((method) => method.name).sort()).toEqual(ALL);
-    expect(METHODS.filter((method) => method.effect === "contributed-write").map((method) => method.name).sort()).toEqual(["syns.commit", "syns.edit", "syns.place", "syns.revert", "syns.rm", "syns.write", "syns.writeBinary"]);
+    expect(METHODS.filter((method) => method.effect === "contributed-write").map((method) => method.name).sort()).toEqual(["syns.commit", "syns.edit", "syns.enableChecks", "syns.place", "syns.revert", "syns.rm", "syns.write", "syns.writeBinary", ...SHARING_WRITES].sort());
   });
 });
 
@@ -73,6 +77,18 @@ describe("the declaration", () => {
       "syns.readBinary": "64/1024",
       "syns.writeBinary": "1024/64",
       "syns.place": "64/64",
+      "syns.shareInfo": "64/64",
+      "syns.share": "64/64",
+      "syns.unshare": "64/64",
+      "syns.folderVisibility": "64/64",
+      "syns.repoVisibility": "64/64",
+      "syns.collaborators": "64/1024",
+      "syns.collaboratorAdd": "64/64",
+      "syns.collaboratorRole": "64/64",
+      "syns.collaboratorRemove": "64/64",
+      "syns.enableChecks": "64/64",
+      "syns.explore": "64/1024",
+      "syns.users": "64/1024",
     });
   });
 
@@ -122,6 +138,19 @@ describe("the declaration", () => {
       "syns.writeBinary": [...common, ...write, "bad_hash", "bad_offset", "too_large"].sort(),
       "syns.revert": [...common, "folder_write_unsupported"].sort(),
       "syns.place": [...common, "cli_too_old", "folder_write_unsupported", "occupied", "no_such_template", "stale_head", "checkout_dirty"].sort(), // it cannot answer stale_head or checkout_dirty while the CLI's revert takes no parent and has no guard (D13, D29)
+      // 0.6.0: the CLI's answers, mapped (D59). Sharing writes declare no file-write reason (A61).
+      "syns.shareInfo": [...common, "cli_too_old", "not_permitted"].sort(),
+      "syns.share": [...common, "cli_too_old", "bad_name", "name_taken", "not_permitted"].sort(),
+      "syns.unshare": [...common, "cli_too_old", "not_permitted"].sort(),
+      "syns.folderVisibility": [...common, "cli_too_old", "bad_name", "name_taken", "not_permitted"].sort(),
+      "syns.repoVisibility": [...common, "not_permitted"].sort(),
+      "syns.collaborators": [...common, "not_permitted"].sort(),
+      "syns.collaboratorAdd": [...common, "already_collaborator", "no_such_user", "not_permitted"].sort(),
+      "syns.collaboratorRole": [...common, "not_permitted"].sort(),
+      "syns.collaboratorRemove": [...common, "not_permitted"].sort(),
+      "syns.enableChecks": [...common, "cli_too_old", "folder_write_unsupported", "stale_head", "checkout_dirty"].sort(),
+      "syns.explore": common,
+      "syns.users": common,
     });
     for (const method of declaration.methods) for (const reason of Object.keys(method.reasons)) expect(reason).toMatch(/^[a-z][a-z0-9_]{0,63}$/);
     const stale = declaration.methods.find((method) => method.name === "syns.commit")!.reasons.stale_head!;
@@ -139,14 +168,22 @@ describe("the declaration", () => {
   });
 
   it("every write requires base, but syns.revert, whose CLI command takes no parent (A30, S1.4, D13)", () => {
-    for (const method of declaration.methods.filter((entry) => entry.effect === "contributed-write" && entry.name !== "syns.place")) {
+    for (const method of declaration.methods.filter((entry) => entry.effect === "contributed-write" && !["syns.place", "syns.enableChecks", ...SHARING_WRITES].includes(entry.name))) {
       if (method.name === "syns.revert") expect(Object.keys(method.params.properties as object), method.name).not.toContain("base");
       else expect(method.params.required, method.name).toContain("base");
     }
   });
 
+  it("a sharing write takes neither base nor message (A61, D41)", () => {
+    for (const name of SHARING_WRITES) {
+      const method = declaration.methods.find((entry) => entry.name === name)!;
+      expect(Object.keys(method.params.properties as object), name).not.toContain("base");
+      expect(Object.keys(method.params.properties as object), name).not.toContain("message");
+    }
+  });
+
   it("every write takes an optional message of at most 500 characters (S1.6)", () => {
-    for (const method of declaration.methods.filter((entry) => entry.effect === "contributed-write" && entry.name !== "syns.place")) {
+    for (const method of declaration.methods.filter((entry) => entry.effect === "contributed-write" && !["syns.place", "syns.enableChecks", ...SHARING_WRITES].includes(entry.name))) {
       expect((method.params.properties as Record<string, Schema>).message, method.name).toMatchObject({ type: "string", maxLength: 500 });
       expect(method.params.required, method.name).not.toContain("message");
     }
@@ -154,10 +191,11 @@ describe("the declaration", () => {
 });
 
 describe("what agents are told", () => {
-  it("the fragment is within FRAGMENT_MAX, and the guide 16 KiB (A8, S4.6); the space bb leaves is checked live in instruction-cap.test.ts", () => {
+  it("the fragment is within FRAGMENT_MAX, and the guide within GUIDE_MAX, 16 KiB less 512 (A8, S4.6, S6.34); the space bb leaves is checked live in instruction-cap.test.ts", () => {
     expect(declaration.instruction!.length).toBeLessThanOrEqual(FRAGMENT_MAX);
     expect(Buffer.byteLength(declaration.instruction!)).toBeLessThanOrEqual(2 * 1024);
-    expect(Buffer.byteLength(declaration.guide)).toBeLessThanOrEqual(16 * 1024);
+    expect(GUIDE_MAX).toBe(16 * 1024 - 512);
+    expect(Buffer.byteLength(declaration.guide)).toBeLessThanOrEqual(GUIDE_MAX);
     expect(declaration.instruction).toBe(FRAGMENT.trim());
   });
 
@@ -205,6 +243,21 @@ describe("what agents are told", () => {
   it("the fragment says in words that it applies only in a Syns repository, and where the rest is (S4.2)", () => {
     expect(declaration.instruction).toMatch(/When this session's folder is a Syns repository/);
     expect(declaration.instruction).toContain("bb thread-page guide");
+  });
+
+  it("the fragment and the guide say shares act at once, from an explicit control only, and label public apart (D51, S6.30–S6.32, A72)", () => {
+    expect(declaration.instruction).toContain("Writes and shares act at once: only from a control saying what changes, for whom.");
+    for (const words of ["Only from a control the reader presses for that action", "never on load, from a timer or `watch`", "The control shows who gets what", "Public is labelled apart", "anyone, signed in or not, can find and read this", "Never a default"]) expect(declaration.guide, words).toContain(words);
+    for (const name of SHARING_WRITES) expect(declaration.methods.find((entry) => entry.name === name)!.description, name).toMatch(/[Oo]nly from the reader's own press/);
+    for (const name of ["syns.folderVisibility", "syns.repoVisibility"]) expect(declaration.methods.find((entry) => entry.name === name)!.description, name).toContain("public: anyone, signed in or not, can find and read");
+  });
+
+  it("the generated method section prints no effect, bounds or reasons: the host's roster does (D56, S6.33)", () => {
+    const section = declaration.guide.slice(declaration.guide.indexOf("## Every method"), declaration.guide.indexOf("## Errors"));
+    expect(section).not.toMatch(/^### .*—/m);
+    expect(section).not.toContain("- Reasons:");
+    expect(section).toContain("`…record` is `{ owner?: string");
+    expect(section).toContain("Result: `{ …record }`");
   });
 
   it("the guide's statements about each method come from its declaration (S4.3)", () => {

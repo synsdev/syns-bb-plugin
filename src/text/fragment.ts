@@ -14,7 +14,7 @@ export const FRAGMENT = `**Tool first.** Asked for a piece of work the person wi
 - **The page names no repository:** it sees the one, or the placed folder, its session's folder belongs to; paths count from there.
 - **Pages show pushed state:** your edits reach the page after your turn is pushed.
 - **Every write needs \`base\`,** the \`version\` last read from \`syns.repo\`. On \`stale_head\`, re-read and let the reader retry; on \`checkout_dirty\` an agent is mid-turn: retry when \`version\` moves.
-- **Load with \`syns.ls\` and \`syns.readMany\`;** poll only \`syns.repo\` with \`watch\`. Writes publish at once to all who share the repository: say what a control changes.
+- **Load with \`syns.ls\` and \`syns.readMany\`;** poll only \`syns.repo\` with \`watch\`. Writes and shares act at once: only from a control saying what changes, for whom.
 
 Every method: \`bb thread-page guide\`. Installing or diagnosing the plugin: \`syns cat SETUP.md --repo bartsoj/syns-bb-plugin-setup\`.
 `;

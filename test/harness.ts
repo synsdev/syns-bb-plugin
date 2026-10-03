@@ -13,7 +13,7 @@ type Reply = RunResult | ((request: RunRequest) => RunResult | Promise<RunResult
 /** The server half above the Runner seam, with a fake runner, a fixed resolution and a captured log. */
 export function harness(replies: Record<string, Reply> = {}, options: { table?: readonly Method[]; limits?: Limits; where?: Where | null; held?: Held } = {}) {
   // Methods that need a newer CLI ask its version first; a current one unless a test says otherwise.
-  const runner = fakeRunner({ "--version": { exitCode: 0, stdout: "syns 0.3.11\n", stderr: "", timedOut: false, spawnError: null, overflowed: false }, ...replies });
+  const runner = fakeRunner({ "--version": { exitCode: 0, stdout: "syns 0.3.13\n", stderr: "", timedOut: false, spawnError: null, overflowed: false }, ...replies });
   const log: string[] = [];
   const resolved: string[] = [];
   const invoke = createDispatch({
@@ -49,6 +49,18 @@ export const SAMPLES: Record<string, Record<string, unknown>> = {
   "syns.readBinary": { path: "images/a.png" },
   "syns.writeBinary": { path: "images/a.png", base64: "iVBORw0KGgo=", base: HEAD },
   "syns.place": { template: "acme/whiteboard-template", path: "clients/vela/q3-board" },
+  "syns.shareInfo": {},
+  "syns.share": { name: "q3-plan" },
+  "syns.unshare": {},
+  "syns.folderVisibility": { visibility: "private" },
+  "syns.repoVisibility": { visibility: "private" },
+  "syns.collaborators": { limit: 20 },
+  "syns.collaboratorAdd": { user: "dana", role: "read" },
+  "syns.collaboratorRole": { id: "usr_dana0001", role: "write" },
+  "syns.collaboratorRemove": { id: "usr_dana0001" },
+  "syns.enableChecks": {},
+  "syns.explore": { query: "board", tags: ["syns-app"] },
+  "syns.users": { query: "dana" },
 };
 
 export const failureOf = (answer: Answer) => {

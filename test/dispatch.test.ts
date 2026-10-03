@@ -5,7 +5,7 @@ import { METHODS } from "../src/methods/index.js";
 import { fakeRunner, ok, rec, spawnFailed, timedOut } from "./fake-runner.js";
 import { FAST, SAMPLES, failureOf, harness } from "./harness.js";
 
-const everyVerb = (reply: RunResult) => Object.fromEntries(["repo", "whoami", "ls", "cat", "history", "commit", "read", "glob", "grep", "diff", "write", "edit", "rm", "revert", "place", "status"].map((verb) => [verb, reply]));
+const everyVerb = (reply: RunResult) => Object.fromEntries(["repo", "whoami", "ls", "cat", "history", "commit", "read", "glob", "grep", "diff", "write", "edit", "rm", "revert", "place", "status", "share", "unshare", "collaborators", "enable-checks", "explore", "users"].map((verb) => [verb, reply]));
 
 describe("the samples", () => {
   it("cover exactly the registered methods", () => expect(Object.keys(SAMPLES).sort()).toEqual(METHODS.map((method) => method.name).sort()));
@@ -42,11 +42,11 @@ describe("dispatch", () => {
   });
 
   it("outside any checkout every method that needs a repository answers no_repo, from the CLI's own answer (A4, S2.4)", async () => {
-    const h = harness({ ...everyVerb(rec("no-identity")), whoami: rec("whoami.ok") });
+    const h = harness({ ...everyVerb(rec("no-identity")), whoami: rec("whoami.ok"), explore: rec("explore.ok"), users: rec("users.ok") });
     for (const method of METHODS) {
       const answer = await h.call(method.name, SAMPLES[method.name]);
-      // S1.12: whoami works in a folder that holds no repository.
-      if (method.name === "syns.whoami") expect(answer.ok).toBe(true);
+      // S1.12: whoami works in a folder that holds no repository; so do explore and users, which read no repository (D50).
+      if (["syns.whoami", "syns.explore", "syns.users"].includes(method.name)) expect(answer.ok, method.name).toBe(true);
       else expect(failureOf(answer), method.name).toMatchObject({ code: "unavailable", reason: "no_repo" });
     }
   });

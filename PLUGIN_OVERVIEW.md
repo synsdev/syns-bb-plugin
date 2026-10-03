@@ -6,7 +6,7 @@ Give a bb Thread Page the Syns repository of its own session.
 
 [Thread Pages](https://github.com/unifedev/bb-thread-pages) gives every agent
 session a web page. A page runs in a sandbox and can reach nothing on your
-machine. This plugin adds sixteen `syns.*` capabilities to every page, so a page
+machine. This plugin adds twenty-nine `syns.*` capabilities to every page, so a page
 built over a Syns repository — a wiki, a task board, a notebook — can list, read,
 search and change that repository's files.
 

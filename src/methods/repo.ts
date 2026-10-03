@@ -6,6 +6,7 @@ const passed = (out: Record<string, unknown>): Record<string, unknown> => ({
   ...(Number.isInteger(out.version) || out.version === null ? { number: out.version } : {}),
   ...(typeof out.holder === "string" ? { holder: out.holder } : {}),
   ...(typeof out.path === "string" ? { path: out.path } : {}),
+  ...(typeof out.sharedFolder === "boolean" ? { sharedFolder: out.sharedFolder } : {}),
 });
 
 export const repo: SimpleMethod = {
@@ -25,6 +26,7 @@ export const repo: SimpleMethod = {
       fileCount: { type: "integer" },
       holder: { type: "string", description: "In a placed folder: OWNER/NAME of the repository holding it. owner, name, role, visibility and fileCount are then the holder's." },
       path: { type: "string", description: "In a placed folder: its path in the holder. Every path a page uses is counted from it." },
+      sharedFolder: { type: "boolean", description: "true in a folder-only collaborator's checkout of a shared folder: the record is the folder's identity, and fileCount is 0." },
     },
     required: ["owner", "name", "version", "role", "visibility", "fileCount"],
   },

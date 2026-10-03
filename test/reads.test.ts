@@ -30,6 +30,11 @@ describe("syns.repo", () => {
     const empty = resultOf(await harness({ repo: ok({ owner: "o", name: "n", commitSha: null, version: null, holder: "o/n", path: "a", role: "owner", visibility: "private", fileCount: 0 }) }).call("syns.repo"));
     expect(empty).toMatchObject({ version: null, number: null, holder: "o/n", path: "a" });
   });
+  it("passes sharedFolder when the CLI reports it: true in a folder-only checkout, whose fileCount is 0 (D-119, D41)", async () => {
+    const result = resultOf(await harness({ repo: ok({ owner: "acme", name: "work-docs", commitSha: HEAD, version: 9, sharedFolder: true, role: "read", visibility: "private", fileCount: 0 }) }).call("syns.repo"));
+    expect(result).toMatchObject({ name: "work-docs", sharedFolder: true, fileCount: 0, number: 9 });
+    expect(resultOf(await harness({ repo: rec("repo.ok") }).call("syns.repo"))).not.toHaveProperty("sharedFolder");
+  });
   it("passes on no field the CLI reports beyond the named ones, and none of the wrong type (S1.7)", async () => {
     const result = resultOf(await harness({ repo: ok({ owner: "o", name: "n", commitSha: HEAD, version: "12", holder: 7, path: null, description: "d", tags: ["x"], role: "owner", visibility: "private", fileCount: 1 }) }).call("syns.repo"));
     expect(Object.keys(result).sort()).toEqual(["fileCount", "name", "owner", "role", "version", "visibility"]);

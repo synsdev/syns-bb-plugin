@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.6.0 (candidate, not released)
+
+The page surface as a whole: a page acts on its own scope, its placed folder or
+its repository, and on that repository's people. Each new method is one Syns
+CLI command run in the page's scope, with the CLI's answer and its refusals
+passed on.
+
+- **Sharing a placed folder:** `syns.shareInfo`, `syns.share { name? }`,
+  `syns.unshare` (CLI 0.3.11), and `syns.folderVisibility { visibility, name? }`
+  (CLI 0.3.12).
+- **A repository's visibility, from its root:** `syns.repoVisibility
+  { visibility }`.
+- **The repository's people:** `syns.collaborators { limit?, offset? }`,
+  `syns.collaboratorAdd { user, role }`, `syns.collaboratorRole { id, role }`,
+  `syns.collaboratorRemove { id }`. Roles are the CLI's: `admin`, `write`,
+  `read`.
+- **`syns.enableChecks`** turns on a placed folder's recorded checks, with the
+  page's provenance (CLI 0.3.6).
+- **`syns.explore`** and **`syns.users`** search public repositories and people.
+- `syns.repo` passes on `sharedFolder`.
+- Where the CLI does not act in a scope (a folder's command at a root, a
+  holder's in a placed folder), the answer is `bad_scope`.
+- A refusal the plugin has no reason for now carries the CLI's own words as its
+  `message`.
+- New reasons: `bad_name`, `name_taken`, `not_permitted`, `no_such_user`,
+  `already_collaborator`.
+- The guide no longer repeats the effect, bounds and reasons the host prints
+  for each method. It gains *Sharing and people*: shares only from an explicit
+  control, saying who gets what, with public labelled apart.
+
 ## 0.5.0
 
 Needs Thread Pages 1.8.0 for a document's scope. Everything else works as

@@ -13,6 +13,10 @@ import { readMany } from "./readMany.js";
 import { repo } from "./repo.js";
 import { revert } from "./revert.js";
 import { rm } from "./rm.js";
+import { enableChecks } from "./enableChecks.js";
+import { explore } from "./explore.js";
+import { collaboratorAdd, collaboratorRemove, collaboratorRole, collaborators, users } from "./people.js";
+import { folderVisibility, repoVisibility, share, shareInfo, unshare } from "./share.js";
 import { whoami } from "./whoami.js";
 import { write } from "./write.js";
 
@@ -21,4 +25,4 @@ import { write } from "./write.js";
  * method section and the dispatch are all derived from it. A new method is a
  * new file exporting one entry, and one line here.
  */
-export const METHODS: readonly Method[] = [repo, whoami, ls, readMany, history, commit, read, glob, grep, diff, write, edit, rm, revert, readBinary, writeBinary, place];
+export const METHODS: readonly Method[] = [repo, whoami, ls, readMany, history, commit, read, glob, grep, diff, write, edit, rm, revert, readBinary, writeBinary, place, shareInfo, share, unshare, folderVisibility, repoVisibility, collaborators, collaboratorAdd, collaboratorRole, collaboratorRemove, enableChecks, explore, users];

@@ -73,8 +73,8 @@ export type OptionValue = string | number | boolean | readonly string[] | undefi
  * never be read as a flag. A list repeats its option once for each value.
  * S2.11, S2.13
  */
-export function buildArgs(verb: string, options: Record<string, OptionValue> = {}, positionals: string[] = []): string[] {
-  const args = [verb];
+export function buildArgs(verb: string | readonly string[], options: Record<string, OptionValue> = {}, positionals: string[] = []): string[] {
+  const args = typeof verb === "string" ? [verb] : [...verb];
   for (const [name, value] of Object.entries(options)) {
     if (value === undefined || value === false) continue;
     if (typeof value === "object") args.push(...value.map((one) => `--${name}=${one}`));
