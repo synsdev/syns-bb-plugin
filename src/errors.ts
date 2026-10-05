@@ -1,4 +1,4 @@
-import { CLI_NOT_FOUND, type RunResult } from "./cli.js";
+import { CLI_NOT_FOUND, SCOPE_OUTSIDE, type RunResult } from "./cli.js";
 
 /**
  * Every failure a page can see (spec 03): the reasons, the sentence the plugin
@@ -195,6 +195,8 @@ function parse(text: string): { value: unknown } | null {
 export async function interpret(run: RunResult, declared: readonly string[], runRepo: () => Promise<RunResult>): Promise<unknown> {
   if (run.spawnError !== null) {
     if (run.spawnError === CLI_NOT_FOUND) throw fail("cli_missing");
+    // A scope that resolves outside the session's folder, or to no folder, symlinks followed (D43).
+    if (run.spawnError === SCOPE_OUTSIDE) throw fail("bad_scope");
     throw new SynsError("handler_error", { log: `could not start: ${run.spawnError.slice(0, 500)}` });
   }
   if (run.timedOut) throw fail("timeout");

@@ -12,6 +12,8 @@ export const hostContract = defineRpcContract({
     input: z
       .object({
         cwd: z.string().min(1),
+        /** For a scoped call, the session's folder: cwd must resolve inside it (D43). */
+        within: z.string().min(1).optional(),
         args: z.array(z.string()).max(64),
         stdin: z.string().optional(),
         /** Standard input as bytes, for `write --bytes` (D25). */

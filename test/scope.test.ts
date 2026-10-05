@@ -77,3 +77,38 @@ describe("syns.place (D43)", () => {
     expect(failureOf(await h.call("syns.place", { template: "acme/t", path: "a" }))).toMatchObject({ reason: "cli_too_old", detail: { need: "0.3.6", have: "0.3.5" } });
   });
 });
+
+describe("symlinks: the host half resolves a scope before it runs anything (D43)", () => {
+  it("passes the session's folder as within on a scoped call, and nothing on an unscoped one", async () => {
+    const h = harness({ repo: rec("repo.folder") });
+    await scoped(h, "clients/vela");
+    expect(h.runner.calls[0]).toMatchObject({ cwd: "/work/checkout/clients/vela", within: "/work/checkout" });
+    const plain = harness({ repo: rec("repo.ok") });
+    await scoped(plain, undefined);
+    expect(plain.runner.calls[0]).not.toHaveProperty("within");
+  });
+  it("answers bad_scope when the host half finds the scope outside, or no folder", async () => {
+    const { spawnFailed } = await import("./fake-runner.js");
+    const h = harness({ repo: spawnFailed("scope_outside") });
+    expect(failureOf(await scoped(h, "linked"))).toMatchObject({ code: "invalid_params", reason: "bad_scope" });
+  });
+  it("inside(): a folder below, the folder itself, a symlink out, a missing folder, a file", async () => {
+    const { mkdtemp, mkdir, symlink, writeFile } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { inside } = await import("../src/scope.js");
+    const root = await mkdtemp(join(tmpdir(), "scope-root-"));
+    const outside = await mkdtemp(join(tmpdir(), "scope-out-"));
+    await mkdir(join(root, "clients", "vela"), { recursive: true });
+    await symlink(outside, join(root, "escape"));
+    await symlink(join(root, "clients"), join(root, "alias"));
+    await writeFile(join(root, "file.md"), "x");
+    expect(await inside(join(root, "clients", "vela"), root)).toBe(true);
+    expect(await inside(root, root)).toBe(true);
+    expect(await inside(join(root, "alias", "vela"), root)).toBe(true);
+    expect(await inside(join(root, "escape"), root)).toBe(false);
+    expect(await inside(join(root, "missing"), root)).toBe(false);
+    expect(await inside(join(root, "file.md"), root)).toBe(false);
+    expect(await inside(`${root}-sibling`, root)).toBe(false);
+  });
+});

@@ -17,11 +17,11 @@ const failed = (error: unknown): RunResult => ({ exitCode: null, stdout: "", std
  */
 export function createHostRunner(call: HostCall, synsPath: () => Promise<string | undefined>): Runner {
   return {
-    async run({ hostId, cwd, args, stdin, stdinBase64, timeoutMs }: RunRequest): Promise<RunResult> {
+    async run({ hostId, cwd, within, args, stdin, stdinBase64, timeoutMs }: RunRequest): Promise<RunResult> {
       const path = await synsPath();
       const options = { hostId, timeoutMs: timeoutMs + HOST_CALL_SLACK_MS };
       try {
-        const input: Record<string, unknown> = { cwd, args, timeoutMs, ...(path ? { synsPath: path } : {}) };
+        const input: Record<string, unknown> = { cwd, args, timeoutMs, ...(within ? { within } : {}), ...(path ? { synsPath: path } : {}) };
         if (stdin !== undefined) input.stdin = stdin;
         if (stdinBase64 !== undefined && stdinBase64.length <= SLICE) input.stdinBase64 = stdinBase64;
         if (stdinBase64 !== undefined && stdinBase64.length > SLICE) {

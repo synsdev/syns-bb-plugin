@@ -20,6 +20,12 @@ describe("the plugin opens no repository file (A5, S2.5, S2.6)", () => {
     expect(text).not.toMatch(/\brequire\s*\(|\bimport\s*\(/);
     expect(text).not.toMatch(/readFile|readdir|createReadStream|writeFile|\bopen(Sync)?\s*\(|opendir|\bstat(Sync)?\s*\(/);
   });
+  it("the scope check resolves paths and reads nothing: realpath and stat alone (D43)", () => {
+    const text = source("scope.ts");
+    const fromFs = imports(text).filter((entry) => entry.from.startsWith("node:fs") || entry.from === "fs" || entry.from.startsWith("fs/"));
+    expect(fromFs.flatMap((entry) => entry.names).sort()).toEqual(["realpath", "stat"]);
+    expect(text).not.toMatch(/readFile|readdir|createReadStream|writeFile|\bopen(Sync)?\s*\(|opendir/);
+  });
   it("starts the CLI with an argument array and no shell (S2.10)", () => {
     const text = source("host-entry.ts");
     const fromChild = imports(text).filter((entry) => entry.from === "node:child_process");
@@ -27,7 +33,7 @@ describe("the plugin opens no repository file (A5, S2.5, S2.6)", () => {
     expect(text).not.toMatch(/shell\s*:/);
   });
   it("nothing else in the plugin touches the file system or starts a process", () => {
-    const files = [...readdirSync(new URL("../src/", import.meta.url), { recursive: true })].map(String).filter((name) => name.endsWith(".ts") && name !== "host-entry.ts");
+    const files = [...readdirSync(new URL("../src/", import.meta.url), { recursive: true })].map(String).filter((name) => name.endsWith(".ts") && name !== "host-entry.ts" && name !== "scope.ts"); // scope.ts: the host half's own, guarded above (D43)
     expect(files.length).toBeGreaterThan(8);
     for (const name of files) {
       for (const entry of imports(source(name))) expect(entry.from, name).not.toMatch(/^(node:)?(fs|child_process)(\/|$)/);

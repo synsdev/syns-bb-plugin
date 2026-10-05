@@ -7,6 +7,8 @@
 export interface RunRequest {
   hostId: string;
   cwd: string;
+  /** For a scoped call, the session's folder: the host half refuses a cwd that resolves outside it, symlinks followed (D43). */
+  within?: string;
   args: string[];
   stdin?: string;
   /** Standard input as bytes, base64 across the host call, for `write --bytes` (D25). Never beside `stdin`. */
@@ -31,10 +33,14 @@ export interface Runner {
 }
 
 export const CLI_NOT_FOUND = "cli_not_found";
+/** The host half's answer when a scoped cwd is not a folder inside the session's folder, once symlinks are followed (D43). */
+export const SCOPE_OUTSIDE = "scope_outside";
 
 export interface Where {
   hostId: string;
   cwd: string;
+  /** Set when cwd is a scope below the session's folder (D43). */
+  within?: string;
 }
 
 export interface Limits {
@@ -94,7 +100,7 @@ export function createCli(runner: Runner, limits: Limits = LIMITS): Cli {
         const left = deadline - Date.now();
         if (left <= 0) return TIMED_OUT;
         const input = stdin === undefined ? {} : typeof stdin === "string" ? { stdin } : { stdinBase64: stdin.toString("base64") };
-        return await runner.run({ hostId: where.hostId, cwd: where.cwd, args, ...input, timeoutMs: Math.min(limits.processMs, left) });
+        return await runner.run({ hostId: where.hostId, cwd: where.cwd, ...(where.within ? { within: where.within } : {}), args, ...input, timeoutMs: Math.min(limits.processMs, left) });
       } finally {
         const next = slots.waiting.shift();
         if (next) next();

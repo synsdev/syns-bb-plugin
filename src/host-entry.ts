@@ -3,9 +3,10 @@ import { access, constants } from "node:fs/promises";
 import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
 import { experimental_defineHostEntry } from "@get-bb/plugin-sdk/host";
-import { CLI_NOT_FOUND, type RunResult } from "./cli.js";
+import { CLI_NOT_FOUND, SCOPE_OUTSIDE, type RunResult } from "./cli.js";
 import { hostContract } from "./contract.js";
 import { SLICE, createRelay } from "./relay.js";
+import { inside } from "./scope.js";
 import { randomUUID } from "node:crypto";
 
 /**
@@ -86,10 +87,12 @@ export function runSyns(bin: string, args: string[], cwd: string, stdin: string 
 
 const relay = createRelay();
 
+
 export default experimental_defineHostEntry({
   contract: hostContract,
   handlers: {
-    run: async ({ cwd, args, stdin, stdinBase64, stdinFrom, timeoutMs, synsPath }, context) => {
+    run: async ({ cwd, within, args, stdin, stdinBase64, stdinFrom, timeoutMs, synsPath }, context) => {
+      if (within !== undefined && !(await inside(cwd, within))) return { exitCode: null, stdout: "", stderr: "", timedOut: false, spawnError: SCOPE_OUTSIDE, overflowed: false };
       const bin = await findSyns(synsPath);
       if (!bin) return { exitCode: null, stdout: "", stderr: "", timedOut: false, spawnError: CLI_NOT_FOUND, overflowed: false };
       let input: string | Buffer | undefined = stdinBase64 === undefined ? stdin : Buffer.from(stdinBase64, "base64");

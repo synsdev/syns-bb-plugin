@@ -56,7 +56,7 @@ export function createDispatch({ table = METHODS, cli, resolve, log, held = crea
     // A document's scope narrows the folder the CLI runs in to <session folder>/<scope> (D43). The host
     // refuses a scope that leaves the session's folder; it is checked again here, as a path is. A method
     // that acts on the session's repository as a whole (syns.place) runs at the session's folder.
-    const where = scope === null || method.atRoot ? session : { hostId: session.hostId, cwd: `${session.cwd.replace(/\/+$/, "")}/${scope}` };
+    const where = scope === null || method.atRoot ? session : { hostId: session.hostId, cwd: `${session.cwd.replace(/\/+$/, "")}/${scope}`, within: session.cwd };
 
     // A method that needs a newer CLI asks the machine's version first, once a minute at most.
     if (method.minCli) {

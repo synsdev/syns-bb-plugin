@@ -30,9 +30,13 @@
   const tp = window.threadPage;
   const say = function (text) { document.getElementById("loader-msg").textContent = text; };
   const call = function (method, params) { return tp.invoke(method, params || {}); };
-  // ADJUST to the Thread Pages scope API once it is fixed: the document's scope, a folder inside
-  // the session's folder, which the host passes to the plugin with every capability call.
-  const setScope = function (path) { return tp.setScope ? tp.setScope(path) : call("page.setScope", { path: path }); };
+  // The document's scope (Thread Pages spike/document-scope): a folder inside the session's folder,
+  // passed with every later invoke. The kernel throws a TypeError for one that is absolute, holds
+  // . or .., empty segments, a backslash or a control character, or is too long or too deep.
+  const setScope = async function (path) {
+    if (typeof tp.setScope !== "function") throw new Error("this bb's Thread Pages has no setScope");
+    await tp.setScope(path || null);
+  };
   // A reference is local unless it has a scheme (https:, data:), starts with // or is a #fragment.
   const local = function (ref) { return !!ref && !/^([a-z][a-z0-9+.-]*:|\/\/|#)/i.test(ref); };
   // A local reference → its repository path: "js/a.js" → ".page/js/a.js".
@@ -73,13 +77,13 @@
   // This document opens one placed template as tool.html#<folder>. It sets the folder as its scope,
   // so every syns.* call below answers for that folder alone, as if it were the repository, and the
   // app's own .page/ is read from it, its code unchanged.
-  const folder = decodeURIComponent(location.hash.replace(/^#/, "")).replace(/\/+$/, "");
-  if (!folder || /^\/|(^|\/)\.\.?(\/|$)|\\/.test(folder)) {
-    say("Open a placed tool as tool.html#<its folder>, such as tool.html#clients/vela/q3-board.");
+  const folder = decodeURIComponent(location.hash.slice(1)).replace(/\/+$/, "");
+  if (!folder) { say("Open a placed tool as tool.html#<its folder>, such as tool.html#clients/vela/q3-board."); return; }
+  try { await setScope(folder); }
+  catch (e) {
+    say(e instanceof TypeError ? "\u201c" + folder + "\u201d is not a folder inside this session's folder." : "This bb's Thread Pages cannot give a page a folder of its own: " + (e && e.message || e));
     return;
   }
-  try { await setScope(folder); }
-  catch (e) { say("This bb's Thread Pages cannot give a page a folder of its own yet: " + (e && e.message || e)); return; }
   window.addEventListener("hashchange", function () { location.reload(); });
   // ---- end of tool.html's own lines ----
   let version;
