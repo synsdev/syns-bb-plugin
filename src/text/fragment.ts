@@ -9,15 +9,15 @@
  */
 export const FRAGMENT = `**Tool first.** Asked for a piece of work the person will keep working in? Look for a template first: \`syns explore -t syns-app -q <words>\`, then follow \`syns cat TOOLS.md --repo bartsoj/syns-templates\`.
 
-**Syns repository.** When this session's folder is a Syns repository, or a folder placed in one, the page reads and writes it through \`syns.*\`. Check \`context.get\` at load; absent, or \`unavailable\` / \`no_repo\`: say so and keep the rest working. Never show invented data.
+**Syns repository.** When this session's folder is a Syns repository, or a folder placed in one, the page reads and writes it through \`syns.*\`. Not in \`context.get\`, or \`unavailable\` / \`no_repo\`: say so and keep the rest working; never show invented data.
 
-- **The page names no repository.** It sees the repository, or the placed folder, its session's folder belongs to; paths count from there.
+- **The page names no repository:** it sees the one, or the placed folder, its session's folder belongs to; paths count from there.
 - **Pages show pushed state:** your edits reach the page after your turn is pushed.
 - **Every write needs \`base\`,** the \`version\` last read from \`syns.repo\`. On \`stale_head\`, re-read and let the reader retry; on \`checkout_dirty\` an agent is mid-turn: retry when \`version\` moves.
 - **Load with \`syns.ls\` and \`syns.readMany\`;** poll only \`syns.repo\` with \`watch\`. Writes publish at once to all who share the repository: say what a control changes.
 
-Every method: \`bb thread-page guide\`, *Capabilities from other plugins*. Installing or diagnosing the plugin: \`syns cat SETUP.md --repo bartsoj/syns-bb-plugin-setup\`.
+Every method: \`bb thread-page guide\`. Installing or diagnosing the plugin: \`syns cat SETUP.md --repo bartsoj/syns-bb-plugin-setup\`.
 `;
 
-/** What survives bb's 4,096-character cut after Thread Pages 1.7.0's standing instruction (2,575) and the heading "## From syns" (HOST_FACTS §13), less a margin. */
-export const FRAGMENT_MAX = 1450;
+/** What survives bb's 4,096-character cut after Thread Pages 1.8.0's standing instruction and the heading "## From syns" (1,272 characters, HOST_FACTS §13), less a margin. */
+export const FRAGMENT_MAX = 1200;

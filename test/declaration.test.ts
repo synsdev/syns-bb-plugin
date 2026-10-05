@@ -173,7 +173,7 @@ describe("what agents are told", () => {
 
   it("the fragment and the guide say the folder rule: a placed folder is what the page sees, paths counted from it (A57, D36)", () => {
     expect(declaration.instruction).toMatch(/or a folder placed in one/);
-    expect(declaration.instruction).toContain("It sees the repository, or the placed folder, its session's folder belongs to; paths count from there.");
+    expect(declaration.instruction).toContain("it sees the one, or the placed folder, its session's folder belongs to; paths count from there.");
     expect(declaration.instruction).not.toMatch(/never names a repository\.\*\* It is the one/);
     expect(declaration.guide).toContain("## A placed folder");
     for (const word of ["`holder`", "counted from it", "the holder's", "Once the CLI checks writes against the folder only, a write is `stale_head` only when the folder changed after `base`"]) expect(declaration.guide, word).toContain(word);
