@@ -4,7 +4,7 @@ import { FRAGMENT } from "./text/fragment.js";
 import { buildGuide } from "./text/guide.js";
 
 /** The plugin's version, as declared to the host. A test holds it equal to package.json's. */
-export const VERSION = "0.5.0-spike.6";
+export const VERSION = "0.5.0";
 
 export interface DeclaredMethod {
   name: string;
