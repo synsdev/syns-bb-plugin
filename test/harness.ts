@@ -12,7 +12,8 @@ type Reply = RunResult | ((request: RunRequest) => RunResult | Promise<RunResult
 
 /** The server half above the Runner seam, with a fake runner, a fixed resolution and a captured log. */
 export function harness(replies: Record<string, Reply> = {}, options: { table?: readonly Method[]; limits?: Limits; where?: Where | null; held?: Held } = {}) {
-  const runner = fakeRunner(replies);
+  // Methods that need a newer CLI ask its version first; a current one unless a test says otherwise.
+  const runner = fakeRunner({ "--version": { exitCode: 0, stdout: "syns 0.3.11\n", stderr: "", timedOut: false, spawnError: null, overflowed: false }, ...replies });
   const log: string[] = [];
   const resolved: string[] = [];
   const invoke = createDispatch({
@@ -26,7 +27,7 @@ export function harness(replies: Record<string, Reply> = {}, options: { table?: 
     log: { info: (line) => log.push(line), warn: (line) => log.push(line) },
   });
   const call = (method: string, params: unknown = {}, sessionId: string | null = "thr_page"): Promise<Answer> => invoke({ method, params, caller: { sessionId }, requestId: "req_1" });
-  return { runner, log, resolved, call };
+  return { runner, log, resolved, call, invoke };
 }
 
 /** Parameters each registered method accepts, for the rows that say "every method". */
@@ -47,6 +48,7 @@ export const SAMPLES: Record<string, Record<string, unknown>> = {
   "syns.revert": { path: "notes/a.md", to: OLD },
   "syns.readBinary": { path: "images/a.png" },
   "syns.writeBinary": { path: "images/a.png", base64: "iVBORw0KGgo=", base: HEAD },
+  "syns.place": { template: "acme/whiteboard-template", path: "clients/vela/q3-board" },
 };
 
 export const failureOf = (answer: Answer) => {

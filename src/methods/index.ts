@@ -8,6 +8,7 @@ import { grep } from "./grep.js";
 import { history } from "./history.js";
 import { ls } from "./ls.js";
 import { read } from "./read.js";
+import { place } from "./place.js";
 import { readMany } from "./readMany.js";
 import { repo } from "./repo.js";
 import { revert } from "./revert.js";
@@ -20,4 +21,4 @@ import { write } from "./write.js";
  * method section and the dispatch are all derived from it. A new method is a
  * new file exporting one entry, and one line here.
  */
-export const METHODS: readonly Method[] = [repo, whoami, ls, readMany, history, commit, read, glob, grep, diff, write, edit, rm, revert, readBinary, writeBinary];
+export const METHODS: readonly Method[] = [repo, whoami, ls, readMany, history, commit, read, glob, grep, diff, write, edit, rm, revert, readBinary, writeBinary, place];

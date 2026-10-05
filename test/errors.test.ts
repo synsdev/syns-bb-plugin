@@ -123,7 +123,7 @@ describe("page-facing messages (S3.1)", () => {
     for (const [reason, entry] of Object.entries(REASONS)) {
       expect(entry.message.length, reason).toBeGreaterThan(0);
       expect(entry.message.length, reason).toBeLessThanOrEqual(300);
-      expect(["unavailable", "conflict", "invalid_params"]).toContain(entry.code);
+      expect(["unavailable", "conflict", "invalid_params", "not_found"]).toContain(entry.code);
     }
   });
   it("never carries the CLI's text: no folder path, no CLI hint", async () => {

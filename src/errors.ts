@@ -58,6 +58,27 @@ export const REASONS = {
     message: "The Syns server cannot take writes from inside a placed folder yet. Nothing was written.",
     meaning: "The server is too old for writes in a placed folder. Nothing written; reads work.",
   },
+  cli_too_old: {
+    code: "unavailable",
+    message: "The Syns command-line tool on this session's machine is too old for this. Run syns upgrade there.",
+    meaning: "The machine's syns is older than detail.need (detail.have): syns upgrade there.",
+    detail: { type: "object", properties: { need: { type: "string" }, have: { type: ["string", "null"] } }, required: ["need", "have"] },
+  },
+  occupied: {
+    code: "conflict",
+    message: "That folder already holds files. Nothing was placed.",
+    meaning: "path already holds a file at the head or on disk; choose another.",
+  },
+  no_such_template: {
+    code: "not_found",
+    message: "That template does not exist, or this account cannot read it.",
+    meaning: "template is no repository the reader can read.",
+  },
+  bad_scope: {
+    code: "invalid_params",
+    message: "This page asked for a folder outside its session's folder.",
+    meaning: "The document's scope is not a folder inside the session's folder.",
+  },
   stale_head: {
     code: "conflict",
     message: "The repository changed since this page last read it. Nothing was written.",
@@ -199,6 +220,9 @@ export async function interpret(run: RunResult, declared: readonly string[], run
   if (exit === 1 && error.includes("holds unpublished local changes")) throw fail("checkout_dirty");
   if (exit === 1 && error.includes("authentication required")) throw fail(declared.includes("not_logged_in") ? "not_logged_in" : "no_access");
   if (exit === 1 && error.includes("--old matched no content")) throw fail("no_match");
+  // syns place (D43, HOST_FACTS §14).
+  if (exit === 1 && error.startsWith("configuration error") && error.includes(" already holds ")) throw fail("occupied");
+  if (exit === 1 && error.startsWith("not_found:") && error.includes("is no repository you can read")) throw fail("no_such_template");
   const times = exit === 1 ? /--old matched (\d+) times/.exec(error) : null;
   if (times) throw fail("many_matches", { count: Number(times[1]) });
   if (exit === 1 && error.includes("(404)")) {

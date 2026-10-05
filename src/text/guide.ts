@@ -55,6 +55,11 @@ After a write, the returned \`version\` is the new \`base\`.
 \`syns.revert { path, to }\` restores a file's text at an earlier version. It has no stale check and no provenance: it takes no \`base\`, so it can overwrite a change the reader has not seen. Call \`syns.repo\` just before offering it, and say what it overwrites.
 `;
 
+const TOOLS = `## A tool's own document
+
+A document may set a scope: a folder inside the session's folder. Every \`syns.*\` call from it then answers for that folder alone, as if it were the repository, its paths counted from it; \`bad_scope\` means the scope left the session's folder. \`syns.place { template, path, version? }\` places a template (OWNER/NAME) as a new folder and always runs at the session's folder, whatever the scope: \`occupied\` if \`path\` holds files, \`no_such_template\` if the reader cannot read it. Then open it as \`tool.html#<path>\`, the generic document that sets that scope and loads \`<path>/.page/\`. One session, one agent: no session is moved or started.
+`;
+
 const CANNOT = `## What a page cannot do here
 
 Choose a repository, or reach outside a placed folder: the session's folder decides. Read unpublished edits. Write without a \`base\`, but for \`syns.revert\`. Set a commit's provenance. Run a CLI command: each method is one fixed operation.
@@ -97,13 +102,12 @@ function methodSection(table: readonly Method[]): string {
   const blocks = table.map((method) =>
     [
       `### \`${method.name}\` — ${method.effect} · ${kib(method.maxRequestBytes)} / ${kib(method.maxResponseBytes)}`,
-      method.description,
       `- Params: \`${render(method.params)}\``,
       `- Result: \`${render(method.result)}\``,
       ...(own(method).length > 0 ? [`- Reasons: ${own(method).map((reason) => `\`${reason}\``).join(", ")}`] : []),
     ].join("\n"),
   );
-  return `## Every method\n\n\`path\` is counted from the repository's root, or the placed folder, with \`/\` separators, at most 1,024 characters; it may not begin with \`/\` or \`-\`, hold a \`\\\` or a control character, or have a \`.\` or \`..\` segment. Bounds are request / response. A \`?\` marks an optional key; a bare \`version\` or \`path\` key has that type; no other key is accepted. Every method may answer ${EVERY_METHOD.map((reason) => `\`${reason}\``).join(", ")}; every write ${EVERY_CHANGE.map((reason) => `\`${reason}\``).join(", ")}, and all but \`syns.revert\` ${EVERY_WRITE.map((reason) => `\`${reason}\``).join(", ")}. Other reasons are listed.\n\n${blocks.join("\n\n")}\n`;
+  return `## Every method\n\n\`path\` is counted from the repository's root, or the placed folder, with \`/\` separators, at most 1,024 characters; it may not begin with \`/\` or \`-\`, hold a \`\\\` or a control character, or have a \`.\` or \`..\` segment. Each method's description is in the host's roster above (*Registered now*). Bounds are request / response. A \`?\` marks an optional key; a bare \`version\` or \`path\` key has that type; no other key is accepted. Every method may answer ${EVERY_METHOD.map((reason) => `\`${reason}\``).join(", ")}; every write ${EVERY_CHANGE.map((reason) => `\`${reason}\``).join(", ")}, and all but \`syns.revert\` ${EVERY_WRITE.map((reason) => `\`${reason}\``).join(", ")}. Other reasons are listed.\n\n${blocks.join("\n\n")}\n`;
 }
 
 function errorSection(table: readonly Method[]): string {
@@ -113,5 +117,5 @@ function errorSection(table: readonly Method[]): string {
 }
 
 export function buildGuide(table: readonly Method[]): string {
-  return [PROSE, methodSection(table), errorSection(table), CANNOT].join("\n").trim();
+  return [PROSE, TOOLS, methodSection(table), errorSection(table), CANNOT].join("\n").trim();
 }

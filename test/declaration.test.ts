@@ -9,6 +9,7 @@ import { ok } from "./fake-runner.js";
 import { harness, resultOf } from "./harness.js";
 
 const SIXTEEN = ["syns.commit", "syns.diff", "syns.edit", "syns.glob", "syns.grep", "syns.history", "syns.ls", "syns.read", "syns.readBinary", "syns.readMany", "syns.repo", "syns.revert", "syns.rm", "syns.whoami", "syns.write", "syns.writeBinary"];
+const ALL = [...SIXTEEN, "syns.place"].sort();
 /** The keywords Thread Pages compiles; any other refuses the method (its contributed.ts). */
 const SUBSET = new Set(["type", "description", "properties", "required", "additionalProperties", "enum", "const", "minimum", "maximum", "minLength", "maxLength", "pattern", "items", "minItems", "maxItems"]);
 
@@ -23,9 +24,9 @@ const namesIn = (text: string): string[] => [...new Set(text.match(/syns\.[a-z][
 const declaration = buildDeclaration(METHODS, { agentInstructions: true });
 
 describe("the table", () => {
-  it("holds the sixteen methods of spec 01: ten read, six write (D23)", () => {
-    expect(METHODS.map((method) => method.name).sort()).toEqual(SIXTEEN);
-    expect(METHODS.filter((method) => method.effect === "contributed-write").map((method) => method.name).sort()).toEqual(["syns.commit", "syns.edit", "syns.revert", "syns.rm", "syns.write", "syns.writeBinary"]);
+  it("holds the seventeen methods of spec 01: the sixteen, and syns.place (D23, D43)", () => {
+    expect(METHODS.map((method) => method.name).sort()).toEqual(ALL);
+    expect(METHODS.filter((method) => method.effect === "contributed-write").map((method) => method.name).sort()).toEqual(["syns.commit", "syns.edit", "syns.place", "syns.revert", "syns.rm", "syns.write", "syns.writeBinary"]);
   });
 });
 
@@ -71,6 +72,7 @@ describe("the declaration", () => {
       "syns.revert": "64/64",
       "syns.readBinary": "64/1024",
       "syns.writeBinary": "1024/64",
+      "syns.place": "64/64",
     });
   });
 
@@ -100,7 +102,7 @@ describe("the declaration", () => {
 
   it("declares every reason a method can answer with (S3.2)", () => {
     const reasons = Object.fromEntries(declaration.methods.map((method) => [method.name, Object.keys(method.reasons).sort()]));
-    const common = ["cli_missing", "folder_out_of_place", "no_access", "no_repo", "timeout"];
+    const common = ["bad_scope", "cli_missing", "folder_out_of_place", "no_access", "no_repo", "timeout"];
     const write = ["checkout_dirty", "folder_write_unsupported", "stale_head"];
     expect(reasons).toEqual({
       "syns.repo": common,
@@ -118,7 +120,8 @@ describe("the declaration", () => {
       "syns.rm": [...common, ...write].sort(),
       "syns.readBinary": common,
       "syns.writeBinary": [...common, ...write, "bad_hash", "bad_offset", "too_large"].sort(),
-      "syns.revert": [...common, "folder_write_unsupported"].sort(), // it cannot answer stale_head or checkout_dirty while the CLI's revert takes no parent and has no guard (D13, D29)
+      "syns.revert": [...common, "folder_write_unsupported"].sort(),
+      "syns.place": [...common, "cli_too_old", "folder_write_unsupported", "occupied", "no_such_template", "stale_head"].sort(), // it cannot answer stale_head or checkout_dirty while the CLI's revert takes no parent and has no guard (D13, D29)
     });
     for (const method of declaration.methods) for (const reason of Object.keys(method.reasons)) expect(reason).toMatch(/^[a-z][a-z0-9_]{0,63}$/);
     const stale = declaration.methods.find((method) => method.name === "syns.commit")!.reasons.stale_head!;
@@ -136,14 +139,14 @@ describe("the declaration", () => {
   });
 
   it("every write requires base, but syns.revert, whose CLI command takes no parent (A30, S1.4, D13)", () => {
-    for (const method of declaration.methods.filter((entry) => entry.effect === "contributed-write")) {
+    for (const method of declaration.methods.filter((entry) => entry.effect === "contributed-write" && entry.name !== "syns.place")) {
       if (method.name === "syns.revert") expect(Object.keys(method.params.properties as object), method.name).not.toContain("base");
       else expect(method.params.required, method.name).toContain("base");
     }
   });
 
   it("every write takes an optional message of at most 500 characters (S1.6)", () => {
-    for (const method of declaration.methods.filter((entry) => entry.effect === "contributed-write")) {
+    for (const method of declaration.methods.filter((entry) => entry.effect === "contributed-write" && entry.name !== "syns.place")) {
       expect((method.params.properties as Record<string, Schema>).message, method.name).toMatchObject({ type: "string", maxLength: 500 });
       expect(method.params.required, method.name).not.toContain("message");
     }
@@ -175,8 +178,8 @@ describe("what agents are told", () => {
   });
 
   it("the guide names exactly the registered methods, the fragment none other (A9, S4.4)", () => {
-    expect(namesIn(declaration.guide)).toEqual(SIXTEEN);
-    for (const name of namesIn(declaration.instruction!)) expect(SIXTEEN).toContain(name);
+    expect(namesIn(declaration.guide)).toEqual(ALL);
+    for (const name of namesIn(declaration.instruction!)) expect(ALL).toContain(name);
     for (const reason of ["exists", "no_match", "many_matches", "bad_pattern"]) expect(declaration.guide, reason).toContain(`\`${reason}\``);
   });
 
@@ -203,7 +206,7 @@ describe("what agents are told", () => {
   it("the guide's statements about each method come from its declaration (S4.3)", () => {
     for (const method of declaration.methods) {
       expect(declaration.guide).toContain(`\`${method.name}\``);
-      expect(declaration.guide).toContain(method.description);
+      expect(declaration.guide, method.name).not.toContain(method.description); // the host's roster carries it (D42)
       for (const reason of Object.keys(method.reasons)) expect(declaration.guide, `${method.name} ${reason}`).toContain(`\`${reason}\``);
     }
     expect(declaration.guide).toContain("1–200"); // history's limit, from its schema
@@ -327,10 +330,9 @@ describe("one table drives everything (A33, S2.21)", () => {
   it("a method added to the table appears in the declaration, the guide and the dispatch with no other change", async () => {
     expect(buildDeclaration(table, { agentInstructions: true }).methods.map((method) => method.name)).toContain("syns.ping");
     expect(buildGuide(table)).toContain("`syns.ping`");
-    expect(buildGuide(table)).toContain(ping.description);
     const h = harness({ ping: ok({ pong: true }) }, { table });
     expect(resultOf(await h.call("syns.ping"))).toEqual({ pong: true });
-    expect(reasonsOf(ping)).toEqual(["no_repo", "no_access", "cli_missing", "timeout", "folder_out_of_place"]);
+    expect(reasonsOf(ping)).toEqual(["no_repo", "no_access", "cli_missing", "timeout", "folder_out_of_place", "bad_scope"]);
   });
 
   it("and is nowhere without it", async () => {

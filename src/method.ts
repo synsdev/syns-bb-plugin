@@ -55,6 +55,10 @@ interface Common {
   check?(params: any): void;
   /** A write whose CLI command takes no parent and has no guard (`syns.revert`, D13): it cannot answer stale_head or checkout_dirty, so it does not declare them (D29). */
   unguarded?: true;
+  /** Runs at the session's folder even when the calling document set a scope (D43): it acts on the repository as a whole. */
+  atRoot?: true;
+  /** The oldest Syns CLI that can serve it, as "X.Y.Z". Older answers unavailable / cli_too_old before anything runs. */
+  minCli?: string;
   /** How many paths a write names, for the plugin's log. Defaults to one when there is a `path`. S2.19 */
   pathCount?(params: any): number;
 }
@@ -72,13 +76,13 @@ export interface ProcedureMethod extends Common {
 
 export type Method = SimpleMethod | ProcedureMethod;
 
-export const EVERY_METHOD: readonly Reason[] = ["no_repo", "no_access", "cli_missing", "timeout", "folder_out_of_place"];
+export const EVERY_METHOD: readonly Reason[] = ["no_repo", "no_access", "cli_missing", "timeout", "folder_out_of_place", "bad_scope"];
 /** Every write, syns.revert included: a placed folder's write against a server without folder writes (D38). */
 export const EVERY_CHANGE: readonly Reason[] = ["folder_write_unsupported"];
 export const EVERY_WRITE: readonly Reason[] = ["stale_head", "checkout_dirty"];
 
 /** Every reason a method can answer with: the common ones, a write's, and its own. S3.2 */
-export const reasonsOf = (method: Method): Reason[] => [...EVERY_METHOD, ...(method.effect === "contributed-write" ? EVERY_CHANGE : []), ...(method.effect === "contributed-write" && !method.unguarded ? EVERY_WRITE : []), ...(method.reasons ?? [])];
+export const reasonsOf = (method: Method): Reason[] => [...EVERY_METHOD, ...(method.minCli ? (["cli_too_old"] as Reason[]) : []), ...(method.effect === "contributed-write" ? EVERY_CHANGE : []), ...(method.effect === "contributed-write" && !method.unguarded ? EVERY_WRITE : []), ...(method.reasons ?? [])];
 
 // --- shared schema pieces ---------------------------------------------------
 
