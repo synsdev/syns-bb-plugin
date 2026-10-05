@@ -161,10 +161,14 @@ describe("what agents are told", () => {
     expect(declaration.instruction).toBe(FRAGMENT.trim());
   });
 
-  it("the fragment leads with a tool first, naming the skill that holds the steps (A56, D35)", () => {
-    expect(declaration.instruction!.startsWith("**A tool first.**")).toBe(true);
-    expect(declaration.instruction!.indexOf("`syns-tools`")).toBeLessThan(400);
-    expect(existsSync(new URL("../skills/syns-tools/SKILL.md", import.meta.url))).toBe(true);
+  it("the fragment leads with one tool-first line naming the two commands, and points at the setup doc (A56, D45)", () => {
+    const text = declaration.instruction!;
+    expect(text.startsWith("**Tool first.** Asked for a piece of work the person will keep working in?")).toBe(true);
+    expect(text.split("\n")[0]).toContain("`syns explore -t syns-app -q <words>`");
+    expect(text.split("\n")[0]).toContain("`syns cat TOOLS.md --repo bartsoj/syns-templates`");
+    expect(text).toContain("`syns cat SETUP.md --repo bartsoj/syns-bb-plugin`");
+    expect(text).not.toContain("syns-tools");
+    expect(text.length).toBeLessThanOrEqual(1300);
   });
 
   it("the fragment and the guide say the folder rule: a placed folder is what the page sees, paths counted from it (A57, D36)", () => {
@@ -223,93 +227,11 @@ describe("what agents are told", () => {
   });
 });
 
-describe("the tool-first skill (spec 04 §The skills, D35)", () => {
-  const skill = readFileSync(new URL("../skills/syns-tools/SKILL.md", import.meta.url), "utf8");
-
-  it("carries a name and a description that is itself the trigger, narrowed to work the person will go on working in", () => {
-    const frontmatter = /^---\n([\s\S]*?)\n---\n/.exec(skill)?.[1] ?? "";
-    expect(frontmatter).toMatch(/^name: syns-tools$/m);
-    expect(frontmatter).toMatch(/^description: ".{20,1024}"$/m);
-    for (const word of ["asks for a piece of work they will go on working in", "board", "deck", "template", "Not when a page only reports on other work", "review, helper or coding session"]) expect(frontmatter, word).toContain(word);
-  });
-
-  it("holds the steps: find (paged), pick, place or fork, the loader byte for byte, move or start a session, AGENTS.md", () => {
-    for (const word of ["syns explore -t syns-app -q", "issue 207", '.tags | index("syns-app")', "--offset", "`total`", "only `bartsoj/` templates", "write the page as the Thread Pages guide says", "syns place <owner/name> <folder>", "cannot determine repo identity", "syns fork", "--visibility private", ".page/loader.html", "byte for byte", "update_environment_directory", "already has a page", "bb thread spawn", "Give no parent", "AGENTS.md", "Ask the person\nnothing"]) expect(skill, word).toContain(word);
-  });
-
-  it("checks a fork's identity before any command that acts on the repository, as the templates order it (review 1)", () => {
-    const identity = skill.indexOf("Check its identity before any other `syns` command there.");
-    expect(identity).toBeGreaterThan(skill.indexOf("syns pull <you>/<name>"));
-    expect(skill.indexOf("syns status")).toBeGreaterThan(identity);
-    expect(skill.indexOf("syns repo --visibility private")).toBeGreaterThan(skill.indexOf("syns status"));
-    expect(skill.indexOf('syns push -m "Name the fork in .syns.yaml"')).toBeLessThan(skill.indexOf("syns repo --visibility private"));
-  });
-
-  it("puts a tool's session in the holder's own bb project, its environment the folder; a project at the folder only when the holder has none (the lead's ruling)", () => {
-    for (const word of ["in the holding repository's own bb project, with its\nenvironment set to the tool's folder", "taken off its end", "Only when there is none, create one", "--project <the holder's project> --environment <absolute folder>", "`$BB_PROJECT_ID` is the holder's project"]) expect(skill, word).toContain(word);
-    expect(skill).not.toContain("--project <project id>");
-    expect(skill.indexOf("bb project create")).toBeGreaterThan(skill.indexOf("bb project list --json"));
-  });
-
-  it("never moves a session outside a Syns repository, nor one started for something else (review 2)", () => {
-    expect(skill).toContain("it was started for this piece of work");
-    expect(skill).toContain("its folder is a Syns repository;");
-    expect(skill).toContain("**every fork**: outside a\n  Syns repository, never move the session");
-  });
-
-  it("turns a placed template's checks on without asking only for bartsoj/ templates, otherwise after a yes (the lead's ruling)", () => {
-    const step = skill.indexOf("**Turn on the template's checks.**");
-    expect(step).toBeGreaterThan(skill.indexOf("syns place <owner/name> <folder>"));
-    expect(step).toBeLessThan(skill.indexOf("**It answers `cannot determine repo identity`**"));
-    for (const word of ["where they are off", "is the one command", "For a `bartsoj/` template, run it without asking", "run it only after they say\n  yes"]) expect(skill, word).toContain(word);
-  });
-
-  it("uses the CLI's tag filter from 0.3.6, keeping the listing filter for older CLIs, and enable-checks after placing (CLI 0.3.6)", () => {
-    for (const word of ["0.3.6 or later", "An older CLI ignores `-t` and `-q`", "syns enable-checks <folder>", "`enableChecks`", "run it without asking", "only after they say\n  yes"]) expect(skill, word).toContain(word);
-  });
-
-  it("handles the CLI's folder refusals: occupied, unreadable, nested identity, old server, out of place, holder root (CLI 0.3.6)", () => {
-    for (const word of ["already holds", "is no repository you can read", "`.syns.yaml` below its root", "`folder_write_unsupported`", "`folder out of place`", "**`holder root required`**"]) expect(skill, word).toContain(word);
-  });
-
-  it("follows the network rule for CLI 0.3.8: inside the sandbox, upgrade and retry once, else a new chat with permission Full (0.3.2)", () => {
-    for (const word of ["the CLI is 0.3.8 or later", "`syns upgrade` if it is older", "works inside\nbb's sandbox", "run `syns upgrade`\nand try that command once more", "start a new chat in bb with permission set to\nFull and send the same message again, then stop", "Never run `syns` outside the\nsandbox.", "`.syns-state/`", "never\npublished: ignore it"]) expect(skill, word).toContain(word);
-    for (const old of ["outside the sandbox, and say why", "issue 198", "Never bypass the sandbox ahead of time"]) expect(skill, old).not.toContain(old);
-    expect(skill).not.toContain("syns whoami");
-  });
-
-  it("places with --json, skips enable-checks when enableChecks is null, and resolves paths before the project lookup (review 3, 4)", () => {
-    expect(skill).toContain("syns place <owner/name> <folder> --json");
-    expect(skill).toContain("When `enableChecks` is `null`, the template has no checks:\n  skip this step.");
-    expect(skill).toContain('root="$(realpath "<holder root>")"');
-    expect(skill).toContain('[ "$(realpath "$p" 2>/dev/null)" = "$root" ]');
-  });
-
-  it("checks for syns place only where it places, so a fork works with a CLI that has none (review N1)", () => {
-    const check = skill.indexOf("First, `syns place --help`.");
-    expect(check).toBeGreaterThan(skill.indexOf("**It answers a repository**"));
-    expect(check).toBeLessThan(skill.indexOf("**It answers `cannot determine repo identity`**"));
-    expect(skill.indexOf("syns place --help")).toBe(check + "First, `".length);
-  });
-
-  it("falls back to today's page when the CLI has no place, and on any other answer, and never copies by hand (review 3, 7)", () => {
-    for (const word of ["unrecognized subcommand\n  'place'", "the CLI is too old", "Never copy a template's files by hand", "`not_found` (404)", "`authentication required`", "do not place and do not fork"]) expect(skill, word).toContain(word);
-  });
-});
-
-describe("the skill (spec 04 §The skills)", () => {
-  const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { bb: { skills: string[] } };
-  const skill = readFileSync(new URL("../skills/syns-bb-plugin/SKILL.md", import.meta.url), "utf8");
-
-  it("is declared in the manifest, and carries a name and a description", () => {
-    expect(manifest.bb.skills).toEqual(["skills"]);
-    const frontmatter = /^---\n([\s\S]*?)\n---\n/.exec(skill)?.[1] ?? "";
-    expect(frontmatter).toMatch(/^name: syns-bb-plugin$/m);
-    expect(frontmatter).toMatch(/^description: ".{20,}"$/m);
-  });
-
-  it("covers the two settings, the CLI on each machine, and what cli_missing, no_access and timeout mean for an operator", () => {
-    for (const word of ["synsPath", "agentInstructions", "installed and logged in on every machine", "cli_missing", "no_access", "timeout"]) expect(skill, word).toContain(word);
+describe("no skills (D45)", () => {
+  it("the plugin ships none: the manifest declares no skills folder, and there is none", () => {
+    const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { bb: Record<string, unknown> };
+    expect(manifest.bb).not.toHaveProperty("skills");
+    expect(existsSync(new URL("../skills", import.meta.url))).toBe(false);
   });
 });
 

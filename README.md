@@ -35,20 +35,17 @@ plugin id, and the methods are `syns.*`.
 | `agentInstructions` | `true` | Tell every eligible session about `syns.*`, in about 1.2 KiB joined to the Thread Pages instruction, which bb cuts at 4,096 characters |
 | `synsPath` | unset | Absolute path of the `syns` executable, when it is not on the daemon's `PATH` or in `~/.cargo/bin`, `~/.local/bin`, `/usr/local/bin`, `/opt/homebrew/bin` |
 
-## A tool first
+## What agents are told
 
-The plugin ships a second skill, `syns-tools`, besides the operator's
-`syns-bb-plugin`. When the person asks for a piece of work they will go on
-working in (a board, a deck, a document, a plan…), an agent finds a `syns-app`
-template and places it as a folder with `syns place`. When the session is in no
-Syns repository, it forks the template into a new private repository instead.
-The template's `.page/loader.html` becomes the page, byte for byte, and the
-folder's `AGENTS.md` governs. The agent moves its own session only when the
-session was started for that work in a Syns repository; otherwise it starts a
-new session. Either way the session lives in the holding repository's bb
-project, with its environment set to the folder. Not for a page that reports on other work, nor in a review, helper
-or coding session. With a CLI too old for `syns place`, the agent says so and
-writes the page as before. The instruction fragment leads with that trigger.
+The plugin ships no skills. Its instruction fragment, which Thread Pages joins to
+its own, holds the `syns.*` essentials and two pointers:
+- one line telling agents to look for a template first, following the
+  templates' public `TOOLS.md`
+  (`syns cat TOOLS.md --repo bartsoj/syns-templates`);
+- the setup and diagnosis doc,
+  `syns cat SETUP.md --repo bartsoj/syns-bb-plugin`.
+
+The full method reference is in `bb thread-page guide`.
 
 ## The methods
 
@@ -115,7 +112,7 @@ that table. Add an entry and its test; touch nothing else.
 
 ```sh
 npm install
-npm test            # 334 tests; no network, no login — the CLI is replayed from recordings; one test reads the instruction from this machine's bb, skipped without one
+npm test            # 321 tests; no network, no login — the CLI is replayed from recordings; one test reads the instruction from this machine's bb, skipped without one
 npm run typecheck
 npm run build       # bb plugin build
 ```

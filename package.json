@@ -1,6 +1,6 @@
 {
   "name": "bb-plugin-syns",
-  "version": "0.5.0-spike.3",
+  "version": "0.5.0-spike.4",
   "type": "module",
   "private": true,
   "engines": {
@@ -14,10 +14,7 @@
       "icon": "GitBranch"
     },
     "server": "./server.ts",
-    "host": "./host.ts",
-    "skills": [
-      "skills"
-    ]
+    "host": "./host.ts"
   },
   "scripts": {
     "typecheck": "tsc -p .",
