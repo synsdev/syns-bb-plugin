@@ -1,0 +1,1 @@
+{"source": "HOST_FACTS.md \u00a716: syns status --json, CLI 0.3.13, names invented", "exitCode": 0, "json": {"author": null, "commitSha": "7ca9bc78ba047d9e7798b8d2733c254e24cfc837", "fileCount": 3, "name": "work", "owner": "acme", "role": "owner", "sharedFolder": false, "visibility": "private", "workingCopyState": "diverged"}}

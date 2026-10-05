@@ -1,5 +1,6 @@
 import { buildArgs } from "../cli.js";
-import { K64, nullable, object, path, version, type SimpleMethod } from "../method.js";
+import { fail } from "../errors.js";
+import { K64, nullable, object, path, version, type ProcedureMethod } from "../method.js";
 
 /** OWNER/NAME of a template repository. */
 const template = { type: "string", minLength: 3, maxLength: 201, pattern: "^[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*$" };
@@ -12,7 +13,10 @@ const template = { type: "string", minLength: 3, maxLength: 201, pattern: "^[a-z
  * no base. It has no provenance flags, so the page's provenance goes in
  * SYNS_INTEGRATION, SYNS_RUN and SYNS_TRIGGER (D44).
  */
-export const place: SimpleMethod = {
+/** Working-copy states with no unpublished local edit: placing then cannot mix into an agent's turn (D46). */
+const CLEAN = new Set(["converged", "remote_changes"]);
+
+export const place: ProcedureMethod = {
   name: "syns.place",
   description: "Place a template (OWNER/NAME, at version or its head) as a new folder at path of this session's repository: one version, the files on disk too. Runs at the session's folder whatever the scope.",
   effect: "contributed-write",
@@ -35,10 +39,14 @@ export const place: SimpleMethod = {
   },
   maxRequestBytes: K64,
   maxResponseBytes: K64,
-  reasons: ["occupied", "no_such_template", "stale_head"],
-  // place takes no provenance flags; the CLI reads it from SYNS_* (D44).
-  command: (params) => ({ args: buildArgs("place", { version: params.version }, [params.template, params.path]), provenanceEnv: true }),
-  shape: (out) => {
+  reasons: ["occupied", "no_such_template", "stale_head", "checkout_dirty"],
+  async procedure(params, context) {
+    // The CLI's place does not refuse a checkout holding unpublished edits (HOST_FACTS §16), and it writes the
+    // template's files into that checkout: with an agent mid-turn, its end-of-turn sync would stop for a review.
+    const status = (await context.syns(["status", "--json"])) as Record<string, unknown>;
+    if (!CLEAN.has(String(status.workingCopyState))) throw fail("checkout_dirty");
+    // place takes no provenance flags; the CLI reads it from SYNS_* (D44).
+    const out = (await context.syns(buildArgs("place", { version: params.version }, [params.template, params.path]), undefined, { provenanceEnv: true })) as Record<string, unknown>;
     const placed = (typeof out.template === "object" && out.template !== null ? out.template : {}) as Record<string, unknown>;
     return {
       path: out.path,

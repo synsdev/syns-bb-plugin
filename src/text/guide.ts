@@ -57,7 +57,7 @@ After a write, the returned \`version\` is the new \`base\`.
 
 const TOOLS = `## A document's folder
 
-A document may set a scope: a folder inside the session's folder. Every \`syns.*\` call from it then answers for that folder alone, as if it were the repository, its paths counted from it; \`bad_scope\` means the scope left the session's folder. \`syns.place { template, path, version? }\` places a template (OWNER/NAME) as a new folder, and always runs at the session's folder, whatever the scope: \`occupied\` if \`path\` holds files, \`no_such_template\` if the reader cannot read it. A document scoped to that folder then works on it alone.
+A document may set a scope: a folder placed in the session's own repository, which must hold its own identity file. Every \`syns.*\` call from it then answers for that placed folder alone, as if it were the repository, its paths counted from it. \`bad_scope\` refuses anything else: a plain folder, a folder below a placed one, another repository's checkout, a folder outside the session's (symlinks followed), or any scope when the session's folder is no Syns repository. \`syns.place { template, path, version? }\` places a template (OWNER/NAME) as a new folder and always runs at the session's folder, whatever the scope: \`occupied\` if \`path\` holds files, \`no_such_template\` if the reader cannot read it, \`checkout_dirty\` while the checkout holds unpublished edits.
 `;
 
 const CANNOT = `## What a page cannot do here

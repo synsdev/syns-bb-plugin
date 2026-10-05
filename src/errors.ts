@@ -76,8 +76,8 @@ export const REASONS = {
   },
   bad_scope: {
     code: "invalid_params",
-    message: "This page asked for a folder outside its session's folder.",
-    meaning: "The document's scope is not a folder inside the session's folder.",
+    message: "This page asked for a folder that is not a placed folder of its session's repository.",
+    meaning: "The scope is not a folder placed in the session's own repository, with its own identity file, inside the session's folder.",
   },
   stale_head: {
     code: "conflict",

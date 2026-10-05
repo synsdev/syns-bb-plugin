@@ -6,7 +6,7 @@ import { experimental_defineHostEntry } from "@get-bb/plugin-sdk/host";
 import { CLI_NOT_FOUND, SCOPE_OUTSIDE, type RunResult } from "./cli.js";
 import { hostContract } from "./contract.js";
 import { SLICE, createRelay } from "./relay.js";
-import { inside } from "./scope.js";
+import { scopeFolder } from "./scope.js";
 import { randomUUID } from "node:crypto";
 
 /**
@@ -92,7 +92,13 @@ export default experimental_defineHostEntry({
   contract: hostContract,
   handlers: {
     run: async ({ cwd, within, args, env, stdin, stdinBase64, stdinFrom, timeoutMs, synsPath }, context) => {
-      if (within !== undefined && !(await inside(cwd, within))) return { exitCode: null, stdout: "", stderr: "", timedOut: false, spawnError: SCOPE_OUTSIDE, overflowed: false };
+      // A scoped call starts where the scope resolved, so a link swapped in afterwards cannot move it (D46).
+      let folder = cwd;
+      if (within !== undefined) {
+        const resolved = await scopeFolder(cwd, within);
+        if (resolved === null) return { exitCode: null, stdout: "", stderr: "", timedOut: false, spawnError: SCOPE_OUTSIDE, overflowed: false };
+        folder = resolved;
+      }
       const bin = await findSyns(synsPath);
       if (!bin) return { exitCode: null, stdout: "", stderr: "", timedOut: false, spawnError: CLI_NOT_FOUND, overflowed: false };
       let input: string | Buffer | undefined = stdinBase64 === undefined ? stdin : Buffer.from(stdinBase64, "base64");
@@ -101,7 +107,7 @@ export default experimental_defineHostEntry({
         if (gathered === undefined) return { exitCode: null, stdout: "", stderr: "", timedOut: false, spawnError: "the gathered standard input is no longer held", overflowed: false };
         input = Buffer.from(gathered, "base64");
       }
-      const result = await runSyns(bin, args, cwd, input, timeoutMs, context.signal, env);
+      const result = await runSyns(bin, args, folder, input, timeoutMs, context.signal, env);
       // An answer past one host call goes back in slices (D32).
       if (result.stdout.length <= SLICE) return result;
       const id = randomUUID();

@@ -121,7 +121,7 @@ describe("the declaration", () => {
       "syns.readBinary": common,
       "syns.writeBinary": [...common, ...write, "bad_hash", "bad_offset", "too_large"].sort(),
       "syns.revert": [...common, "folder_write_unsupported"].sort(),
-      "syns.place": [...common, "cli_too_old", "folder_write_unsupported", "occupied", "no_such_template", "stale_head"].sort(), // it cannot answer stale_head or checkout_dirty while the CLI's revert takes no parent and has no guard (D13, D29)
+      "syns.place": [...common, "cli_too_old", "folder_write_unsupported", "occupied", "no_such_template", "stale_head", "checkout_dirty"].sort(), // it cannot answer stale_head or checkout_dirty while the CLI's revert takes no parent and has no guard (D13, D29)
     });
     for (const method of declaration.methods) for (const reason of Object.keys(method.reasons)) expect(reason).toMatch(/^[a-z][a-z0-9_]{0,63}$/);
     const stale = declaration.methods.find((method) => method.name === "syns.commit")!.reasons.stale_head!;

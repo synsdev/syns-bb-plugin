@@ -42,7 +42,7 @@ export interface ProvenanceEnv {
   SYNS_RUN: string;
   SYNS_TRIGGER: string;
 }
-/** The host half's answer when a scoped cwd is not a folder inside the session's folder, once symlinks are followed (D43). */
+/** The host half's answer when a scoped cwd is not a Syns folder inside the session's folder, once symlinks are followed (D43, D46). */
 export const SCOPE_OUTSIDE = "scope_outside";
 
 export interface Where {

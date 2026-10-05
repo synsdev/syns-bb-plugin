@@ -5,7 +5,7 @@ import { METHODS } from "../src/methods/index.js";
 import { fakeRunner, ok, rec, spawnFailed, timedOut } from "./fake-runner.js";
 import { FAST, SAMPLES, failureOf, harness } from "./harness.js";
 
-const everyVerb = (reply: RunResult) => Object.fromEntries(["repo", "whoami", "ls", "cat", "history", "commit", "read", "glob", "grep", "diff", "write", "edit", "rm", "revert", "place"].map((verb) => [verb, reply]));
+const everyVerb = (reply: RunResult) => Object.fromEntries(["repo", "whoami", "ls", "cat", "history", "commit", "read", "glob", "grep", "diff", "write", "edit", "rm", "revert", "place", "status"].map((verb) => [verb, reply]));
 
 describe("the samples", () => {
   it("cover exactly the registered methods", () => expect(Object.keys(SAMPLES).sort()).toEqual(METHODS.map((method) => method.name).sort()));
