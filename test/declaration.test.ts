@@ -166,7 +166,7 @@ describe("what agents are told", () => {
     expect(text.startsWith("**Tool first.** Asked for a piece of work the person will keep working in?")).toBe(true);
     expect(text.split("\n")[0]).toContain("`syns explore -t syns-app -q <words>`");
     expect(text.split("\n")[0]).toContain("`syns cat TOOLS.md --repo bartsoj/syns-templates`");
-    expect(text).toContain("`syns cat SETUP.md --repo bartsoj/syns-bb-plugin`");
+    expect(text).toContain("`syns cat SETUP.md --repo bartsoj/syns-bb-plugin-setup`");
     expect(text).not.toContain("syns-tools");
     expect(text.length).toBeLessThanOrEqual(1300);
   });

@@ -13,7 +13,7 @@ const template = { type: "string", minLength: 3, maxLength: 201, pattern: "^[a-z
  * no base. It has no provenance flags, so the page's provenance goes in
  * SYNS_INTEGRATION, SYNS_RUN and SYNS_TRIGGER (D44).
  */
-/** Working-copy states with no unpublished local edit: placing then cannot mix into an agent's turn (D46). */
+/** Working-copy states with no unpublished local edit, measured safe to place in (HOST_FACTS §16, D46): behind only, the place lands on the newer head and the next sync converges with no review. */
 const CLEAN = new Set(["converged", "remote_changes"]);
 
 export const place: ProcedureMethod = {

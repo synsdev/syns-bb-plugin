@@ -43,7 +43,7 @@ its own, holds the `syns.*` essentials and two pointers:
   templates' public `TOOLS.md`
   (`syns cat TOOLS.md --repo bartsoj/syns-templates`);
 - the setup and diagnosis doc,
-  `syns cat SETUP.md --repo bartsoj/syns-bb-plugin`.
+  `syns cat SETUP.md --repo bartsoj/syns-bb-plugin-setup`.
 
 The full method reference is in `bb thread-page guide`.
 

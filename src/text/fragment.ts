@@ -16,7 +16,7 @@ export const FRAGMENT = `**Tool first.** Asked for a piece of work the person wi
 - **Every write needs \`base\`,** the \`version\` last read from \`syns.repo\`. On \`stale_head\`, re-read and let the reader retry; on \`checkout_dirty\` an agent is mid-turn: retry when \`version\` moves.
 - **Load with \`syns.ls\` and \`syns.readMany\`;** poll only \`syns.repo\` with \`watch\`. Writes publish at once to all who share the repository: say what a control changes.
 
-Every method: \`bb thread-page guide\`, *Capabilities from other plugins*. Installing or diagnosing the plugin: \`syns cat SETUP.md --repo bartsoj/syns-bb-plugin\`.
+Every method: \`bb thread-page guide\`, *Capabilities from other plugins*. Installing or diagnosing the plugin: \`syns cat SETUP.md --repo bartsoj/syns-bb-plugin-setup\`.
 `;
 
 /** What survives bb's 4,096-character cut after Thread Pages 1.7.0's standing instruction (2,575) and the heading "## From syns" (HOST_FACTS §13), less a margin. */
