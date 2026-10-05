@@ -10,6 +10,8 @@ export interface RunRequest {
   /** For a scoped call, the session's folder: the host half refuses a cwd that resolves outside it, symlinks followed (D43). */
   within?: string;
   args: string[];
+  /** Provenance for a command that takes it only from the environment (`syns place`), D44. Exactly these three keys. */
+  env?: ProvenanceEnv;
   stdin?: string;
   /** Standard input as bytes, base64 across the host call, for `write --bytes` (D25). Never beside `stdin`. */
   stdinBase64?: string;
@@ -33,6 +35,13 @@ export interface Runner {
 }
 
 export const CLI_NOT_FOUND = "cli_not_found";
+
+/** What the CLI reads as a version's provenance when a command has no flags for it (D44). */
+export interface ProvenanceEnv {
+  SYNS_INTEGRATION: string;
+  SYNS_RUN: string;
+  SYNS_TRIGGER: string;
+}
 /** The host half's answer when a scoped cwd is not a folder inside the session's folder, once symlinks are followed (D43). */
 export const SCOPE_OUTSIDE = "scope_outside";
 
@@ -79,7 +88,7 @@ export function buildArgs(verb: string, options: Record<string, OptionValue> = {
 export interface Cli {
   readonly limits: Limits;
   /** One CLI process, inside the limits. `deadline` is when the page's call must have answered. */
-  run(where: Where, args: string[], stdin: string | Buffer | undefined, deadline: number): Promise<RunResult>;
+  run(where: Where, args: string[], stdin: string | Buffer | undefined, deadline: number, env?: ProvenanceEnv): Promise<RunResult>;
 }
 
 const TIMED_OUT: RunResult = { exitCode: null, stdout: "", stderr: "", timedOut: true, spawnError: null, overflowed: false };
@@ -89,7 +98,7 @@ export function createCli(runner: Runner, limits: Limits = LIMITS): Cli {
 
   return {
     limits,
-    async run(where, args, stdin, deadline) {
+    async run(where, args, stdin, deadline, env) {
       let machine = machines.get(where.hostId);
       if (!machine) machines.set(where.hostId, (machine = { running: 0, waiting: [] }));
       const slots = machine;
@@ -100,7 +109,7 @@ export function createCli(runner: Runner, limits: Limits = LIMITS): Cli {
         const left = deadline - Date.now();
         if (left <= 0) return TIMED_OUT;
         const input = stdin === undefined ? {} : typeof stdin === "string" ? { stdin } : { stdinBase64: stdin.toString("base64") };
-        return await runner.run({ hostId: where.hostId, cwd: where.cwd, ...(where.within ? { within: where.within } : {}), args, ...input, timeoutMs: Math.min(limits.processMs, left) });
+        return await runner.run({ hostId: where.hostId, cwd: where.cwd, ...(where.within ? { within: where.within } : {}), args, ...(env ? { env } : {}), ...input, timeoutMs: Math.min(limits.processMs, left) });
       } finally {
         const next = slots.waiting.shift();
         if (next) next();

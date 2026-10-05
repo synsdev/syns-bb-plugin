@@ -67,6 +67,12 @@ describe("the host half, run against a stand-in executable", () => {
     expect(await findSyns(join(dir, "absent", "syns"), { PATH: join(dir, "onpath") }, join(dir, "nohome"))).toBeNull();
   });
 
+  it("hands the provenance it is given to the process's environment, over what it inherited (D44)", async () => {
+    const bin = script("env", 'printf "%s|%s|%s" "$SYNS_INTEGRATION" "$SYNS_RUN" "$SYNS_TRIGGER"');
+    const result = await runSyns(bin, [], dir, undefined, 5000, signal, { SYNS_INTEGRATION: "syns-bb-plugin", SYNS_RUN: "thr_1", SYNS_TRIGGER: "thread-page" });
+    expect(result.stdout).toBe("syns-bb-plugin|thr_1|thread-page");
+  });
+
   it("passes arguments as they are, standard input, and the folder; returns exit code and output", async () => {
     const bin = script("echo", 'printf "%s|" "$@"; printf "cwd=%s|" "$(pwd -P)"; cat; echo oops >&2; exit 3');
     const result = await runSyns(bin, ["a b", "$(id)", "; rm -rf x", "--", "-n"], dir, "from stdin", 5000, signal);

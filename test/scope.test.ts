@@ -112,3 +112,28 @@ describe("symlinks: the host half resolves a scope before it runs anything (D43)
     expect(await inside(`${root}-sibling`, root)).toBe(false);
   });
 });
+
+describe("syns.place records the page's provenance through the environment (D44)", () => {
+  it("sets SYNS_INTEGRATION, SYNS_RUN and SYNS_TRIGGER for place, as the flags other writes carry", async () => {
+    const h = harness({ place: rec("place.ok") });
+    await h.call("syns.place", { template: "acme/whiteboard-template", path: "clients/vela/q3-board" }, "thr_page");
+    const placed = h.runner.calls.find((call) => call.args[0] === "place")!;
+    expect(placed.env).toEqual({ SYNS_INTEGRATION: "syns-bb-plugin", SYNS_RUN: "thr_page", SYNS_TRIGGER: "thread-page" });
+    expect(placed.args.some((arg) => arg.startsWith("--integration") || arg.startsWith("--run") || arg.startsWith("--trigger"))).toBe(false);
+  });
+  it("sets no environment for any other command, nor for the version check", async () => {
+    const h = harness({ place: rec("place.ok"), repo: rec("repo.ok"), write: rec("write.one.ok") });
+    await h.call("syns.place", { template: "acme/t", path: "a" });
+    await h.call("syns.repo");
+    await h.call("syns.write", { path: "a.md", text: "x", base: "7ca9bc78ba047d9e7798b8d2733c254e24cfc837" });
+    for (const call of h.runner.calls.filter((c) => c.args[0] !== "place")) expect(call, call.args.join(" ")).not.toHaveProperty("env");
+  });
+  it("the host contract takes those three keys and no other", async () => {
+    const { hostContract } = await import("../src/contract.js");
+    const input = (hostContract.run as { input: { safeParse(v: unknown): { success: boolean } } }).input;
+    const base = { cwd: "/w", args: ["place"], timeoutMs: 1000 };
+    expect(input.safeParse({ ...base, env: { SYNS_INTEGRATION: "syns-bb-plugin", SYNS_RUN: "thr_1", SYNS_TRIGGER: "thread-page" } }).success).toBe(true);
+    expect(input.safeParse({ ...base, env: { SYNS_INTEGRATION: "a", SYNS_RUN: "b", SYNS_TRIGGER: "c", PATH: "/evil" } }).success).toBe(false);
+    expect(input.safeParse({ ...base, env: { LD_PRELOAD: "x" } }).success).toBe(false);
+  });
+});

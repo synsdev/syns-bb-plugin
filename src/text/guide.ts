@@ -55,9 +55,9 @@ After a write, the returned \`version\` is the new \`base\`.
 \`syns.revert { path, to }\` restores a file's text at an earlier version. It has no stale check and no provenance: it takes no \`base\`, so it can overwrite a change the reader has not seen. Call \`syns.repo\` just before offering it, and say what it overwrites.
 `;
 
-const TOOLS = `## A tool's own document
+const TOOLS = `## A document's folder
 
-A document may set a scope: a folder inside the session's folder. Every \`syns.*\` call from it then answers for that folder alone, as if it were the repository, its paths counted from it; \`bad_scope\` means the scope left the session's folder. \`syns.place { template, path, version? }\` places a template (OWNER/NAME) as a new folder and always runs at the session's folder, whatever the scope: \`occupied\` if \`path\` holds files, \`no_such_template\` if the reader cannot read it. Then open it as \`tool.html#<path>\`, the generic document that sets that scope and loads \`<path>/.page/\`. One session, one agent: no session is moved or started.
+A document may set a scope: a folder inside the session's folder. Every \`syns.*\` call from it then answers for that folder alone, as if it were the repository, its paths counted from it; \`bad_scope\` means the scope left the session's folder. \`syns.place { template, path, version? }\` places a template (OWNER/NAME) as a new folder, and always runs at the session's folder, whatever the scope: \`occupied\` if \`path\` holds files, \`no_such_template\` if the reader cannot read it. A document scoped to that folder then works on it alone.
 `;
 
 const CANNOT = `## What a page cannot do here

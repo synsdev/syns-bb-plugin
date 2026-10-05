@@ -1,6 +1,6 @@
 {
   "name": "bb-plugin-syns",
-  "version": "0.5.0-spike.2",
+  "version": "0.5.0-spike.3",
   "type": "module",
   "private": true,
   "engines": {

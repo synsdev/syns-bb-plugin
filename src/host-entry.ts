@@ -36,7 +36,7 @@ export async function findSyns(synsPath: string | undefined, env: { PATH?: strin
 }
 
 /** One process, started directly with an argument array, never through a shell. S2.10 */
-export function runSyns(bin: string, args: string[], cwd: string, stdin: string | Buffer | undefined, timeoutMs: number, signal: AbortSignal): Promise<RunResult> {
+export function runSyns(bin: string, args: string[], cwd: string, stdin: string | Buffer | undefined, timeoutMs: number, signal: AbortSignal, provenance?: Record<string, string>): Promise<RunResult> {
   return new Promise((resolve) => {
     const out: Buffer[] = [];
     const err: Buffer[] = [];
@@ -51,7 +51,7 @@ export function runSyns(bin: string, args: string[], cwd: string, stdin: string 
       clearTimeout(timer);
       resolve({ exitCode, stdout: Buffer.concat(out).toString("utf8"), stderr: Buffer.concat(err).toString("utf8"), timedOut, spawnError, overflowed });
     };
-    const child = spawn(bin, args, { cwd, stdio: ["pipe", "pipe", "pipe"], env: { ...process.env, NO_COLOR: "1" }, signal });
+    const child = spawn(bin, args, { cwd, stdio: ["pipe", "pipe", "pipe"], env: { ...process.env, NO_COLOR: "1", ...(provenance ?? {}) }, signal });
     // Stopping answers at once: a process of its own that still holds the pipes must not hold the call.
     const stop = (): void => {
       child.kill("SIGKILL");
@@ -91,7 +91,7 @@ const relay = createRelay();
 export default experimental_defineHostEntry({
   contract: hostContract,
   handlers: {
-    run: async ({ cwd, within, args, stdin, stdinBase64, stdinFrom, timeoutMs, synsPath }, context) => {
+    run: async ({ cwd, within, args, env, stdin, stdinBase64, stdinFrom, timeoutMs, synsPath }, context) => {
       if (within !== undefined && !(await inside(cwd, within))) return { exitCode: null, stdout: "", stderr: "", timedOut: false, spawnError: SCOPE_OUTSIDE, overflowed: false };
       const bin = await findSyns(synsPath);
       if (!bin) return { exitCode: null, stdout: "", stderr: "", timedOut: false, spawnError: CLI_NOT_FOUND, overflowed: false };
@@ -101,7 +101,7 @@ export default experimental_defineHostEntry({
         if (gathered === undefined) return { exitCode: null, stdout: "", stderr: "", timedOut: false, spawnError: "the gathered standard input is no longer held", overflowed: false };
         input = Buffer.from(gathered, "base64");
       }
-      const result = await runSyns(bin, args, cwd, input, timeoutMs, context.signal);
+      const result = await runSyns(bin, args, cwd, input, timeoutMs, context.signal, env);
       // An answer past one host call goes back in slices (D32).
       if (result.stdout.length <= SLICE) return result;
       const id = randomUUID();

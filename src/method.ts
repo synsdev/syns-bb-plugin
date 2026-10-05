@@ -28,7 +28,7 @@ export interface Context {
   readonly sessionId: string;
   readonly limits: Limits;
   /** Runs the CLI in the session's folder and returns its parsed output, or throws a SynsError. Bytes on standard input travel as bytes. */
-  syns(args: string[], stdin?: string | Buffer): Promise<unknown>;
+  syns(args: string[], stdin?: string | Buffer, options?: { provenanceEnv?: true }): Promise<unknown>;
   /** What the plugin holds between calls (D27). */
   readonly held: Held;
 }
@@ -36,6 +36,8 @@ export interface Context {
 export interface Command {
   args: string[];
   stdin?: string;
+  /** Set the page's provenance in the environment, for a command with no provenance flags (D44). */
+  provenanceEnv?: true;
 }
 
 interface Common {

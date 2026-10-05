@@ -115,7 +115,7 @@ that table. Add an entry and its test; touch nothing else.
 
 ```sh
 npm install
-npm test            # 310 tests; no network, no login — the CLI is replayed from recordings; one test reads the instruction from this machine's bb, skipped without one
+npm test            # 334 tests; no network, no login — the CLI is replayed from recordings; one test reads the instruction from this machine's bb, skipped without one
 npm run typecheck
 npm run build       # bb plugin build
 ```

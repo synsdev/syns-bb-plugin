@@ -72,8 +72,9 @@ export function createDispatch({ table = METHODS, cli, resolve, log, held = crea
       sessionId,
       limits: cli.limits,
       held,
-      async syns(args, stdin) {
-        const ran = await cli.run(where, args, stdin, deadline);
+      async syns(args, stdin, options) {
+        const env = options?.provenanceEnv ? { SYNS_INTEGRATION: "syns-bb-plugin", SYNS_RUN: sessionId, SYNS_TRIGGER: "thread-page" } : undefined;
+        const ran = await cli.run(where, args, stdin, deadline, env);
         // The 404 rule's `repo` runs at most once per call. S3.5
         return interpret(ran, declared, () => (repoCheck ??= cli.run(where, ["repo", "--json"], undefined, deadline)));
       },
@@ -84,7 +85,7 @@ export function createDispatch({ table = METHODS, cli, resolve, log, held = crea
       result = await method.procedure(params, context);
     } else {
       const command = method.command(params, sessionId);
-      const output = await context.syns(command.args, command.stdin);
+      const output = await context.syns(command.args, command.stdin, command.provenanceEnv ? { provenanceEnv: true } : undefined);
       if (typeof output !== "object" || output === null || Array.isArray(output)) throw new SynsError("handler_error", { log: "exit=0 output is not a JSON object" });
       result = method.shape(output as Record<string, unknown>, params);
     }

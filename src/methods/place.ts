@@ -7,14 +7,14 @@ const template = { type: "string", minLength: 3, maxLength: 201, pattern: "^[a-z
 /**
  * `syns place TEMPLATE PATH [--version N] --json` (D43). It acts on the
  * session's repository as a whole, so it runs at the session's folder even
- * from a document scoped to a placed folder: a page places a template, then
- * opens it as `tool.html#<path>`. It publishes one version and writes the
+ * from a document scoped to a placed folder. It publishes one version and writes the
  * files to the session's checkout. The CLI checks the head itself, so it takes
- * no base; it takes no provenance flags, so the version records none.
+ * no base. It has no provenance flags, so the page's provenance goes in
+ * SYNS_INTEGRATION, SYNS_RUN and SYNS_TRIGGER (D44).
  */
 export const place: SimpleMethod = {
   name: "syns.place",
-  description: "Place a template (OWNER/NAME, at version or its head) as a new folder at path of this session's repository: one version, the files on disk too. Then open it as tool.html#<path>.",
+  description: "Place a template (OWNER/NAME, at version or its head) as a new folder at path of this session's repository: one version, the files on disk too. Runs at the session's folder whatever the scope.",
   effect: "contributed-write",
   unguarded: true,
   atRoot: true,
@@ -36,7 +36,8 @@ export const place: SimpleMethod = {
   maxRequestBytes: K64,
   maxResponseBytes: K64,
   reasons: ["occupied", "no_such_template", "stale_head"],
-  command: (params) => ({ args: buildArgs("place", { version: params.version }, [params.template, params.path]) }),
+  // place takes no provenance flags; the CLI reads it from SYNS_* (D44).
+  command: (params) => ({ args: buildArgs("place", { version: params.version }, [params.template, params.path]), provenanceEnv: true }),
   shape: (out) => {
     const placed = (typeof out.template === "object" && out.template !== null ? out.template : {}) as Record<string, unknown>;
     return {
