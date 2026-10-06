@@ -297,8 +297,14 @@ describe("0.6.1: a placed folder's own people, CLI 0.3.14 (D-124, D63)", () => {
   });
   it("in a placed folder not yet shared: bad_scope, saying to share it first", async () => {
     for (const [name, recording] of [["syns.collaborators", "collaborators.not-shared.0314"], ["syns.collaboratorAdd", "collaborators.add.not-shared.0314"]] as const) {
-      expect(failureOf(await harness({ collaborators: rec(recording) }).call(name, SAMPLES[name])), name).toEqual({ code: "invalid_params", reason: "bad_scope", message: "This folder is not shared yet: share it first, then add people to it." });
+      expect(failureOf(await harness({ collaborators: rec(recording) }).call(name, SAMPLES[name])), name).toEqual({ code: "invalid_params", reason: "bad_scope", message: "This folder is not shared yet: share it first, then add people to it. If it was just shared, try again after the next sync." });
     }
+  });
+  it("the match is on the CLI's sentence, not on a folder path that happens to say 'is not shared' (review nit 1)", async () => {
+    const odd = { exitCode: 2, stdout: JSON.stringify({ error: "holder root required: syns repo --visibility acts on the holding repository acme/work, not on the folder /work/checkout/what is not shared/q3 — set the folder's own visibility with: syns share . --visibility private" }), stderr: "", timedOut: false, spawnError: null, overflowed: false };
+    const answer = failureOf(await harness({ repo: odd }).call("syns.repoVisibility", { visibility: "private" }));
+    expect(answer).toMatchObject({ code: "invalid_params", reason: "bad_scope" });
+    expect(answer.message).not.toContain("share it first");
   });
   it("an older CLI's holder root required keeps the general bad_scope sentence", async () => {
     expect(failureOf(await harness({ collaborators: rec("collaborators.holder-root.0313") }).call("syns.collaborators"))).toMatchObject({ reason: "bad_scope", message: expect.stringContaining("cannot do here") });

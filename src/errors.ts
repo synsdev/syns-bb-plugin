@@ -79,7 +79,7 @@ export const REASONS = {
   bad_scope: {
     code: "invalid_params",
     message: "This page asked for something its folder cannot do here: it is not a placed folder of its session's repository, or this action needs another kind of folder.",
-    meaning: "The scope is not a placed folder of the session's own repository, or the CLI does not act there: a folder action at a root, a repository action in a placed folder.",
+    meaning: "The scope is not a placed folder of the session's own repository, or the CLI does not act there: a folder action at a root, a holder action in a placed folder, a folder's people before it is shared.",
   },
   stale_head: {
     code: "conflict",
@@ -165,7 +165,7 @@ export const REASONS = {
 export type Reason = keyof typeof REASONS;
 
 /** bad_scope's sentence when the CLI says the placed folder is not shared yet (CLI 0.3.14, D63). */
-export const NOT_SHARED_YET = "This folder is not shared yet: share it first, then add people to it.";
+export const NOT_SHARED_YET = "This folder is not shared yet: share it first, then add people to it. If it was just shared, try again after the next sync.";
 
 /** Sentences for failures that carry a code and no reason. */
 const CODE_MESSAGES: Record<Code, string> = {
@@ -295,7 +295,7 @@ export async function interpret(run: RunResult, declared: readonly string[], run
   if (exit === 1 && error.includes("the folder path must name a folder")) throw fail("bad_scope");
   if (exit === 1 && error.includes("holds no folder placed from a template")) throw fail("bad_scope");
   // CLI 0.3.14 (D-124): in a placed folder not yet shared, the people commands say to share it first.
-  if (exit === 2 && error.startsWith("holder root required") && error.includes("is not shared")) throw new SynsError("invalid_params", { reason: "bad_scope", message: NOT_SHARED_YET });
+  if (exit === 2 && error.startsWith("holder root required") && error.includes("acts on a shared folder's own people")) throw new SynsError("invalid_params", { reason: "bad_scope", message: NOT_SHARED_YET });
   if (exit === 2 && error.startsWith("holder root required")) throw fail("bad_scope");
   if (exit === 1 && error.includes("configuration error: a name holds") && declared.includes("bad_name")) throw fail("bad_name");
   if (exit === 1 && error.includes("(403)")) throw fail(declared.includes("not_permitted") ? "not_permitted" : "no_access");

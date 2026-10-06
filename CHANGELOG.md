@@ -9,7 +9,8 @@ placed folder manage its own people. No method changed.
   `syns.collaboratorRole` and `syns.collaboratorRemove` act on the folder's
   own people, on CLI 0.3.14 and later, once the folder is shared.
 - In a placed folder not yet shared, they answer `bad_scope` with the sentence
-  "This folder is not shared yet: share it first, then add people to it." On
+  "This folder is not shared yet: share it first, then add people to it. If
+  it was just shared, try again after the next sync." On
   older CLIs they answer `bad_scope` there, as before.
 - The guide, the README and the methods' descriptions say so, and that people
   added at a repository's root reach the whole repository.
