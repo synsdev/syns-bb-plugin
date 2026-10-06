@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.6.1 (candidate, not released)
+## 0.6.1
 
 Text and one error message, for Syns CLI 0.3.14 (D-124), which lets a shared
 placed folder manage its own people. No method changed.
