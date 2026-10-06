@@ -46,7 +46,7 @@ Every file write but \`syns.revert\` carries \`base\`, the \`version\` last read
 
 const SHARING = `## Sharing and people
 
-Each method acts where the CLI acts, in the page's own scope. In a placed folder: \`syns.shareInfo\`, \`syns.share\`, \`syns.unshare\`, \`syns.folderVisibility\`, \`syns.enableChecks\`. At a repository's root: \`syns.repoVisibility\` and the collaborator methods, for the repository's own people. Elsewhere the CLI refuses: \`bad_scope\`; show those controls only where they apply (\`syns.repo\`'s \`holder\`). From a folder's page the CLI does not yet manage the folder's people. \`syns.collaboratorRole\` and \`syns.collaboratorRemove\` take the \`user.id\` that \`syns.collaborators\` answers; find someone with \`syns.users\`. Roles are the CLI's; a shared folder takes \`read\` or \`write\`.
+Each method acts where the CLI acts, in the page's own scope. In a placed folder: \`syns.shareInfo\`, \`syns.share\`, \`syns.unshare\`, \`syns.folderVisibility\`, \`syns.enableChecks\`. At a repository's root: \`syns.repoVisibility\`. The collaborator methods act on the scope's people: in a shared placed folder its own (CLI 0.3.14; until shared, \`bad_scope\` saying to share first; older CLIs, \`bad_scope\`); at a root the **whole repository's**, so never offer root people for one folder. Elsewhere the CLI refuses: \`bad_scope\`; show controls only where they apply (\`syns.repo\`'s \`holder\`, \`syns.shareInfo\`'s \`shared\`). \`syns.collaboratorRole\` and \`syns.collaboratorRemove\` take the \`user.id\` that \`syns.collaborators\` answers; find someone with \`syns.users\`. Roles are the CLI's; a shared folder takes \`read\` or \`write\`.
 
 They act at once, with no dialog, and reach other people. So:
 

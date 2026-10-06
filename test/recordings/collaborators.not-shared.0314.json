@@ -1,0 +1,1 @@
+{"source": "HOST_FACTS.md \u00a718, CLI 0.3.14, measured 2026-10-06; names invented", "exitCode": 2, "json": {"error": "holder root required: syns collaborators acts on a shared folder's own people, and the folder /work/checkout/q3-plan of acme/work is not shared \u2014 share it with: syns share ."}}

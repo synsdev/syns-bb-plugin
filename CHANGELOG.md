@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.6.1 (candidate, not released)
+
+Text and one error message, for Syns CLI 0.3.14 (D-124), which lets a shared
+placed folder manage its own people. No method changed.
+
+- From a placed folder's page, `syns.collaborators`, `syns.collaboratorAdd`,
+  `syns.collaboratorRole` and `syns.collaboratorRemove` act on the folder's
+  own people, on CLI 0.3.14 and later, once the folder is shared.
+- In a placed folder not yet shared, they answer `bad_scope` with the sentence
+  "This folder is not shared yet: share it first, then add people to it." On
+  older CLIs they answer `bad_scope` there, as before.
+- The guide, the README and the methods' descriptions say so, and that people
+  added at a repository's root reach the whole repository.
+
 ## 0.6.0
 
 The page surface as a whole: a page acts on its own scope, its placed folder or

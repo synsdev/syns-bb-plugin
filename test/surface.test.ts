@@ -288,3 +288,22 @@ describe("fix round 1 (review thr_2sffsq2zs6)", () => {
     expect(answer).not.toHaveProperty("reason");
   });
 });
+
+describe("0.6.1: a placed folder's own people, CLI 0.3.14 (D-124, D63)", () => {
+  it("in a shared placed folder the collaborator methods run their one command there, unchanged, and pass the folder's people on", async () => {
+    const h = harness({ collaborators: rec("collaborators.empty.0314") });
+    expect(resultOf(await h.invoke({ method: "syns.collaborators", params: {}, caller: { sessionId: "thr_page" }, requestId: "r" }))).toEqual({ total: 0, limit: 100, offset: 0, data: [] });
+    expect(argsOf(h)).toEqual([["collaborators", "--json"]]);
+  });
+  it("in a placed folder not yet shared: bad_scope, saying to share it first", async () => {
+    for (const [name, recording] of [["syns.collaborators", "collaborators.not-shared.0314"], ["syns.collaboratorAdd", "collaborators.add.not-shared.0314"]] as const) {
+      expect(failureOf(await harness({ collaborators: rec(recording) }).call(name, SAMPLES[name])), name).toEqual({ code: "invalid_params", reason: "bad_scope", message: "This folder is not shared yet: share it first, then add people to it." });
+    }
+  });
+  it("an older CLI's holder root required keeps the general bad_scope sentence", async () => {
+    expect(failureOf(await harness({ collaborators: rec("collaborators.holder-root.0313") }).call("syns.collaborators"))).toMatchObject({ reason: "bad_scope", message: expect.stringContaining("cannot do here") });
+  });
+  it("the descriptions say a root's people are the whole repository's", async () => {
+    for (const name of ["syns.collaborators", "syns.collaboratorAdd"]) expect(METHODS.find((method) => method.name === name)!.description, name).toContain("whole repository");
+  });
+});

@@ -164,6 +164,9 @@ export const REASONS = {
 
 export type Reason = keyof typeof REASONS;
 
+/** bad_scope's sentence when the CLI says the placed folder is not shared yet (CLI 0.3.14, D63). */
+export const NOT_SHARED_YET = "This folder is not shared yet: share it first, then add people to it.";
+
 /** Sentences for failures that carry a code and no reason. */
 const CODE_MESSAGES: Record<Code, string> = {
   invalid_params: "The page sent parameters this method does not accept.",
@@ -291,6 +294,8 @@ export async function interpret(run: RunResult, declared: readonly string[], run
   // Where the CLI does not act in this scope (D59, HOST_FACTS §17): a folder's command at a root, a holder's in a placed folder.
   if (exit === 1 && error.includes("the folder path must name a folder")) throw fail("bad_scope");
   if (exit === 1 && error.includes("holds no folder placed from a template")) throw fail("bad_scope");
+  // CLI 0.3.14 (D-124): in a placed folder not yet shared, the people commands say to share it first.
+  if (exit === 2 && error.startsWith("holder root required") && error.includes("is not shared")) throw new SynsError("invalid_params", { reason: "bad_scope", message: NOT_SHARED_YET });
   if (exit === 2 && error.startsWith("holder root required")) throw fail("bad_scope");
   if (exit === 1 && error.includes("configuration error: a name holds") && declared.includes("bad_name")) throw fail("bad_name");
   if (exit === 1 && error.includes("(403)")) throw fail(declared.includes("not_permitted") ? "not_permitted" : "no_access");

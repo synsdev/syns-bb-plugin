@@ -28,7 +28,7 @@ const COLLABORATOR: Schema = { type: "object", properties: group("collaborator",
 const collaboratorsResult: Schema = { type: "object", properties: { total: { type: "integer" }, limit: { type: "integer" }, offset: { type: "integer" }, data: { type: "array", items: COLLABORATOR } }, required: ["total", "data"] };
 export const collaborators: SimpleMethod = {
   name: "syns.collaborators",
-  description: "Who has access to this repository, and each one's role, limit at a time from offset; total says how many. From a placed folder the CLI does not answer: bad_scope.",
+  description: "Who has access to this scope, and each one's role: a shared placed folder's own people (CLI 0.3.14), or at a root the whole repository's. limit at a time from offset; total says how many.",
   effect: "read",
   params: object({ limit, offset }),
   result: collaboratorsResult,
@@ -42,7 +42,7 @@ export const collaborators: SimpleMethod = {
 const addResult: Schema = { type: "object", properties: { added: { type: "boolean" }, target: { type: "string" }, role: { type: "string" } }, required: ["added", "target", "role"] };
 export const collaboratorAdd: SimpleMethod = {
   name: "syns.collaboratorAdd",
-  description: "Give a person, by Syns username or e-mail, a role on this repository. Reaches that person at once: only from the reader's own press on a control naming the person and the role.",
+  description: "Give a person, by Syns username or e-mail, a role on this scope: a shared placed folder (CLI 0.3.14), or at a root the whole repository. Only from the reader's own press on a control naming the person, role and scope.",
   effect: "contributed-write",
   sharing: true,
   params: object({ user: { type: "string", maxLength: 320 }, role: ROLE }, ["user", "role"]),
@@ -56,7 +56,7 @@ export const collaboratorAdd: SimpleMethod = {
 
 export const collaboratorRole: SimpleMethod = {
   name: "syns.collaboratorRole",
-  description: "Change a collaborator's role, by the user id syns.collaborators answers. Only from the reader's own press on a control naming the person and the new role.",
+  description: "Change a collaborator's role on this scope, by the user id syns.collaborators answers. Only from the reader's own press on a control naming the person and the new role.",
   effect: "contributed-write",
   sharing: true,
   params: object({ id, role: ROLE }, ["id", "role"]),
@@ -71,7 +71,7 @@ export const collaboratorRole: SimpleMethod = {
 const removeResult: Schema = { type: "object", properties: { removed: { type: "boolean" }, userId: { type: "string" } }, required: ["removed", "userId"] };
 export const collaboratorRemove: SimpleMethod = {
   name: "syns.collaboratorRemove",
-  description: "Take a collaborator off this repository, by the user id syns.collaborators answers. Only from the reader's own press on a control naming the person.",
+  description: "Take a collaborator off this scope, by the user id syns.collaborators answers. Only from the reader's own press on a control naming the person.",
   effect: "contributed-write",
   sharing: true,
   params: object({ id }, ["id"]),

@@ -22,7 +22,8 @@ installed and logged in (`syns login`) on every machine whose sessions should
 reach a repository. The page methods need 0.3.3 or later, placed folders and
 checks 0.3.6, `syns.explore` 0.3.6 (older ones ignore its filters), the
 tool-first steps 0.3.8 (the first that works inside bb's
-sandbox), sharing a folder 0.3.11, and a folder's own visibility 0.3.12
+sandbox), sharing a folder 0.3.11, a folder's own visibility 0.3.12, and a placed
+folder's own people 0.3.14
 (`syns upgrade`).
 
 ```sh
@@ -69,7 +70,7 @@ The full method reference is in `bb thread-page guide`.
 | `syns.place` | write | A template placed as a new folder of the session's repository |
 | `syns.shareInfo` · `syns.share` · `syns.unshare` | read · write · write | A placed folder's sharing: shown, shared under an identity of its own, stopped |
 | `syns.folderVisibility` · `syns.repoVisibility` | write | A placed folder's own visibility · the repository's, from its root |
-| `syns.collaborators` · `syns.collaboratorAdd` · `syns.collaboratorRole` · `syns.collaboratorRemove` | read · write | The repository's people and their roles |
+| `syns.collaborators` · `syns.collaboratorAdd` · `syns.collaboratorRole` · `syns.collaboratorRemove` | read · write | The scope's people and their roles: a shared placed folder's own (CLI 0.3.14), or at a root the whole repository's |
 | `syns.enableChecks` | write | Turn on the checks a placed folder recorded from its template |
 | `syns.explore` · `syns.users` | read | Public repositories, templates among them · people, to share with |
 
@@ -110,10 +111,12 @@ Page authors get the full reference, generated from the code, with
   names a `holder` and a `path`, every path is counted from the folder, and
   `syns.repo` reports the holder's head, which moves with any change to the
   holder. This needs a Syns CLI with folders (roadmap 239–241).
-- **From a placed folder's page, people are out of reach.** The CLI refuses
-  `syns collaborators` inside a placed folder, even a shared one, so those
-  methods answer `bad_scope` there; a page at the repository's root manages the
-  repository's people.
+- **A placed folder's people need CLI 0.3.14 and a shared folder.** From a
+  placed folder's page the collaborator methods act on the folder's own
+  people. Until the folder is shared they answer `bad_scope`, saying to share
+  it first; an older CLI answers `bad_scope` there too. At a repository's
+  root they act on the whole repository: adding someone there grants every
+  folder.
 - Thread Pages refuses any result over 10,000 JSON values, which is why `syns.ls`
   and `syns.glob` are paged and `syns.grep` lowers its row limit as context grows.
 - Proven on one machine. A session on a second enrolled host, a worktree
