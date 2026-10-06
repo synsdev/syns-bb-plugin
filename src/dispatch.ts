@@ -1,6 +1,6 @@
 import type { Cli, RunResult } from "./cli.js";
 import { SynsError, fail, interpret, toAnswer, type FailureAnswer } from "./errors.js";
-import { path as pathSchema, provenance, validate, type Context, type Method } from "./method.js";
+import { path as pathSchema, pick, provenance, validate, type Context, type Method } from "./method.js";
 import { METHODS } from "./methods/index.js";
 import type { Resolve } from "./resolve.js";
 import { createHeld, type Held } from "./held.js";
@@ -65,13 +65,13 @@ export function createDispatch({ table = METHODS, cli, resolve, log, held = crea
     const never = async () => { throw fail("bad_scope"); };
     let own: string | null;
     try {
-      own = repositoryOf(await interpret(await cli.run(session, ["repo", "--json"], undefined, deadline), [], never));
+      own = repositoryOf(await interpret(await cli.run(session, ["repo", "--json"], undefined, deadline), [], never, { folder: session.cwd }));
     } catch (error) {
       // A session whose folder is no Syns repository has no folder of a repository to scope to.
       if (error instanceof SynsError && (error.reason === "no_repo" || error.reason === "no_access")) throw fail("bad_scope");
       throw error;
     }
-    const theirs = repositoryOf(await interpret(await cli.run(scoped, ["repo", "--json"], undefined, deadline), [], never));
+    const theirs = repositoryOf(await interpret(await cli.run(scoped, ["repo", "--json"], undefined, deadline), [], never, { folder: session.cwd }));
     if (own === null || theirs !== own) throw fail("bad_scope");
     confirmed.set(key, now());
   }
@@ -112,7 +112,7 @@ export function createDispatch({ table = METHODS, cli, resolve, log, held = crea
         const env = options?.provenanceEnv ? { SYNS_INTEGRATION: mark.integration!, SYNS_RUN: mark.run!, SYNS_TRIGGER: mark.trigger! } : undefined;
         const ran = await cli.run(where, args, stdin, deadline, env);
         // The 404 rule's `repo` runs at most once per call. S3.5
-        return interpret(ran, declared, () => (repoCheck ??= cli.run(where, ["repo", "--json"], undefined, deadline)));
+        return interpret(ran, declared, () => (repoCheck ??= cli.run(where, ["repo", "--json"], undefined, deadline)), { folder: session.cwd, ...(method.notFound ? { notFound: method.notFound } : {}) });
       },
     };
 
@@ -123,7 +123,13 @@ export function createDispatch({ table = METHODS, cli, resolve, log, held = crea
       const command = method.command(params, sessionId);
       const output = await context.syns(command.args, command.stdin, command.provenanceEnv ? { provenanceEnv: true } : undefined);
       if (typeof output !== "object" || output === null || Array.isArray(output)) throw new SynsError("handler_error", { log: "exit=0 output is not a JSON object" });
-      result = method.shape(output as Record<string, unknown>, params);
+      if (method.shape) result = method.shape(output as Record<string, unknown>, params);
+      else {
+        // The CLI's JSON passed on (D59). A named key the CLI gave in another type is dropped; say which, never the value (S2.20).
+        const dropped: string[] = [];
+        result = pick(method.result, output, "$", dropped);
+        if (dropped.length > 0) log.warn(`${method.name} session=${sessionId} dropped from the CLI's output: ${dropped.join(", ").slice(0, 500)}`);
+      }
     }
     // Never a result with a hole in it. S3.7
     const hole = validate(method.result, result);

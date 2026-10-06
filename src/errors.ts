@@ -2,8 +2,10 @@ import { CLI_NOT_FOUND, SCOPE_OUTSIDE, type RunResult } from "./cli.js";
 
 /**
  * Every failure a page can see (spec 03): the reasons, the sentence the plugin
- * writes for each, and the table the CLI's answers are recognised by. The
- * page-facing message is always the plugin's own sentence, never the CLI's text.
+ * writes for each, and the table the CLI's answers are recognised by. A
+ * recognised failure carries the plugin's own sentence. Any other refusal
+ * carries the CLI's own words (D59), its local paths redacted (redact()); the
+ * log keeps them as they were.
  */
 
 export type Code = "invalid_params" | "not_found" | "conflict" | "unavailable" | "handler_error" | "unknown_method" | "response_too_large";
@@ -140,8 +142,8 @@ export const REASONS = {
   },
   not_permitted: {
     code: "unavailable",
-    message: "Only an owner or admin of the repository can change who it is shared with.",
-    meaning: "The reader is below admin on the holding repository.",
+    message: "Syns refused this for this account: it may need a higher role, or a limit was reached.",
+    meaning: "Syns answered 403 for this account: a role too low for it, or a server limit. The CLI says no more.",
   },
   no_such_user: {
     code: "not_found",
@@ -217,7 +219,31 @@ function parse(text: string): { value: unknown } | null {
  * common ones; `runRepo` runs `repo --json` for the 404 rule.
  * spec S2.13, S3.4–S3.7
  */
-export async function interpret(run: RunResult, declared: readonly string[], runRepo: () => Promise<RunResult>): Promise<unknown> {
+/** What the page may be told about where things are on its machine (fix round 1, finding 2). */
+export interface Redaction {
+  /** The session's folder: a path under it is written from `.`. */
+  folder?: string;
+}
+
+/**
+ * The CLI's words with local paths taken out, before they reach a page: the
+ * session's folder becomes `.`, a home folder `~`, and any other absolute path
+ * `<path>`. A template's code may send what it is shown elsewhere; a username
+ * and a folder layout are not its to send. The log keeps the raw text.
+ */
+export function redact(text: string, where: Redaction = {}): string {
+  let out = text;
+  // A whole path only: /work/a, not /work/ab.
+  const swap = (prefix: string, by: string) => { out = out.replace(new RegExp(`${prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?=/|$|[\\s'"\`,;:)\\]])`, "g"), by); };
+  const folder = where.folder?.replace(/\/+$/, "");
+  if (folder && folder.length > 1) swap(folder, ".");
+  const home = folder ? /^(\/Users\/[^/]+|\/home\/[^/]+|\/root)(?=\/|$)/.exec(folder)?.[1] : undefined;
+  if (home) swap(home, "~");
+  // An absolute path: a `/` that starts a word, not one inside a URL or a relative path.
+  return out.replace(/(?<![\w.~:/<])\/[^\s'"`,;()\[\]]+/g, "<path>");
+}
+
+export async function interpret(run: RunResult, declared: readonly string[], runRepo: () => Promise<RunResult>, where: Redaction & { notFound?: string } = {}): Promise<unknown> {
   if (run.spawnError !== null) {
     if (run.spawnError === CLI_NOT_FOUND) throw fail("cli_missing");
     // A scope that resolves outside the session's folder, or to no folder, symlinks followed (D43).
@@ -255,9 +281,9 @@ export async function interpret(run: RunResult, declared: readonly string[], run
   if (exit === 1 && error.includes("the folder path must name a folder")) throw fail("bad_scope");
   if (exit === 1 && error.includes("holds no folder placed from a template")) throw fail("bad_scope");
   if (exit === 2 && error.startsWith("holder root required")) throw fail("bad_scope");
-  if (exit === 1 && error.includes("configuration error: a name holds")) throw fail("bad_name");
+  if (exit === 1 && error.includes("configuration error: a name holds") && declared.includes("bad_name")) throw fail("bad_name");
   if (exit === 1 && error.includes("(403)")) throw fail(declared.includes("not_permitted") ? "not_permitted" : "no_access");
-  if (exit === 1 && error.includes("no user '")) throw fail("no_such_user");
+  if (exit === 1 && error.includes("no user '") && declared.includes("no_such_user")) throw fail("no_such_user");
   if (exit === 1 && error.includes("(409)") && declared.includes("name_taken")) throw fail("name_taken");
   if (exit === 1 && error.includes("(409)") && declared.includes("already_collaborator")) throw fail("already_collaborator");
   const times = exit === 1 ? /--old matched (\d+) times/.exec(error) : null;
@@ -265,7 +291,7 @@ export async function interpret(run: RunResult, declared: readonly string[], run
   if (exit === 1 && error.includes("(404)")) {
     // A missing path and an unreachable repository print the same line. S3.5
     const repo = await runRepo();
-    if (repo.exitCode === 0 && repo.spawnError === null && !repo.timedOut) throw new SynsError("not_found");
+    if (repo.exitCode === 0 && repo.spawnError === null && !repo.timedOut) throw new SynsError("not_found", where.notFound ? { message: where.notFound } : {});
     throw fail("no_access");
   }
   if (exit === 1 && error.includes("invalid pattern")) throw fail("bad_pattern");
@@ -277,6 +303,6 @@ export async function interpret(run: RunResult, declared: readonly string[], run
   if (exit === 1 && error.includes("version not found")) throw new SynsError("not_found", { subject: "version" });
 
   // Any other refusal comes back in the CLI's own words (D59); the plugin's sentence only when it gave none.
-  const words = error.trim();
+  const words = redact(error.trim(), where);
   throw new SynsError("handler_error", { ...(words ? { message: words.slice(0, 300) } : {}), log: `exit=${exit} output=${(run.stdout + run.stderr).trim().slice(0, 500)}` });
 }

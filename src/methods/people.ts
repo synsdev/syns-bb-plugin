@@ -1,5 +1,5 @@
 import { buildArgs } from "../cli.js";
-import { K64, M1, group, nullable, object, pick, type Schema, type SimpleMethod } from "../method.js";
+import { K64, M1, group, nullable, object, NOT_FOUND, type Schema, type SimpleMethod } from "../method.js";
 
 /**
  * The scope's people (D49, D59): `syns collaborators` and its verbs, one
@@ -11,8 +11,13 @@ import { K64, M1, group, nullable, object, pick, type Schema, type SimpleMethod 
  */
 
 const ROLE: Schema = { type: "string", enum: ["admin", "write", "read"], maxLength: 5 };
-/** A user id, as the CLI's role and remove take it. */
-const id: Schema = { type: "string", minLength: 1, maxLength: 128 };
+/**
+ * A user id, as the CLI's role and remove take it. A security guard, the one
+ * restriction beyond the CLI's own (D60): the CLI puts the id in a URL path
+ * and its HTTP client collapses `.` and `..` there, so `..` would address the
+ * repository's own route. No `/` or `\` either.
+ */
+const id: Schema = { type: "string", minLength: 1, maxLength: 128, pattern: "^(?!\\.{1,2}$)[^/\\\\]+$" };
 /** Paging inside the host's 10,000 nodes. */
 const limit: Schema = { type: "integer", minimum: 1, maximum: 100 };
 const offset: Schema = { type: "integer", minimum: 0 };
@@ -29,9 +34,9 @@ export const collaborators: SimpleMethod = {
   result: collaboratorsResult,
   maxRequestBytes: K64,
   maxResponseBytes: M1,
+  notFound: NOT_FOUND,
   reasons: ["not_permitted"],
   command: (params) => ({ args: buildArgs("collaborators", { limit: params.limit, offset: params.offset }) }),
-  shape: (out) => pick(collaboratorsResult, out),
 };
 
 const addResult: Schema = { type: "object", properties: { added: { type: "boolean" }, target: { type: "string" }, role: { type: "string" } }, required: ["added", "target", "role"] };
@@ -44,9 +49,9 @@ export const collaboratorAdd: SimpleMethod = {
   result: addResult,
   maxRequestBytes: K64,
   maxResponseBytes: K64,
+  notFound: NOT_FOUND,
   reasons: ["not_permitted", "no_such_user", "already_collaborator"],
   command: (params) => ({ args: buildArgs(["collaborators", "add"], { role: params.role }, [params.user]) }),
-  shape: (out) => pick(addResult, out),
 };
 
 export const collaboratorRole: SimpleMethod = {
@@ -58,9 +63,9 @@ export const collaboratorRole: SimpleMethod = {
   result: COLLABORATOR,
   maxRequestBytes: K64,
   maxResponseBytes: K64,
+  notFound: NOT_FOUND,
   reasons: ["not_permitted"],
   command: (params) => ({ args: buildArgs(["collaborators", "role"], { role: params.role }, [params.id]) }),
-  shape: (out) => pick(COLLABORATOR, out),
 };
 
 const removeResult: Schema = { type: "object", properties: { removed: { type: "boolean" }, userId: { type: "string" } }, required: ["removed", "userId"] };
@@ -73,10 +78,10 @@ export const collaboratorRemove: SimpleMethod = {
   result: removeResult,
   maxRequestBytes: K64,
   maxResponseBytes: K64,
+  notFound: NOT_FOUND,
   reasons: ["not_permitted"],
   // Without --yes the CLI waits on standard input, which a page cannot answer.
   command: (params) => ({ args: buildArgs(["collaborators", "remove"], { yes: true }, [params.id]) }),
-  shape: (out) => pick(removeResult, out),
 };
 
 const usersResult: Schema = { type: "object", properties: { data: { type: "array", items: { type: "object", properties: { id: { type: "string" }, username: { type: "string" }, name: nullable("string"), image: nullable("string") }, required: ["id", "username"] } } }, required: ["data"] };
@@ -88,6 +93,6 @@ export const users: SimpleMethod = {
   result: usersResult,
   maxRequestBytes: K64,
   maxResponseBytes: M1,
+  notFound: NOT_FOUND,
   command: (params) => ({ args: buildArgs("users", { limit: params.limit }, [params.query]) }),
-  shape: (out) => pick(usersResult, out),
 };

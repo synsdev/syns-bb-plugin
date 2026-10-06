@@ -149,7 +149,7 @@ describe("the declaration", () => {
       "syns.collaboratorRole": [...common, "not_permitted"].sort(),
       "syns.collaboratorRemove": [...common, "not_permitted"].sort(),
       "syns.enableChecks": [...common, "cli_too_old", "folder_write_unsupported", "stale_head", "checkout_dirty"].sort(),
-      "syns.explore": common,
+      "syns.explore": [...common, "cli_too_old"].sort(),
       "syns.users": common,
     });
     for (const method of declaration.methods) for (const reason of Object.keys(method.reasons)) expect(reason).toMatch(/^[a-z][a-z0-9_]{0,63}$/);

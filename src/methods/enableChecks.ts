@@ -1,5 +1,5 @@
 import { buildArgs } from "../cli.js";
-import { K64, object, version, type SimpleMethod } from "../method.js";
+import { K64, NOT_FOUND, object, version, type SimpleMethod } from "../method.js";
 
 /**
  * `syns enable-checks --json` in the page's placed folder (D49, D59): one
@@ -28,6 +28,7 @@ export const enableChecks: SimpleMethod = {
   },
   maxRequestBytes: K64,
   maxResponseBytes: K64,
+  notFound: NOT_FOUND,
   reasons: ["stale_head", "checkout_dirty"],
   command: () => ({ args: buildArgs("enable-checks"), provenanceEnv: true }),
   // D12's one renaming: the commit is `version`, its number `number`. Both only when a version was made.

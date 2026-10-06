@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CLI_NOT_FOUND } from "../src/cli.js";
-import { REASONS, SynsError, interpret, toAnswer } from "../src/errors.js";
+import { REASONS, SynsError, interpret, redact, toAnswer } from "../src/errors.js";
 import { rec, spawnFailed, timedOut } from "./fake-runner.js";
 
 const never = async () => {
@@ -142,5 +142,17 @@ describe("page-facing messages (S3.1)", () => {
     expect(dirty).not.toContain("the checkout at");
     const login = toAnswer(await failure(rec("auth-required"))).error.message;
     expect(login).not.toContain("syns login' first");
+  });
+});
+
+describe("redact: the CLI's words without local paths (fix round 1, finding 2)", () => {
+  it("writes the session's folder as ., its home as ~, and any other absolute path as <path>", () => {
+    const where = { folder: "/Users/alice/work" };
+    expect(redact("could not write /Users/alice/work/q3-plan/.syns.yaml; pull at /Users/alice/work", where)).toBe("could not write ./q3-plan/.syns.yaml; pull at .");
+    expect(redact("see /Users/alice/work2/x and /Users/alice/other and /etc/hosts", where)).toBe("see ~/work2/x and ~/other and <path>");
+    expect(redact("cannot determine repo identity for /tmp/x", {})).toBe("cannot determine repo identity for <path>");
+  });
+  it("leaves URLs, relative paths and status codes alone", () => {
+    expect(redact("server error (404): see https://syns.dev/a/b for notes/a.md", { folder: "/home/bo/w" })).toBe("server error (404): see https://syns.dev/a/b for notes/a.md");
   });
 });

@@ -8,7 +8,12 @@ Give a bb Thread Page the Syns repository of its own session.
 session a web page. A page runs in a sandbox and can reach nothing on your
 machine. This plugin adds twenty-nine `syns.*` capabilities to every page, so a page
 built over a Syns repository — a wiki, a task board, a notebook — can list, read,
-search and change that repository's files.
+search and change that repository's files. Since 0.6.0 a page can also act on
+its own scope as a whole: share its placed folder, set its visibility, manage
+the repository's people from its root, turn on a placed template's checks, and
+search public templates and people. Each of those is one CLI command, whose
+answer and refusals are the CLI's own; they reach other people at once, so a
+page offers them only on a control the reader presses, saying who gets what.
 
 The page never names a repository. It sees the repository, or the placed
 folder, its session's folder belongs to, with paths counted from there and

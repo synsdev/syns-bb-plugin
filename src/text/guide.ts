@@ -51,7 +51,7 @@ Each method acts where the CLI acts, in the page's own scope. In a placed folder
 They act at once, with no dialog, and reach other people. So:
 
 - **Only from a control the reader presses for that action:** never on load, from a timer or \`watch\`, or chained after another call.
-- **The control shows who gets what** before it is pressed: the person and the role, or everyone the folder reaches.
+- **The control shows who gets what** before it is pressed: the person and the role, or everyone the folder reaches. \`admin\` can also share, change visibility and manage people: say so.
 - **Public is labelled apart:** "anyone, signed in or not, can find and read this". Never a default; never one option in a list beside private. A public name beginning with a private holder's name shows that name: say so first.
 - **\`syns.unshare\`** removes everyone who reached the folder through it; its name stays reserved.
 

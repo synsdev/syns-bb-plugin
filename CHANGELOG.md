@@ -26,6 +26,15 @@ passed on.
   `message`.
 - New reasons: `bad_name`, `name_taken`, `not_permitted`, `no_such_user`,
   `already_collaborator`.
+- Local paths in the CLI's own words are redacted before a page sees them:
+  the session's folder becomes `.`, a home folder `~`, anything else
+  absolute `<path>`. The plugin's log keeps them.
+- `syns.collaboratorRole` and `syns.collaboratorRemove` refuse an `id` of `.`
+  or `..`, or one holding `/` or `\`: the CLI's HTTP client would collapse it
+  onto the repository's own route.
+- `syns.explore` needs CLI 0.3.6; older ones ignore its filters.
+- A 403 is reported neutrally (a role too low, or a server limit), and a
+  `not_found` from the new methods names no path or version.
 - The guide no longer repeats the effect, bounds and reasons the host prints
   for each method. It gains *Sharing and people*: shares only from an explicit
   control, saying who gets what, with public labelled apart.

@@ -66,6 +66,8 @@ interface Common {
   atRoot?: true;
   /** A write that changes who can reach a repository or folder, not its files (D41): no base, no message, no file-write reasons. */
   sharing?: true;
+  /** The sentence a not_found answer carries, where the plugin's default (a path or version) would mislead. */
+  notFound?: string;
   /** The oldest Syns CLI that can serve it, as "X.Y.Z". Older answers unavailable / cli_too_old before anything runs. */
   minCli?: string;
   /** How many paths a write names, for the plugin's log. Defaults to one when there is a `path`. S2.19 */
@@ -75,7 +77,8 @@ interface Common {
 /** One CLI process: parameters become arguments and standard input, the parsed output becomes the result. */
 export interface SimpleMethod extends Common {
   command(params: any, sessionId: string): Command;
-  shape(output: Record<string, unknown>, params: any): unknown;
+  /** Absent: the CLI's JSON is passed on as `result` names it, with pick() (D59), and what it drops is logged. */
+  shape?(output: Record<string, unknown>, params: any): unknown;
 }
 
 /** More than one CLI process: the method supplies its own small procedure. S2.22 */
@@ -194,6 +197,9 @@ export function validate(schema: Schema, value: unknown, at = "$"): string | nul
  * once (D56): a result holding all of a group's keys, as the same schema
  * objects, is written `…name` there.
  */
+/** The not_found sentence of the methods that name no path or version (fix round 1, finding 3). */
+export const NOT_FOUND = "Syns answered that what this asked for is not there.";
+
 export const GROUPS = new Map<string, Record<string, Schema>>();
 export const group = (name: string, properties: Record<string, Schema>): Record<string, Schema> => {
   GROUPS.set(name, properties);
@@ -206,10 +212,16 @@ export const group = (name: string, properties: Record<string, Schema>): Record<
  * Nothing is renamed or made up; a key the CLI did not report stays absent,
  * and the result's check (S3.7) refuses a required one that is missing.
  */
-export function pick(schema: Schema, value: unknown): unknown {
+export function pick(schema: Schema, value: unknown, at = "$", dropped?: string[]): unknown {
+  const kept = keep(schema, value, at, dropped);
+  if (kept === undefined && value !== undefined) dropped?.push(at);
+  return kept;
+}
+
+function keep(schema: Schema, value: unknown, at: string, dropped?: string[]): unknown {
   const types = schema.type === undefined ? [] : Array.isArray(schema.type) ? (schema.type as string[]) : [schema.type as string];
   if (value === null) return types.includes("null") ? null : undefined;
-  if (Array.isArray(value)) return types.includes("array") ? value.map((item) => pick(schema.items as Schema, item)).filter((item) => item !== undefined) : undefined;
+  if (Array.isArray(value)) return types.includes("array") ? value.map((item, index) => pick(schema.items as Schema, item, `${at}[${index}]`, dropped)).filter((item) => item !== undefined) : undefined;
   if (typeof value === "object") {
     if (!types.includes("object")) return undefined;
     const properties = (schema.properties ?? {}) as Record<string, Schema>;
@@ -217,7 +229,7 @@ export function pick(schema: Schema, value: unknown): unknown {
     const kept: Record<string, unknown> = {};
     for (const [key, child] of Object.entries(properties)) {
       if (!Object.hasOwn(record, key)) continue;
-      const one = pick(child, record[key]);
+      const one = pick(child, record[key], `${at}.${key}`, dropped);
       if (one !== undefined) kept[key] = one;
     }
     return kept;

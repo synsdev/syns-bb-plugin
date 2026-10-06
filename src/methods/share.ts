@@ -1,5 +1,5 @@
 import { buildArgs } from "../cli.js";
-import { K64, group, nullable, object, pick, type Schema, type SimpleMethod } from "../method.js";
+import { K64, group, nullable, object, NOT_FOUND, type Schema, type SimpleMethod } from "../method.js";
 
 /**
  * Sharing, and a scope's visibility (D49, D59): each method is one CLI command,
@@ -29,8 +29,6 @@ const name: Schema = { type: "string", maxLength: 100 };
 const visibility: Schema = { type: "string", enum: ["public", "private"], maxLength: 7 };
 const FOLDER_ARG = ["."];
 
-const pass = (schema: Schema) => (out: Record<string, unknown>) => pick(schema, out);
-
 const shareInfoResult = result({ ...FOLDER, holderRole: nullable("string"), shared: { type: "boolean" }, offeredName: { type: "string" }, ...RECORD }, ["holder", "path", "shared"]);
 export const shareInfo: SimpleMethod = {
   name: "syns.shareInfo",
@@ -41,9 +39,9 @@ export const shareInfo: SimpleMethod = {
   result: shareInfoResult,
   maxRequestBytes: K64,
   maxResponseBytes: K64,
+  notFound: NOT_FOUND,
   reasons: ["not_permitted"],
   command: () => ({ args: buildArgs("share", { show: true }, FOLDER_ARG) }),
-  shape: pass(shareInfoResult),
 };
 
 const shareResult = result({ ...RECORD, ...FOLDER, created: { type: "boolean" } }, ["owner", "name", "holder", "path", "created"]);
@@ -57,9 +55,9 @@ export const share: SimpleMethod = {
   result: shareResult,
   maxRequestBytes: K64,
   maxResponseBytes: K64,
+  notFound: NOT_FOUND,
   reasons: ["bad_name", "name_taken", "not_permitted"],
   command: (params) => ({ args: buildArgs("share", { name: params.name }, FOLDER_ARG) }),
-  shape: pass(shareResult),
 };
 
 const unshareResult = result({ owner: { type: "string" }, name: { type: "string" }, ...FOLDER, unshared: { type: "boolean" }, retired: nullable("boolean") }, ["owner", "name", "holder", "path", "unshared"]);
@@ -73,10 +71,10 @@ export const unshare: SimpleMethod = {
   result: unshareResult,
   maxRequestBytes: K64,
   maxResponseBytes: K64,
+  notFound: NOT_FOUND,
   reasons: ["not_permitted"],
   // Without --yes the CLI waits on standard input, which a page cannot answer.
   command: () => ({ args: buildArgs("unshare", { yes: true }, FOLDER_ARG) }),
-  shape: pass(unshareResult),
 };
 
 const folderVisibilityResult = result({ ...RECORD, ...FOLDER, created: { type: "boolean" } }, ["owner", "name", "visibility", "holder", "path"]);
@@ -90,9 +88,9 @@ export const folderVisibility: SimpleMethod = {
   result: folderVisibilityResult,
   maxRequestBytes: K64,
   maxResponseBytes: K64,
+  notFound: NOT_FOUND,
   reasons: ["bad_name", "name_taken", "not_permitted"],
   command: (params) => ({ args: buildArgs("share", { visibility: params.visibility, name: params.name }, FOLDER_ARG) }),
-  shape: pass(folderVisibilityResult),
 };
 
 const repoVisibilityResult = result(RECORD, ["owner", "name", "visibility"]);
@@ -105,7 +103,7 @@ export const repoVisibility: SimpleMethod = {
   result: repoVisibilityResult,
   maxRequestBytes: K64,
   maxResponseBytes: K64,
+  notFound: NOT_FOUND,
   reasons: ["not_permitted"],
   command: (params) => ({ args: buildArgs("repo", { visibility: params.visibility }) }),
-  shape: pass(repoVisibilityResult),
 };

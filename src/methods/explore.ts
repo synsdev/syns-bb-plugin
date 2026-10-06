@@ -1,5 +1,5 @@
 import { buildArgs } from "../cli.js";
-import { K64, M1, nullable, object, pick, type Schema, type SimpleMethod } from "../method.js";
+import { K64, M1, nullable, object, NOT_FOUND, type Schema, type SimpleMethod } from "../method.js";
 
 /** `syns explore`: public repositories, templates among them (D49). One command, its JSON passed on (D59). */
 
@@ -24,6 +24,8 @@ export const explore: SimpleMethod = {
   name: "syns.explore",
   description: "Public Syns repositories matching query, every tag in tags (syns-app for app templates) and status, limit at a time from offset; total says how many.",
   effect: "read",
+  // Up to 0.3.5 the CLI sent query and tags under keys the server ignores: every public repository came back (issue 207).
+  minCli: "0.3.6",
   params: object({
     query: { type: "string", maxLength: 200 },
     tags: { type: "array", items: { type: "string", maxLength: 100 }, maxItems: 8 },
@@ -34,6 +36,6 @@ export const explore: SimpleMethod = {
   result: exploreResult,
   maxRequestBytes: K64,
   maxResponseBytes: M1,
+  notFound: NOT_FOUND,
   command: (params) => ({ args: buildArgs("explore", { query: params.query, tag: params.tags, status: params.status, limit: params.limit, offset: params.offset }) }),
-  shape: (out) => pick(exploreResult, out),
 };

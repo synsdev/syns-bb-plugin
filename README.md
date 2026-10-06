@@ -20,7 +20,8 @@ Syns CLI → Syns API      the only thing that touches the repository
 Requires bb 0.43 or later, Thread Pages 1.4.0 or later, and the Syns CLI —
 installed and logged in (`syns login`) on every machine whose sessions should
 reach a repository. The page methods need 0.3.3 or later, placed folders and
-checks 0.3.6, the tool-first steps 0.3.8 (the first that works inside bb's
+checks 0.3.6, `syns.explore` 0.3.6 (older ones ignore its filters), the
+tool-first steps 0.3.8 (the first that works inside bb's
 sandbox), sharing a folder 0.3.11, and a folder's own visibility 0.3.12
 (`syns upgrade`).
 
