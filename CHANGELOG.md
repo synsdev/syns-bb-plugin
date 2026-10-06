@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.6.0 (candidate, not released)
+## 0.6.0
 
 The page surface as a whole: a page acts on its own scope, its placed folder or
 its repository, and on that repository's people. Each new method is one Syns
