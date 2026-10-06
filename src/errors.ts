@@ -225,22 +225,33 @@ export interface Redaction {
   folder?: string;
 }
 
+/** One path character: none of the white space, quotes and punctuation that end a path in a sentence. */
+const PATH_CHAR = String.raw`[^\s'"` + "`" + String.raw`,;()\[\]]`;
+const escape = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 /**
- * The CLI's words with local paths taken out, before they reach a page: the
- * session's folder becomes `.`, a home folder `~`, and any other absolute path
- * `<path>`. A template's code may send what it is shown elsewhere; a username
- * and a folder layout are not its to send. The log keeps the raw text.
+ * The CLI's words with local paths taken out, before they reach a page (D60,
+ * D61): the session's folder becomes `.`, and every other absolute path
+ * `<path>`, POSIX or Windows, a `file://` URL included. A quoted path is
+ * replaced whole, spaces and all. A template's code may send what it is shown
+ * elsewhere; a username and a folder layout are not its to send. The log keeps
+ * the raw text.
  */
 export function redact(text: string, where: Redaction = {}): string {
   let out = text;
-  // A whole path only: /work/a, not /work/ab.
-  const swap = (prefix: string, by: string) => { out = out.replace(new RegExp(`${prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?=/|$|[\\s'"\`,;:)\\]])`, "g"), by); };
-  const folder = where.folder?.replace(/\/+$/, "");
-  if (folder && folder.length > 1) swap(folder, ".");
-  const home = folder ? /^(\/Users\/[^/]+|\/home\/[^/]+|\/root)(?=\/|$)/.exec(folder)?.[1] : undefined;
-  if (home) swap(home, "~");
-  // An absolute path: a `/` that starts a word, not one inside a URL or a relative path.
-  return out.replace(/(?<![\w.~:/<])\/[^\s'"`,;()\[\]]+/g, "<path>");
+  // The session's folder, as a whole path only (/work/a, not /work2), either separator after it.
+  const folder = where.folder?.replace(/[\\/]+$/, "");
+  if (folder && folder.length > 1) out = out.replace(new RegExp(`${escape(folder)}(?=[\\\\/]|$|[\\s'"\`,;:)\\]])`, "g"), ".");
+  const absolute = String.raw`(?:file:\/\/|\/|[A-Za-z]:[\\/]|\\\\)`;
+  return out
+    // A quoted absolute path, whole: '/Volumes/Client Data/x'.
+    .replace(new RegExp(String.raw`(['"` + "`" + String.raw`])${absolute}[^'"` + "`" + String.raw`\n]*\1`, "g"), (_, quote: string) => `${quote}<path>${quote}`)
+    // file:// URLs, \\?\ and UNC paths (\\server\share\x), drive letters (C:\x, C:/x).
+    .replace(new RegExp(String.raw`file:\/\/${PATH_CHAR}*`, "g"), "<path>")
+    .replace(new RegExp(String.raw`\\\\${PATH_CHAR}+`, "g"), "<path>")
+    .replace(new RegExp(String.raw`(?<![\w])[A-Za-z]:[\\/]${PATH_CHAR}*`, "g"), "<path>")
+    // A POSIX absolute path: a `/` that starts a word, not one inside a URL or after the session's `.`.
+    .replace(new RegExp(String.raw`(?<![\w.:/<\\])\/${PATH_CHAR}+`, "g"), "<path>");
 }
 
 export async function interpret(run: RunResult, declared: readonly string[], runRepo: () => Promise<RunResult>, where: Redaction & { notFound?: string } = {}): Promise<unknown> {

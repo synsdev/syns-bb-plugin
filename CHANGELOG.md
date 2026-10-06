@@ -27,8 +27,9 @@ passed on.
 - New reasons: `bad_name`, `name_taken`, `not_permitted`, `no_such_user`,
   `already_collaborator`.
 - Local paths in the CLI's own words are redacted before a page sees them:
-  the session's folder becomes `.`, a home folder `~`, anything else
-  absolute `<path>`. The plugin's log keeps them.
+  the session's folder becomes `.`, and every other absolute path `<path>`,
+  POSIX or Windows (drive letters, `\\?\`, UNC), `file://` URLs and quoted
+  paths with spaces included. The plugin's log keeps them.
 - `syns.collaboratorRole` and `syns.collaboratorRemove` refuse an `id` of `.`
   or `..`, or one holding `/` or `\`: the CLI's HTTP client would collapse it
   onto the repository's own route.

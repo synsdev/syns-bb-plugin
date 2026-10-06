@@ -145,12 +145,27 @@ describe("page-facing messages (S3.1)", () => {
   });
 });
 
-describe("redact: the CLI's words without local paths (fix round 1, finding 2)", () => {
-  it("writes the session's folder as ., its home as ~, and any other absolute path as <path>", () => {
-    const where = { folder: "/Users/alice/work" };
-    expect(redact("could not write /Users/alice/work/q3-plan/.syns.yaml; pull at /Users/alice/work", where)).toBe("could not write ./q3-plan/.syns.yaml; pull at .");
-    expect(redact("see /Users/alice/work2/x and /Users/alice/other and /etc/hosts", where)).toBe("see ~/work2/x and ~/other and <path>");
+describe("redact: the CLI's words without local paths (fix rounds 1 and 2, D60, D61)", () => {
+  const mac = { folder: "/Users/alice/work" };
+  const win = { folder: "C:\\Users\\alice\\work" };
+  it("writes the session's folder as ., whole paths only, and every other absolute path as <path>: no ~, so nothing under home shows", () => {
+    expect(redact("could not write /Users/alice/work/q3-plan/.syns.yaml; pull at /Users/alice/work", mac)).toBe("could not write ./q3-plan/.syns.yaml; pull at .");
+    expect(redact("see /Users/alice/work2/x, /Users/alice/work.bak and /etc/hosts", mac)).toBe("see <path>, <path> and <path>");
+    expect(redact("/Users/alice/other/client-acme-merger/x", mac)).toBe("<path>");
     expect(redact("cannot determine repo identity for /tmp/x", {})).toBe("cannot determine repo identity for <path>");
+  });
+  it("redacts file:// URLs whole", () => {
+    expect(redact("open file:///Users/alice/other/x now", mac)).toBe("open <path> now");
+  });
+  it("replaces a quoted absolute path whole, spaces and all", () => {
+    expect(redact("see '/Users/alice/Library/Application Support/x' now", mac)).toBe("see '<path>' now");
+    expect(redact('"/Volumes/Client Data/acme/x" is gone', {})).toBe('"<path>" is gone');
+    expect(redact("`C:\\Program Files\\x` failed", win)).toBe("`<path>` failed");
+  });
+  it("on Windows: the session's folder with \\ after it, drive letters either way, \\\\?\\ and UNC paths", () => {
+    expect(redact("could not write C:\\Users\\alice\\work\\q3\\.syns.yaml", win)).toBe("could not write .\\q3\\.syns.yaml");
+    expect(redact("C:/Users/alice/other/x and D:\\data\\y", win)).toBe("<path> and <path>");
+    expect(redact("\\\\?\\C:\\very\\long and \\\\fileserver\\share\\acme\\x", win)).toBe("<path> and <path>");
   });
   it("leaves URLs, relative paths and status codes alone", () => {
     expect(redact("server error (404): see https://syns.dev/a/b for notes/a.md", { folder: "/home/bo/w" })).toBe("server error (404): see https://syns.dev/a/b for notes/a.md");
