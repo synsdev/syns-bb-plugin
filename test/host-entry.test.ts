@@ -40,6 +40,15 @@ describe("the plugin opens no repository file (A5, S2.5, S2.6)", () => {
       for (const entry of imports(source(name))) expect(entry.from, name).not.toMatch(/^(node:)?(fs|child_process)(\/|$)/);
     }
   });
+  it("only the host entry reaches the two that do, and no file loads a module at run time (S2.5, S2.6)", () => {
+    const files = [...readdirSync(new URL("../src/", import.meta.url), { recursive: true })].map(String).filter((name) => name.endsWith(".ts"));
+    for (const name of files) {
+      const text = source(name);
+      expect(text, name).not.toMatch(/\brequire\s*\(|\bimport\s*\(/);
+      if (name === "host-entry.ts") continue;
+      expect(imports(text).map((entry) => entry.from.replace(/^\.\.?\//, "")), name).not.toEqual(expect.arrayContaining([expect.stringMatching(/^(syns-process|scope)\.js$/)]));
+    }
+  });
 });
 
 describe("the host half, run against a stand-in executable", () => {

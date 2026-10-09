@@ -4,8 +4,8 @@
 
 The same declaration on every Unife Pages host (07 R-X1). No method changed.
 
-- The fragment names no host's command: "Every method: the guide your
-  standing instruction names." The guide says "the session whose page made
+- The fragment names no host's command: "Every method: the guide (its
+  command is under *More* above), section *Capabilities from contributors*." The guide says "the session whose page made
   it" and names `threadPage.setScope` where it explains a scope.
 - The fragment is held to the protocol's 2,048 bytes; the 1,200-character
   cap of the one-slot era is gone. The live check reads the fragment's slot

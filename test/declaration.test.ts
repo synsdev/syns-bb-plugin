@@ -240,7 +240,7 @@ describe("what agents are told", () => {
 
   it("the fragment says in words that it applies only in a Syns repository, and where the rest is (S4.2)", () => {
     expect(declaration.instruction).toMatch(/When this session's folder is a Syns repository/);
-    expect(declaration.instruction).toContain("Every method: the guide your standing instruction names.");
+    expect(declaration.instruction).toContain("Every method: the guide (its command is under *More* above), section *Capabilities from contributors*.");
   });
 
   it("the fragment and the guide name no host: the declaration is the same on every host (07 R-X1)", () => {

@@ -35,13 +35,13 @@ plugin id, and the methods are `syns.*`.
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| `agentInstructions` | `true` | Tell every eligible session about `syns.*`, in about 1.2 KiB joined to the Thread Pages instruction, which bb cuts at 4,096 characters |
+| `agentInstructions` | `true` | Tell every eligible session about `syns.*`, in a fragment of about 1.2 KiB that the host places after its own instruction |
 | `synsPath` | unset | Absolute path of the `syns` executable, when it is not on the daemon's `PATH` or in `~/.cargo/bin`, `~/.local/bin`, `/usr/local/bin`, `/opt/homebrew/bin` |
 
 ## What agents are told
 
-The plugin ships no skills. Its instruction fragment, which Thread Pages joins to
-its own, holds the `syns.*` essentials and two pointers:
+The plugin ships no skills. Its instruction fragment, which the host places after
+its own instruction, holds the `syns.*` essentials and two pointers:
 - one line telling agents to look for a template first, following the
   templates' public `TOOLS.md`
   (`syns cat TOOLS.md --repo bartsoj/syns-templates`);
@@ -132,7 +132,10 @@ that table. Add an entry and its test; touch nothing else.
 
 ```sh
 npm install
-npm test            # 327 tests; no network, no login — the CLI is replayed from recordings; one test reads the instruction from this machine's bb, skipped without one
+npm test            # no network, no login — the CLI is replayed from recordings. Two suites read beyond this folder and are
+                    # skipped without it: the fragment's slot from this machine's `bb pages status`, and the
+                    # declaration through the protocol's own code, read from a Unife monorepo checkout
+                    # (UNIFE_MONO, else ../../unife-mono)
 npm run typecheck
 npm run build       # bb plugin build
 ```
