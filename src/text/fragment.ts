@@ -5,7 +5,8 @@
  * methods this version registers (S4.4), and is declared to the host with the
  * method list and injected nowhere else (S4.1). The declaration is the same on
  * every host (07 R-X1), so the text names no host's command: the host's own
- * instruction, which comes before it, names its guide command under *More*.
+ * instruction names its guide command under *More*. On bb the fragment
+ * reaches the agent before that instruction, so the text says where, not "above".
  * The protocol allows 2,048 bytes.
  */
 export const FRAGMENT = `**Tool first.** Asked for a piece of work the person will keep working in? Look for a template first: \`syns explore -t syns-app -q <words>\`, then follow \`syns cat TOOLS.md --repo bartsoj/syns-templates\`.
@@ -17,5 +18,5 @@ export const FRAGMENT = `**Tool first.** Asked for a piece of work the person wi
 - **Every write needs \`base\`,** the \`version\` last read from \`syns.repo\`. On \`stale_head\`, re-read and let the reader retry; on \`checkout_dirty\` an agent is mid-turn: retry when \`version\` moves.
 - **Load with \`syns.ls\` and \`syns.readMany\`;** poll only \`syns.repo\` with \`watch\`. Writes and shares act at once: only from a control saying what changes, for whom.
 
-Every method: the guide (its command is under *More* above), section *Capabilities from contributors*. Installing or diagnosing the plugin: \`syns cat SETUP.md --repo bartsoj/syns-bb-plugin-setup\`.
+Every method: the page guide (its command is in your page instruction's *More*), section *Capabilities from contributors*. Installing or diagnosing the plugin: \`syns cat SETUP.md --repo bartsoj/syns-bb-plugin-setup\`.
 `;

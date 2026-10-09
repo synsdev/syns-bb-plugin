@@ -11,7 +11,7 @@ vi.mock("@get-bb/plugin-sdk/host", () => ({ experimental_defineHostEntry: (entry
 
 const source = (name: string): string => readFileSync(new URL(`../src/${name}`, import.meta.url), "utf8");
 const imports = (text: string): { names: string[]; from: string }[] =>
-  [...text.matchAll(/import\s+(?:type\s+)?(?:\{([^}]*)\}|\*\s+as\s+\w+|\w+)\s+from\s+"([^"]+)"/g)].map((match) => ({ names: (match[1] ?? "*").split(",").map((name) => name.trim()).filter(Boolean), from: match[2]! }));
+  [...text.matchAll(/(?:import|export)\s+(?:type\s+)?(?:\{([^}]*)\}|\*(?:\s+as\s+\w+)?|\w+)\s+from\s+"([^"]+)"|import\s+"([^"]+)"/g)].map((match) => ({ names: (match[1] ?? "*").split(",").map((name) => name.trim()).filter(Boolean), from: (match[2] ?? match[3])! }));
 
 describe("the plugin opens no repository file (A5, S2.5, S2.6)", () => {
   it("the host half's only file-system access is looking for the executable", () => {
