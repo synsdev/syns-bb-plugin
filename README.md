@@ -17,7 +17,9 @@ Syns CLI → Syns API      the only thing that touches the repository
 
 ## Install
 
-Requires bb 0.43 or later, bb-pages (or Thread Pages 1.4.0 or later), and the Syns CLI —
+On bb: bb 0.43 or later and bb-pages with the session's workspace in the call (unife-pages U44); on Claude Code:
+Unife Pages with U44 and U45 (see *On Claude Code* below). Thread Pages 1.x and bb-pages before U44 send no
+workspace, so every call there answers `no_repo`. Both need the Syns CLI —
 installed and logged in (`syns login`) on every machine whose sessions should
 reach a repository. The page methods need 0.3.3 or later, placed folders and
 checks 0.3.6, `syns.explore` 0.3.6 (older ones ignore its filters), the
@@ -37,6 +39,15 @@ plugin id, and the methods are `syns.*`.
 | --- | --- | --- |
 | `agentInstructions` | `true` | Tell every eligible session about `syns.*`, in a fragment of about 1.2 KiB that the host places after its own instruction |
 | `synsPath` | unset | Absolute path of the `syns` executable, when it is not on the daemon's `PATH` or in `~/.cargo/bin`, `~/.local/bin`, `/usr/local/bin`, `/opt/homebrew/bin` |
+
+## On Claude Code
+
+`hosts/claude` is a Claude Code plugin, `syns-pages`. Its `unife-pages.json` names `bin/syns-pages.mjs`, a
+self-contained bundle of the same table and dispatch (`npm run build:claude`; Node 22.18 or later). Install it beside
+Unife Pages, or load it with `claude --plugin-dir …/hosts/claude`: the Unife Pages daemon starts the process and
+supervises it, and it registers the same declaration as on bb. The CLI runs on this machine, in the folder the
+daemon names for the calling session. Settings are the environment: `SYNS_PATH` (the executable) and
+`SYNS_PAGES_INSTRUCTION=0` (declare no fragment). `node hosts/claude/bin/syns-pages.mjs` also runs by hand.
 
 ## What agents are told
 

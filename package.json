@@ -1,6 +1,6 @@
 {
   "name": "bb-plugin-syns",
-  "version": "0.8.0-rc.1",
+  "version": "0.8.0-rc.2",
   "type": "module",
   "private": true,
   "engines": {
@@ -20,7 +20,7 @@
     "typecheck": "tsc -p .",
     "test": "vitest run",
     "build": "bb plugin build && npm run build:claude",
-    "build:claude": "rolldown hosts/claude/main.ts --platform node --format esm --file hosts/claude/bin/syns-pages.js"
+    "build:claude": "rolldown hosts/claude/main.ts --platform node --format esm --file hosts/claude/bin/syns-pages.mjs"
   },
   "dependencies": {
     "zod": "^4.3.6"

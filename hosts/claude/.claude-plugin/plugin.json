@@ -1,6 +1,6 @@
 {
   "name": "syns-pages",
-  "version": "0.8.0-rc.1",
+  "version": "0.8.0-rc.2",
   "description": "Gives Unife Pages the session's Syns repository (syns.*), through the Syns CLI on this machine.",
   "author": { "name": "Syns" },
   "license": "MIT"

@@ -116,7 +116,7 @@ const REASONS = {
 	cli_missing: {
 		code: "unavailable",
 		message: "The Syns command-line tool was not found on this session's machine.",
-		meaning: "No syns on that machine; an operator installs it or sets synsPath."
+		meaning: "No syns on that machine; an operator installs it or names it in the plugin's settings."
 	},
 	timeout: {
 		code: "unavailable",
@@ -676,7 +676,7 @@ function buildGuide(table) {
 //#endregion
 //#region src/declaration.ts
 /** The plugin's version, as declared to the host. A test holds it equal to package.json's. */
-const VERSION = "0.8.0-rc.1";
+const VERSION = "0.8.0-rc.2";
 /** threadPagesContributions, generated from the table. With `agentInstructions` off no fragment is declared (S4.5). */
 function buildDeclaration(table, settings) {
 	return {
@@ -2823,11 +2823,13 @@ function createVersions(cli, now = Date.now) {
 		};
 	} };
 }
+/** An absolute path on the session's machine, POSIX or Windows (a drive letter, or a UNC path). */
+const ABSOLUTE = /^(\/|[A-Za-z]:[\\/]|\\\\)/;
 /** Where the CLI runs for the session: the folder the host passed, on its machine. Null when there is none; a malformed one throws. */
 function sessionWhere(workspace) {
 	if (workspace === null || workspace === void 0) return null;
 	const w = workspace;
-	if (typeof w.path !== "string" || !w.path.startsWith("/") || w.machine !== null && typeof w.machine !== "string") throw new SynsError("handler_error", { log: "the host passed a workspace without an absolute path" });
+	if (typeof w.path !== "string" || !ABSOLUTE.test(w.path) || w.machine !== null && typeof w.machine !== "string") throw new SynsError("handler_error", { log: "the host passed a workspace without an absolute path" });
 	return {
 		hostId: w.machine ?? "local",
 		cwd: w.path
@@ -3260,7 +3262,7 @@ async function serve(options) {
 //#endregion
 //#region hosts/claude/main.ts
 /**
-* Run by hand, or by a plugin that starts it: `node dist/claude/process.js`. Ctrl-C or SIGTERM unregisters.
+* Run by hand, or by a plugin that starts it: `node hosts/claude/bin/syns-pages.mjs`. Ctrl-C or SIGTERM unregisters.
 * Settings are the environment: SYNS_PATH (the executable), SYNS_PAGES_INSTRUCTION=0 (declare no fragment),
 * UNIFE_PAGES_HOME (the daemon's home); a daemon that starts it also sets UNIFE_PAGES_CONTROL_SOCKET and
 * UNIFE_PAGES_CONTRIBUTOR_TOKEN.

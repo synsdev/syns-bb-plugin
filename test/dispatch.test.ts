@@ -38,6 +38,8 @@ describe("dispatch", () => {
     expect(h.runner.calls[0]).toMatchObject({ hostId: "host_7", cwd: "/work/other" });
     await h.invoke({ method: "syns.repo", params: {}, caller: { sessionId: "ses_1", workspace: { id: "p", path: "/work/here", machine: null } }, requestId: "r" });
     expect(h.runner.calls[1]).toMatchObject({ hostId: "local", cwd: "/work/here" });
+    await h.invoke({ method: "syns.repo", params: {}, caller: { sessionId: "thr_w", workspace: { id: "p", path: "C:\\work\\vela", machine: "host_win" } }, requestId: "r" });
+    expect(h.runner.calls[2]).toMatchObject({ hostId: "host_win", cwd: "C:\\work\\vela" });
   });
 
   it("outside any checkout every method that needs a repository answers no_repo, from the CLI's own answer (A4, S2.4)", async () => {

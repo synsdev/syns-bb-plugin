@@ -160,10 +160,15 @@ describe("Claude Code: the plugin folder the daemon starts (U45)", () => {
   const folder = new URL("../../hosts/claude/", import.meta.url);
 
   it("declares syns and a process that exists, and the committed bundle is what the sources build", () => {
-    expect(JSON.parse(readFileSync(new URL("unife-pages.json", folder), "utf8"))).toEqual({ contributor: { namespace: "syns", process: "bin/syns-pages.js" } });
-    const out = join(mkdtempSync(join(tmpdir(), "syns-bundle-")), "fresh.js");
+    expect(JSON.parse(readFileSync(new URL("unife-pages.json", folder), "utf8"))).toEqual({ contributor: { namespace: "syns", process: "bin/syns-pages.mjs" } });
+    const scratch = mkdtempSync(join(tmpdir(), "syns-bundle-"));
+    const out = join(scratch, "fresh.mjs");
     execFileSync(new URL("../../node_modules/.bin/rolldown", import.meta.url).pathname, ["hosts/claude/main.ts", "--platform", "node", "--format", "esm", "--file", out], { cwd: new URL("../..", import.meta.url).pathname, stdio: "ignore" });
-    expect(readFileSync(out, "utf8"), "run npm run build:claude").toBe(readFileSync(new URL("bin/syns-pages.js", folder), "utf8"));
+    const fresh = readFileSync(out, "utf8");
+    rmSync(scratch, { recursive: true, force: true });
+    expect(fresh, "run npm run build:claude").toBe(readFileSync(new URL("bin/syns-pages.mjs", folder), "utf8"));
+    // The plugin's version is the package's.
+    expect(JSON.parse(readFileSync(new URL(".claude-plugin/plugin.json", folder), "utf8")).version).toBe(JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")).version);
   });
 
   it("the bundle, started as the daemon starts it, registers with its token, answers a call, and leaves when that daemon is gone", async () => {
@@ -184,7 +189,7 @@ describe("Claude Code: the plugin folder the daemon starts (U45)", () => {
       });
     });
     await new Promise<void>((r) => server.listen(sock, () => r()));
-    const child = spawn(process.execPath, [new URL("bin/syns-pages.js", folder).pathname], { cwd: new URL(".", folder).pathname, env: { ...process.env, UNIFE_PAGES_CONTROL_SOCKET: sock, UNIFE_PAGES_CONTRIBUTOR_TOKEN: "tok_9", SYNS_PATH: join(dir, "missing") }, stdio: ["ignore", "ignore", "ignore"] });
+    const child = spawn(process.execPath, [new URL("bin/syns-pages.mjs", folder).pathname], { cwd: new URL(".", folder).pathname, env: { ...process.env, UNIFE_PAGES_CONTROL_SOCKET: sock, UNIFE_PAGES_CONTRIBUTOR_TOKEN: "tok_9", SYNS_PATH: join(dir, "missing") }, stdio: ["ignore", "ignore", "ignore"] });
     try {
       await vi.waitFor(() => expect(registrations).toHaveLength(1), { timeout: 10_000 });
       expect(tokens).toEqual(["tok_9"]);

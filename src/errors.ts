@@ -43,7 +43,7 @@ export const REASONS = {
   cli_missing: {
     code: "unavailable",
     message: "The Syns command-line tool was not found on this session's machine.",
-    meaning: "No syns on that machine; an operator installs it or sets synsPath.",
+    meaning: "No syns on that machine; an operator installs it or names it in the plugin's settings.",
   },
   timeout: {
     code: "unavailable",

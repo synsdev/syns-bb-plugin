@@ -42,8 +42,8 @@ Pages learn of changes by polling one cheap call, `syns.repo`, with Thread Pages
 
 ## Getting started
 
-Install [Thread Pages](https://github.com/unifedev/bb-thread-pages) 1.4.0 or
-later, and the Syns CLI, logged in, on each machine whose sessions should reach
-a repository. Then install this plugin. New sessions are told about `syns.*`
+Install bb-pages with the session's workspace in the call (unife-pages U44), and
+the Syns CLI, logged in, on each machine whose sessions should reach a
+repository. Then install this plugin. New sessions are told about `syns.*`
 automatically; turn that off with
 `bb plugin config syns set agentInstructions false`.

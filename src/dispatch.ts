@@ -25,11 +25,14 @@ export interface Call {
 /** The machine name for a host with one machine. */
 export const LOCAL = "local";
 
+/** An absolute path on the session's machine, POSIX or Windows (a drive letter, or a UNC path). */
+const ABSOLUTE = /^(\/|[A-Za-z]:[\\/]|\\\\)/;
+
 /** Where the CLI runs for the session: the folder the host passed, on its machine. Null when there is none; a malformed one throws. */
 function sessionWhere(workspace: unknown): Where | null {
   if (workspace === null || workspace === undefined) return null;
   const w = workspace as Partial<Workspace>;
-  if (typeof w.path !== "string" || !w.path.startsWith("/") || (w.machine !== null && typeof w.machine !== "string")) {
+  if (typeof w.path !== "string" || !ABSOLUTE.test(w.path) || (w.machine !== null && typeof w.machine !== "string")) {
     throw new SynsError("handler_error", { log: "the host passed a workspace without an absolute path" });
   }
   return { hostId: w.machine ?? LOCAL, cwd: w.path };
