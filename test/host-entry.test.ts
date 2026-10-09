@@ -61,6 +61,9 @@ describe("the Claude Code glue opens no repository file either (hosts/claude)", 
       expect(found.map((entry) => entry.from), name).not.toContain("node:child_process");
       const fromFs = found.filter((entry) => /^(node:)?fs(\/|$)/.test(entry.from)).flatMap((entry) => entry.names);
       expect(fromFs, name).toEqual(name === "process.ts" ? ["mkdtempSync", "rmSync"] : []);
+      expect(glue(name), name).not.toMatch(/\brequire\s*\(|\bimport\s*\(/);
+      // Only the runner reaches the CLI and the scope check, as only host-entry.ts does in src.
+      if (name !== "runner.ts") expect(found.map((entry) => entry.from), name).not.toEqual(expect.arrayContaining([expect.stringMatching(/\/(syns-process|scope)\.js$/)]));
     }
   });
 });
