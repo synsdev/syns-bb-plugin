@@ -3132,7 +3132,11 @@ function optionsFromEnv(env, log) {
 		log
 	};
 }
-/** HTTP over the daemon's control socket. */
+/**
+* HTTP over the daemon's control socket, a fresh connection each time. With Node's keep-alive agent a socket reused
+* after the 5 s poll still carries its 5 s idle timer, which fires as the next request starts: a third of the polls
+* then failed and the process registered again every 10–15 s (measured on the owner's daemon, 9 October 2026).
+*/
 function controlOver(socketPath, token) {
 	return (method, path, body) => new Promise((resolve, reject) => {
 		const text = body === void 0 ? void 0 : JSON.stringify(body);
@@ -3148,7 +3152,8 @@ function controlOver(socketPath, token) {
 			path,
 			method,
 			timeout: 5e3,
-			headers
+			headers,
+			agent: false
 		}, (res) => {
 			let out = "";
 			res.setEncoding("utf8");
