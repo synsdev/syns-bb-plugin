@@ -19,15 +19,21 @@ import { createLocalRunner } from "./runner.js";
  *   the daemon POSTs { namespace, method, params, caller, requestId } to the endpoint and reads the answer
  *
  * The endpoint is a Unix socket in a folder only this user can open, so no browser and no other user reaches it.
- * A registration does not survive a daemon restart: a new daemon pid is registered with again. A refusal (another
+ * Started by the daemon from this plugin's unife-pages.json (U45), it registers with the token it was given and lives
+ * as long as that daemon. Started by hand, it registers again after a daemon restart, and a refusal (another
  * registrant holds `syns`, or an installed plugin declares it) is logged and tried again a minute later.
  */
 export const NAMESPACE = "syns";
+const CONTROL_SOCKET = "control.sock";
 const BODY_LIMIT = 8 * 1024 * 1024;
 
 export interface ServeOptions {
-  /** The daemon's home: `$UNIFE_PAGES_HOME`, else `~/.unife-pages`. */
-  home: string;
+  /** The daemon's control socket: the one a daemon that started this process names (`UNIFE_PAGES_CONTROL_SOCKET`), else the one in its home (`$UNIFE_PAGES_HOME`, else `~/.unife-pages`). */
+  socket: string;
+  /** The token a daemon that started this process gave it (`UNIFE_PAGES_CONTRIBUTOR_TOKEN`, U45): it alone may hold a namespace a plugin declares. */
+  token?: string | undefined;
+  /** Called when the daemon that started this process is gone and another answers: that one starts its own. */
+  onDaemonGone?: () => void;
   /** The `syns` executable, when it is not on PATH or in the usual folders (bb's `synsPath` setting). */
   synsPath?: string | undefined;
   /** Whether the declaration carries the instruction fragment (bb's `agentInstructions` setting). */
@@ -39,14 +45,15 @@ export interface ServeOptions {
 
 export interface Served {
   endpoint: string;
-  /** Unregisters, closes the endpoint and removes its folder. */
-  stop(): Promise<void>;
+  /** Unregisters (unless told not to), closes the endpoint and removes its folder. */
+  stop(unregister?: boolean): Promise<void>;
 }
 
 /** What the environment says, as `serve` takes it. */
 export function optionsFromEnv(env: NodeJS.ProcessEnv, log: Log): ServeOptions {
   return {
-    home: env.UNIFE_PAGES_HOME || join(homedir(), ".unife-pages"),
+    socket: env.UNIFE_PAGES_CONTROL_SOCKET || join(env.UNIFE_PAGES_HOME || join(homedir(), ".unife-pages"), CONTROL_SOCKET),
+    token: env.UNIFE_PAGES_CONTRIBUTOR_TOKEN || undefined,
     synsPath: env.SYNS_PATH?.trim() || undefined,
     agentInstructions: env.SYNS_PAGES_INSTRUCTION !== "0",
     log,
@@ -57,11 +64,11 @@ export function optionsFromEnv(env: NodeJS.ProcessEnv, log: Log): ServeOptions {
 export type Control = (method: string, path: string, body?: unknown) => Promise<{ status: number; text: string }>;
 
 /** HTTP over the daemon's control socket. */
-export function controlOver(socketPath: string): Control {
+export function controlOver(socketPath: string, token?: string): Control {
   return (method, path, body) =>
     new Promise((resolve, reject) => {
       const text = body === undefined ? undefined : JSON.stringify(body);
-      const headers = text === undefined ? {} : { "content-type": "application/json", "content-length": Buffer.byteLength(text) };
+      const headers = { ...(text === undefined ? {} : { "content-type": "application/json", "content-length": Buffer.byteLength(text) }), ...(token ? { "x-unife-contributor-token": token } : {}) };
       const req = http.request({ socketPath, path, method, timeout: 5_000, headers }, (res) => {
         let out = "";
         res.setEncoding("utf8");
@@ -76,7 +83,7 @@ export function controlOver(socketPath: string): Control {
 
 export async function serve(options: ServeOptions): Promise<Served> {
   const { log } = options;
-  const control = controlOver(join(options.home, "control.sock"));
+  const control = controlOver(options.socket, options.token);
   const invoke = createDispatch({ cli: createCli(createLocalRunner(options.synsPath)), log });
   const declaration = buildDeclaration(METHODS, { agentInstructions: options.agentInstructions });
 
@@ -115,6 +122,7 @@ export async function serve(options: ServeOptions): Promise<Served> {
   const endpoint = `unix:${socketPath}:/invoke`;
 
   let registeredWith: number | null = null;
+  let firstDaemon: number | null = null;
   let retryAt = 0;
   const tick = async (): Promise<void> => {
     let pid: number;
@@ -123,6 +131,14 @@ export async function serve(options: ServeOptions): Promise<Served> {
     } catch {
       registeredWith = null; // no daemon yet, or gone
       return;
+    }
+    if (options.token) {
+      firstDaemon ??= pid;
+      if (pid !== firstDaemon) {
+        log.info(`the daemon that started this process is gone; daemon ${pid} starts its own`);
+        options.onDaemonGone?.();
+        return;
+      }
     }
     if (pid === registeredWith || Date.now() < retryAt) return;
     const answer = await control("POST", "/v1/contributors", { kind: "process", namespace: NAMESPACE, declaration, endpoint }).catch((error: Error) => ({ status: 0, text: error.message }));
@@ -140,10 +156,10 @@ export async function serve(options: ServeOptions): Promise<Served> {
 
   return {
     endpoint,
-    async stop() {
+    async stop(unregister = true) {
       clearInterval(timer);
       await ticking.catch(() => undefined);
-      if (registeredWith !== null) await control("DELETE", `/v1/contributors/${NAMESPACE}`).catch(() => undefined);
+      if (unregister && registeredWith !== null) await control("DELETE", `/v1/contributors/${NAMESPACE}`).catch(() => undefined);
       await new Promise<void>((resolve) => server.close(() => resolve()));
       rmSync(folder, { recursive: true, force: true });
     },

@@ -20,7 +20,7 @@
     "typecheck": "tsc -p .",
     "test": "vitest run",
     "build": "bb plugin build && npm run build:claude",
-    "build:claude": "rolldown hosts/claude/main.ts --platform node --format esm --file dist/claude/process.js"
+    "build:claude": "rolldown hosts/claude/main.ts --platform node --format esm --file hosts/claude/bin/syns-pages.js"
   },
   "dependencies": {
     "zod": "^4.3.6"
