@@ -19,7 +19,8 @@
   "scripts": {
     "typecheck": "tsc -p .",
     "test": "vitest run",
-    "build": "bb plugin build"
+    "build": "bb plugin build && npm run build:claude",
+    "build:claude": "rolldown hosts/claude/main.ts --platform node --format esm --file dist/claude/process.js"
   },
   "dependencies": {
     "zod": "^4.3.6"
@@ -27,6 +28,7 @@
   "devDependencies": {
     "@get-bb/plugin-sdk": "0.4.104",
     "@types/node": "^22.0.0",
+    "rolldown": "1.2.9",
     "typescript": "^5.7.0",
     "vitest": "^4.1.1"
   },

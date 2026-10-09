@@ -11,5 +11,5 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true
   },
-  "include": ["server.ts", "host.ts", "src", "test", "vitest.config.ts"]
+  "include": ["server.ts", "host.ts", "src", "hosts", "test", "vitest.config.ts"]
 }

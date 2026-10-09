@@ -51,6 +51,20 @@ describe("the plugin opens no repository file (A5, S2.5, S2.6)", () => {
   });
 });
 
+describe("the Claude Code glue opens no repository file either (hosts/claude)", () => {
+  const glue = (name: string): string => readFileSync(new URL(`../hosts/claude/${name}`, import.meta.url), "utf8");
+  it("its only file-system access is its own endpoint's folder, and it starts no process: the CLI runs through syns-process.ts", () => {
+    const files = [...readdirSync(new URL("../hosts/claude/", import.meta.url))].map(String).filter((name) => name.endsWith(".ts"));
+    expect(files.sort()).toEqual(["main.ts", "process.ts", "resolve.ts", "runner.ts"]);
+    for (const name of files) {
+      const found = imports(glue(name));
+      expect(found.map((entry) => entry.from), name).not.toContain("node:child_process");
+      const fromFs = found.filter((entry) => /^(node:)?fs(\/|$)/.test(entry.from)).flatMap((entry) => entry.names);
+      expect(fromFs, name).toEqual(name === "process.ts" ? ["mkdtempSync", "rmSync"] : []);
+    }
+  });
+});
+
 describe("the host half, run against a stand-in executable", () => {
   const dir = mkdtempSync(join(tmpdir(), "syns-bb-plugin-host-"));
   afterAll(() => rmSync(dir, { recursive: true, force: true }));
