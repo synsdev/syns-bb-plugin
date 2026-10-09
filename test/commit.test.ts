@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { rec } from "./fake-runner.js";
 import { HEAD, OLD, failureOf, harness, resultOf } from "./harness.js";
 
-const PROVENANCE = ["--integration=syns-bb-plugin", "--trigger=thread-page"];
+const PROVENANCE = ["--integration=syns-pages", "--trigger=page"];
 
 describe("syns.commit", () => {
   it("is one CLI process: the parent, the message, the provenance of D6, and the changeset on standard input (S1.4, S1.5, S2.12)", async () => {

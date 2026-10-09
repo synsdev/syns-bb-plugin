@@ -162,7 +162,7 @@ describe("syns.place records the page's provenance through the environment (D44)
     const h = harness({ place: rec("place.ok"), status: rec("status.clean") });
     await h.call("syns.place", { template: "acme/whiteboard-template", path: "clients/vela/q3-board" }, "thr_page");
     const placed = h.runner.calls.find((call) => call.args[0] === "place")!;
-    expect(placed.env).toEqual({ SYNS_INTEGRATION: "syns-bb-plugin", SYNS_RUN: "thr_page", SYNS_TRIGGER: "thread-page" });
+    expect(placed.env).toEqual({ SYNS_INTEGRATION: "syns-pages", SYNS_RUN: "thr_page", SYNS_TRIGGER: "page" });
     expect(placed.args.some((arg) => arg.startsWith("--integration") || arg.startsWith("--run") || arg.startsWith("--trigger"))).toBe(false);
   });
   it("sets no environment for any other command, nor for the version check", async () => {
@@ -176,7 +176,7 @@ describe("syns.place records the page's provenance through the environment (D44)
     const { hostContract } = await import("../src/contract.js");
     const input = (hostContract.run as { input: { safeParse(v: unknown): { success: boolean } } }).input;
     const base = { cwd: "/w", args: ["place"], timeoutMs: 1000 };
-    expect(input.safeParse({ ...base, env: { SYNS_INTEGRATION: "syns-bb-plugin", SYNS_RUN: "thr_1", SYNS_TRIGGER: "thread-page" } }).success).toBe(true);
+    expect(input.safeParse({ ...base, env: { SYNS_INTEGRATION: "syns-pages", SYNS_RUN: "thr_1", SYNS_TRIGGER: "page" } }).success).toBe(true);
     expect(input.safeParse({ ...base, env: { SYNS_INTEGRATION: "a", SYNS_RUN: "b", SYNS_TRIGGER: "c", PATH: "/evil" } }).success).toBe(false);
     expect(input.safeParse({ ...base, env: { LD_PRELOAD: "x" } }).success).toBe(false);
   });

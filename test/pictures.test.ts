@@ -115,7 +115,7 @@ describe("syns.writeBinary (D23, D25)", () => {
     const result = resultOf(await h.call("syns.writeBinary", { path: "images/a.png", base64: data.toString("base64"), base: HEAD }, "thr_abc"));
     expect(result).toEqual({ complete: true, received: 5000, version: NEW, number: 7, changed: 1 });
     const call = h.runner.calls[0]!;
-    expect(call.args).toEqual(["write", "--bytes", `--parent=${HEAD}`, "--message=Write images/a.png from a page", "--integration=syns-bb-plugin", "--trigger=thread-page", "--run=thr_abc", "--json", "--", "images/a.png"]);
+    expect(call.args).toEqual(["write", "--bytes", `--parent=${HEAD}`, "--message=Write images/a.png from a page", "--integration=syns-pages", "--trigger=page", "--run=thr_abc", "--json", "--", "images/a.png"]);
     expect(call.stdinBase64).toBe(data.toString("base64"));
     expect(call.stdin).toBeUndefined();
   });

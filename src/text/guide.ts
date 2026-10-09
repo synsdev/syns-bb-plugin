@@ -37,7 +37,7 @@ A folder placed in a repository (a tool) is all the page sees: every \`path\` is
 
 Poll only \`syns.repo\`, with the host's \`watch\`. When its \`version\` differs from the one held, \`syns.diff { from }\` lists each changed path and \`status\` up to \`to.version\`; re-read those at \`to.version\`. There is no push.
 
-\`syns.history\` says who changed what. A page's write has \`by.integration\` \`syns-bb-plugin\` and \`by.trigger\` \`thread-page\`; then \`by.run\` is the session whose page made it. Others set \`by.run\` too: never read it alone as a page's. \`syns.revert\` records none.
+\`syns.history\` says who changed what. A page's write has \`by.integration\` \`syns-pages\` and \`by.trigger\` \`page\`; then \`by.run\` is the session whose page made it. Others set \`by.run\` too: never read it alone as a page's. \`syns.revert\` records none.
 
 ## Writing
 

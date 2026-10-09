@@ -178,7 +178,7 @@ describe("checks and templates", () => {
     expect(resultOf(await h.call("syns.enableChecks"))).toEqual({ holder: "acme/vela-workspace", path: "q3-plan", enabled: ["true"], version: "0f4364fec57226e534c41e91f5e0b63dc655a452", number: 9 });
     const run = h.runner.calls.find((call) => call.args[0] === "enable-checks")!;
     expect(run.args).toEqual(buildArgs("enable-checks"));
-    expect(run.env).toEqual({ SYNS_INTEGRATION: "syns-bb-plugin", SYNS_RUN: "thr_page", SYNS_TRIGGER: "thread-page" });
+    expect(run.env).toEqual({ SYNS_INTEGRATION: "syns-pages", SYNS_RUN: "thr_page", SYNS_TRIGGER: "page" });
   });
   it("enableChecks with nothing waiting: enabled [], no version; the CLI's own guard: checkout_dirty", async () => {
     expect(resultOf(await harness({ "enable-checks": rec("enable-checks.none.0313") }).call("syns.enableChecks"))).toEqual({ holder: "acme/vela-workspace", path: "q3-plan", enabled: [] });

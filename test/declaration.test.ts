@@ -224,11 +224,11 @@ describe("what agents are told", () => {
   });
 
   it("the guide identifies a page's write by integration and trigger, never by run alone (Syns issue 214, 0.3.1)", () => {
-    expect(declaration.guide).toContain("A page's write has `by.integration` `syns-bb-plugin` and `by.trigger` `thread-page`");
+    expect(declaration.guide).toContain("A page's write has `by.integration` `syns-pages` and `by.trigger` `page`");
     expect(declaration.guide).toContain("never read it alone as a page's");
     expect(declaration.guide).not.toContain("null from outside pages");
     const history = declaration.methods.find((method) => method.name === "syns.history")!;
-    expect(history.description).toContain("by.integration syns-bb-plugin and by.trigger thread-page");
+    expect(history.description).toContain("by.integration syns-pages and by.trigger page");
     expect(history.description).not.toContain("by.run is the bb session");
   });
 

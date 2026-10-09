@@ -20,7 +20,7 @@ const DISCOVERY = join(MONO, "packages/bb-pages/src/provider/contributors.ts");
 const present = existsSync(VALIDATOR) && existsSync(DISCOVERY);
 
 /** The declaration frozen at this version: a text or schema edit is a deliberate change to this file (D.6). */
-const FIXTURE = new URL("./fixtures/declaration-0.7.0.json", import.meta.url);
+const FIXTURE = new URL("./fixtures/declaration-0.8.0.json", import.meta.url);
 
 describe("the frozen declaration", () => {
   it("is what the table builds, but for the version, which declaration.test.ts holds to package.json", () => {

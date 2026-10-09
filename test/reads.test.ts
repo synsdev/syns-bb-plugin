@@ -167,7 +167,7 @@ describe("syns.history", () => {
       { integration: "claude-code", run: "3db5c4eb-0000-4000-8000-000000000002", trigger: "agent" },
     ]);
     // What marks a page's write is the pair below, which only the plugin sets; a run alone does not.
-    for (const entry of entries) expect(entry.by.integration === "syns-bb-plugin" && entry.by.trigger === "thread-page").toBe(false);
+    for (const entry of entries) expect(entry.by.integration === "syns-pages" && entry.by.trigger === "page").toBe(false);
   });
   it("passes path as --file=PATH, never as a bare argument", async () => {
     const h = harness({ history: rec("history.ok") });

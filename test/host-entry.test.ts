@@ -96,8 +96,8 @@ describe("the host half, run against a stand-in executable", () => {
 
   it("hands the provenance it is given to the process's environment, over what it inherited (D44)", async () => {
     const bin = script("env", 'printf "%s|%s|%s" "$SYNS_INTEGRATION" "$SYNS_RUN" "$SYNS_TRIGGER"');
-    const result = await runSyns(bin, [], dir, undefined, 5000, signal, { SYNS_INTEGRATION: "syns-bb-plugin", SYNS_RUN: "thr_1", SYNS_TRIGGER: "thread-page" });
-    expect(result.stdout).toBe("syns-bb-plugin|thr_1|thread-page");
+    const result = await runSyns(bin, [], dir, undefined, 5000, signal, { SYNS_INTEGRATION: "syns-pages", SYNS_RUN: "thr_1", SYNS_TRIGGER: "page" });
+    expect(result.stdout).toBe("syns-pages|thr_1|page");
   });
 
   it("passes arguments as they are, standard input, and the folder; returns exit code and output", async () => {

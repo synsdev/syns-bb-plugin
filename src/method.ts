@@ -127,7 +127,7 @@ export const message: Schema = { type: "string", maxLength: 500 };
 export const nullable = (type: "string" | "integer" | "boolean"): Schema => ({ type: [type, "null"] });
 
 /** The provenance of a page's commit (D6, S1.5). A page can set none of the three. */
-export const provenance = (sessionId: string): Record<string, string> => ({ integration: "syns-bb-plugin", trigger: "thread-page", run: sessionId });
+export const provenance = (sessionId: string): Record<string, string> => ({ integration: "syns-pages", trigger: "page", run: sessionId });
 
 // --- checking a value -------------------------------------------------------
 

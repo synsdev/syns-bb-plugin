@@ -448,8 +448,8 @@ const message = {
 const nullable = (type) => ({ type: [type, "null"] });
 /** The provenance of a page's commit (D6, S1.5). A page can set none of the three. */
 const provenance = (sessionId) => ({
-	integration: "syns-bb-plugin",
-	trigger: "thread-page",
+	integration: "syns-pages",
+	trigger: "page",
 	run: sessionId
 });
 const typeMatches = (type, value) => {
@@ -594,7 +594,7 @@ A folder placed in a repository (a tool) is all the page sees: every \`path\` is
 
 Poll only \`syns.repo\`, with the host's \`watch\`. When its \`version\` differs from the one held, \`syns.diff { from }\` lists each changed path and \`status\` up to \`to.version\`; re-read those at \`to.version\`. There is no push.
 
-\`syns.history\` says who changed what. A page's write has \`by.integration\` \`syns-bb-plugin\` and \`by.trigger\` \`thread-page\`; then \`by.run\` is the session whose page made it. Others set \`by.run\` too: never read it alone as a page's. \`syns.revert\` records none.
+\`syns.history\` says who changed what. A page's write has \`by.integration\` \`syns-pages\` and \`by.trigger\` \`page\`; then \`by.run\` is the session whose page made it. Others set \`by.run\` too: never read it alone as a page's. \`syns.revert\` records none.
 
 ## Writing
 
@@ -676,7 +676,7 @@ function buildGuide(table) {
 //#endregion
 //#region src/declaration.ts
 /** The plugin's version, as declared to the host. A test holds it equal to package.json's. */
-const VERSION = "0.7.0-rc.3";
+const VERSION = "0.8.0-rc.1";
 /** threadPagesContributions, generated from the table. With `agentInstructions` off no fragment is declared (S4.5). */
 function buildDeclaration(table, settings) {
 	return {
@@ -1513,7 +1513,7 @@ const MAX_PATHS = 200;
 const record$1 = (value) => typeof value === "object" && value !== null ? value : {};
 const history = {
 	name: "syns.history",
-	description: "Newest versions first: who or what made each, and the paths it changed. A page's commit has by.integration syns-bb-plugin and by.trigger thread-page. No paging past limit (default 20); total says how many.",
+	description: "Newest versions first: who or what made each, and the paths it changed. A page's commit has by.integration syns-pages and by.trigger page. No paging past limit (default 20); total says how many.",
 	effect: "read",
 	params: object({
 		path,

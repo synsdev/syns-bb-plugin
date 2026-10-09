@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.8.0
+
+Claude Code, and one call shape on both hosts.
+
+- **Claude Code.** `hosts/claude` is a Claude Code plugin, `syns-pages`.
+  Its `unife-pages.json` names `bin/syns-pages.js`, a self-contained bundle
+  of the same table and dispatch. The Unife Pages daemon starts it and
+  supervises it (unife-pages U45). The CLI runs on this machine.
+- **The session's folder comes with the call** (`caller.workspace`,
+  unife-pages U44), on both hosts. The plugin no longer asks bb's SDK for
+  it; it needs a host that sends it (bb-pages and claude-pages with U44).
+- **Provenance is host-neutral:** a page's write records `by.integration`
+  `syns-pages` and `by.trigger` `page`. Before, they were `syns-bb-plugin`
+  and `thread-page`; a page that reads them changes with this release.
+
 ## 0.7.0
 
 The same declaration on every Unife Pages host (07 R-X1). No method changed.

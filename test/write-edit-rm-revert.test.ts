@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { rec } from "./fake-runner.js";
 import { HEAD, OLD, SAMPLES, failureOf, harness, resultOf } from "./harness.js";
 
-const PROVENANCE = ["--integration=syns-bb-plugin", "--trigger=thread-page"];
+const PROVENANCE = ["--integration=syns-pages", "--trigger=page"];
 const NEW = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1";
 
 describe("syns.write", () => {
@@ -194,9 +194,9 @@ describe("every page write carries the page's mark, which no other publisher set
     it(method, async () => {
       const h = harness();
       await h.call(method, SAMPLES[method], "thr_page");
-      const published = h.runner.calls.filter((call) => call.args.includes("--integration=syns-bb-plugin"));
+      const published = h.runner.calls.filter((call) => call.args.includes("--integration=syns-pages"));
       expect(published, method).toHaveLength(1);
-      expect(published[0]!.args).toEqual(expect.arrayContaining(["--integration=syns-bb-plugin", "--trigger=thread-page", "--run=thr_page"]));
+      expect(published[0]!.args).toEqual(expect.arrayContaining(["--integration=syns-pages", "--trigger=page", "--run=thr_page"]));
     });
   }
 });
