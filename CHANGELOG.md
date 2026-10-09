@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.1
+
+- Claude Code: the process no longer re-registers every 10–15 seconds. It
+  polled the daemon over a reused keep-alive connection whose idle timer
+  fired as the next poll began; each request now opens its own connection.
+
 ## 0.8.0
 
 Claude Code, and one call shape on both hosts.
