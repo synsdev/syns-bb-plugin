@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { CLI_NOT_FOUND, createCli, type RunResult } from "../src/cli.js";
-import { createDispatch } from "../src/dispatch.js";
+import { CLI_NOT_FOUND, type RunResult } from "../src/cli.js";
 import { METHODS } from "../src/methods/index.js";
-import { fakeRunner, ok, rec, spawnFailed, timedOut } from "./fake-runner.js";
+import { ok, rec, spawnFailed, timedOut } from "./fake-runner.js";
 import { FAST, SAMPLES, failureOf, harness } from "./harness.js";
 
 const everyVerb = (reply: RunResult) => Object.fromEntries(["repo", "whoami", "ls", "cat", "history", "commit", "read", "glob", "grep", "diff", "write", "edit", "rm", "revert", "place", "status", "share", "unshare", "collaborators", "enable-checks", "explore", "users"].map((verb) => [verb, reply]));
@@ -24,7 +23,6 @@ describe("dispatch", () => {
     for (const method of METHODS) {
       expect(failureOf(await h.call(method.name, SAMPLES[method.name], null)), method.name).toMatchObject({ code: "unavailable", reason: "no_repo" });
     }
-    expect(h.resolved).toHaveLength(0);
     expect(h.runner.calls).toHaveLength(0);
   });
 
@@ -34,11 +32,12 @@ describe("dispatch", () => {
     expect(h.runner.calls).toHaveLength(0);
   });
 
-  it("takes the session from caller.sessionId and runs the CLI in that session's folder on its machine (S2.1)", async () => {
+  it("runs the CLI in the folder the host passes for the session, on its machine; one machine is local (S2.1, U44)", async () => {
     const h = harness({ repo: rec("repo.ok") });
-    await h.call("syns.repo", {}, "thr_other");
-    expect(h.resolved).toEqual(["thr_other"]);
-    expect(h.runner.calls[0]).toMatchObject({ hostId: "host_1", cwd: "/work/checkout" });
+    await h.invoke({ method: "syns.repo", params: {}, caller: { sessionId: "thr_other", workspace: { id: "p", path: "/work/other", machine: "host_7" } }, requestId: "r" });
+    expect(h.runner.calls[0]).toMatchObject({ hostId: "host_7", cwd: "/work/other" });
+    await h.invoke({ method: "syns.repo", params: {}, caller: { sessionId: "ses_1", workspace: { id: "p", path: "/work/here", machine: null } }, requestId: "r" });
+    expect(h.runner.calls[1]).toMatchObject({ hostId: "local", cwd: "/work/here" });
   });
 
   it("outside any checkout every method that needs a repository answers no_repo, from the CLI's own answer (A4, S2.4)", async () => {
@@ -95,16 +94,12 @@ describe("dispatch", () => {
     expect(h.log[0]).toContain("syns.repo");
   });
 
-  it("a failure to resolve the session is handler_error, logged", async () => {
-    const invoke = createDispatch({
-      cli: createCli(fakeRunner(), FAST),
-      resolve: async () => {
-        throw new Error("sdk down");
-      },
-      log: { info: () => undefined, warn: () => undefined },
-    });
-    const answer = await invoke({ method: "syns.repo", params: {}, caller: { sessionId: "thr_1" }, requestId: "r" });
-    expect(failureOf(answer).code).toBe("handler_error");
+  it("a workspace without an absolute path is handler_error, logged, and runs nothing", async () => {
+    const h = harness();
+    for (const workspace of [{ id: "p", path: "work", machine: null }, { id: "p", machine: null }, { id: "p", path: "/w", machine: 3 }]) {
+      expect(failureOf(await h.invoke({ method: "syns.repo", params: {}, caller: { sessionId: "thr_1", workspace: workspace as never }, requestId: "r" })).code).toBe("handler_error");
+    }
+    expect(h.runner.calls).toHaveLength(0);
   });
 
   it("treats absent params as an empty object, as the host does", async () => {

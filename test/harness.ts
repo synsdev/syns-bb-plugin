@@ -1,5 +1,5 @@
 import { createCli, type Limits, type RunResult, type RunRequest, type Where } from "../src/cli.js";
-import { createDispatch, type Answer } from "../src/dispatch.js";
+import { createDispatch, type Answer, type Call, type Workspace } from "../src/dispatch.js";
 import type { Method } from "../src/method.js";
 import type { Held } from "../src/held.js";
 import { fakeRunner } from "./fake-runner.js";
@@ -15,19 +15,19 @@ export function harness(replies: Record<string, Reply> = {}, options: { table?: 
   // Methods that need a newer CLI ask its version first; a current one unless a test says otherwise.
   const runner = fakeRunner({ "--version": { exitCode: 0, stdout: "syns 0.3.13\n", stderr: "", timedOut: false, spawnError: null, overflowed: false }, ...replies });
   const log: string[] = [];
-  const resolved: string[] = [];
-  const invoke = createDispatch({
+  const dispatch = createDispatch({
     ...(options.table ? { table: options.table } : {}),
     ...(options.held ? { held: options.held } : {}),
     cli: createCli(runner, options.limits ?? FAST),
-    resolve: async (sessionId) => {
-      resolved.push(sessionId);
-      return options.where === undefined ? { hostId: "host_1", cwd: "/work/checkout" } : options.where;
-    },
     log: { info: (line) => log.push(line), warn: (line) => log.push(line) },
   });
+  /** What the host passes for the calling session: the fixed folder, or none (`where: null`), unless the call names its own. */
+  const where = options.where === undefined ? { hostId: "host_1", cwd: "/work/checkout" } : options.where;
+  const workspace: Workspace | null = where && { id: "proj_1", path: where.cwd, machine: where.hostId };
+  const invoke = (call: Omit<Call, "caller"> & { caller: Partial<Call["caller"]> & { sessionId: string | null } }): Promise<Answer> =>
+    dispatch({ ...call, caller: { scope: null, workspace: call.caller.sessionId === null ? null : workspace, ...call.caller } as Call["caller"] });
   const call = (method: string, params: unknown = {}, sessionId: string | null = "thr_page"): Promise<Answer> => invoke({ method, params, caller: { sessionId }, requestId: "req_1" });
-  return { runner, log, resolved, call, invoke };
+  return { runner, log, call, invoke };
 }
 
 /** Parameters each registered method accepts, for the rows that say "every method". */

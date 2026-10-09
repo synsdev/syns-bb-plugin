@@ -2,22 +2,37 @@ import type { Cli, RunResult } from "./cli.js";
 import { SynsError, fail, interpret, toAnswer, type FailureAnswer } from "./errors.js";
 import { path as pathSchema, pick, provenance, validate, type Context, type Method } from "./method.js";
 import { METHODS } from "./methods/index.js";
-import type { Resolve } from "./resolve.js";
 import { createHeld, type Held } from "./held.js";
 import { CLI_NOT_FOUND, type Where } from "./cli.js";
 import { atLeast, createVersions, parseTriple, type Versions } from "./version.js";
 
-/** What Thread Pages sends to `threadPagesInvoke`. */
+/** The session's folder as the host passes it (unife-pages 07 R5.84b, U44): an absolute path on `machine`, null where the host has one. */
+export interface Workspace {
+  id: string;
+  path: string;
+  machine: string | null;
+}
+
+/** One contributed call, as every host sends it (07 §The call). */
 export interface Call {
   method: string;
   params: unknown;
-  /**
-   * `scope`: a subfolder of the session's folder that the calling document set
-   * (Thread Pages, round five; the exact field may still change). Absent: the
-   * session's folder itself, as before.
-   */
-  caller: { sessionId: string | null; scope?: string | null };
+  /** `scope`: a placed folder inside the session's folder that the calling document set (D43); null for the folder itself. */
+  caller: { sessionId: string | null; scope: string | null; workspace: Workspace | null };
   requestId: string;
+}
+
+/** The machine name for a host with one machine. */
+export const LOCAL = "local";
+
+/** Where the CLI runs for the session: the folder the host passed, on its machine. Null when there is none; a malformed one throws. */
+function sessionWhere(workspace: unknown): Where | null {
+  if (workspace === null || workspace === undefined) return null;
+  const w = workspace as Partial<Workspace>;
+  if (typeof w.path !== "string" || !w.path.startsWith("/") || (w.machine !== null && typeof w.machine !== "string")) {
+    throw new SynsError("handler_error", { log: "the host passed a workspace without an absolute path" });
+  }
+  return { hostId: w.machine ?? LOCAL, cwd: w.path };
 }
 
 export type Answer = { ok: true; result: unknown } | FailureAnswer;
@@ -30,7 +45,6 @@ export interface Log {
 export interface DispatchDeps {
   table?: readonly Method[];
   cli: Cli;
-  resolve: Resolve;
   log: Log;
   held?: Held;
   versions?: Versions;
@@ -42,10 +56,10 @@ export const SCOPE_TTL_MS = 60_000;
 
 /**
  * threadPagesInvoke: look the method up in the table, check its parameters,
- * resolve the session, run the CLI, map the outcome. It knows no method by name.
+ * take the session's folder from the host, run the CLI, map the outcome. It knows no method by name.
  * spec S2.1, S2.2, S2.14, S2.18–S2.22
  */
-export function createDispatch({ table = METHODS, cli, resolve, log, held = createHeld(), versions = createVersions(cli), now = Date.now }: DispatchDeps): (call: Call) => Promise<Answer> {
+export function createDispatch({ table = METHODS, cli, log, held = createHeld(), versions = createVersions(cli), now = Date.now }: DispatchDeps): (call: Call) => Promise<Answer> {
   const byName = new Map(table.map((method) => [method.name, method]));
 
   /** Scopes found to belong to their session's repository, each held a minute (D46): the answer is about the folder, not its contents. */
@@ -76,14 +90,14 @@ export function createDispatch({ table = METHODS, cli, resolve, log, held = crea
     confirmed.set(key, now());
   }
 
-  async function run(method: Method, params: Record<string, unknown>, sessionId: string | null, scope: string | null, deadline: number): Promise<unknown> {
+  async function run(method: Method, params: Record<string, unknown>, sessionId: string | null, scope: string | null, workspace: unknown, deadline: number): Promise<unknown> {
     const problem = validate(method.params, params);
     if (problem) throw new SynsError("invalid_params", { message: `Invalid parameters for ${method.name} at ${problem}` });
     method.check?.(params);
 
-    // The session comes from the host and from nowhere else. No session, no machine. S2.1, S2.2
+    // The session and its folder come from the host and from nowhere else. No session, no folder. S2.1, S2.2; U44
     if (sessionId === null) throw fail("no_repo");
-    const session = await resolve(sessionId);
+    const session = sessionWhere(workspace);
     if (!session) throw fail("no_repo");
     // A document's scope narrows the folder the CLI runs in to <session folder>/<scope> (D43). The host
     // refuses a scope that leaves the session's folder; it is checked again here, as a path is. A method
@@ -155,7 +169,7 @@ export function createDispatch({ table = METHODS, cli, resolve, log, held = crea
     });
     let outcome = "ok";
     try {
-      const work = run(method, params, sessionId, scope, Date.now() + cli.limits.callMs);
+      const work = run(method, params, sessionId, scope, call.caller?.workspace, Date.now() + cli.limits.callMs);
       work.catch(() => undefined); // it may lose the race; its failure is then nobody's
       return { ok: true, result: await Promise.race([work, limit]) };
     } catch (caught) {

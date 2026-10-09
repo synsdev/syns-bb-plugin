@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { RunRequest } from "../src/cli.js";
 import { buildDeclaration } from "../src/declaration.js";
 import { METHODS } from "../src/methods/index.js";
-import { createResolve } from "../src/resolve.js";
 import { ok, rec } from "./fake-runner.js";
 import { HEAD, OLD, failureOf, harness, resultOf } from "./harness.js";
 
@@ -107,27 +106,9 @@ describe("syns.revert declares only what it can answer (D29, D13)", () => {
 });
 
 describe("a session that no longer exists (D29)", () => {
-  it("resolves to nothing, so the call answers no_repo", async () => {
-    const resolve = createResolve({
-      threads: {
-        get: async () => {
-          throw new Error("HTTP 404: Thread not found");
-        },
-      },
-      environments: { get: async () => ({}) },
-    });
-    expect(await resolve("thr_gone")).toBeNull();
-  });
-
-  it("any other failure of the read still throws", async () => {
-    const resolve = createResolve({
-      threads: {
-        get: async () => {
-          throw new Error("HTTP 500: boom");
-        },
-      },
-      environments: { get: async () => ({}) },
-    });
-    await expect(resolve("thr_1")).rejects.toThrow("boom");
+  it("has no folder from the host, so the call answers no_repo and no machine is called", async () => {
+    const h = harness({}, { where: null });
+    expect(failureOf(await h.call("syns.repo")).reason).toBe("no_repo");
+    expect(h.runner.calls).toHaveLength(0);
   });
 });

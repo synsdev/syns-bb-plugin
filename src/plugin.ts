@@ -5,7 +5,6 @@ import { hostContract } from "./contract.js";
 import { buildDeclaration } from "./declaration.js";
 import { createDispatch, type Call } from "./dispatch.js";
 import { METHODS } from "./methods/index.js";
-import { createResolve } from "./resolve.js";
 
 /** Thread Pages has validated a call before it arrives; the dispatch checks it again against the table. */
 const anything = { "~standard": { version: 1 as const, vendor: "syns", validate: (value: unknown) => ({ value }) } };
@@ -28,7 +27,7 @@ export default function synsPlugin(bb: BbPluginApi): void {
     async () => (await settings.get()).synsPath?.trim() || undefined,
   );
 
-  const invoke = createDispatch({ cli: createCli(runner), resolve: createResolve(bb.sdk), log: bb.log });
+  const invoke = createDispatch({ cli: createCli(runner), log: bb.log });
 
   bb.rpc.register(
     { threadPagesContributions: { input: anything, output: anything }, threadPagesInvoke: { input: anything, output: anything } },

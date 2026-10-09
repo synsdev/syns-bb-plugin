@@ -16,10 +16,6 @@ export function fakeBb(settings: { synsPath?: string; agentInstructions?: boolea
     },
     rpc: { register: (_contract: unknown, implementations: typeof handlers) => Object.assign(handlers, implementations) },
     hosts: { experimental_client: () => ({ call: hostCall }) },
-    sdk: {
-      threads: { get: async () => ({ thread: { environmentId: "env_1" } }) },
-      environments: { get: async () => ({ hostId: "host_9", path: "/work/checkout" }) },
-    },
   };
   synsPlugin(bb as never);
   return { handlers, described, lines };

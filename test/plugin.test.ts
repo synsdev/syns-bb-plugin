@@ -29,7 +29,7 @@ describe("the server entry", () => {
       asked.push({ method, input, options });
       return rec("repo.ok");
     });
-    const answer = await handlers.threadPagesInvoke!({ method: "syns.repo", params: {}, caller: { sessionId: "thr_1" }, requestId: "r1" });
+    const answer = await handlers.threadPagesInvoke!({ method: "syns.repo", params: {}, caller: { sessionId: "thr_1", scope: null, workspace: { id: "proj_1", path: "/work/checkout", machine: "host_9" } }, requestId: "r1" });
     expect(answer).toMatchObject({ ok: true, result: { owner: "acme", version: HEAD } });
     expect(asked).toEqual([{ method: "run", input: { cwd: "/work/checkout", args: ["repo", "--json"], timeoutMs: 20000, synsPath: "/opt/syns/bin/syns" }, options: { hostId: "host_9", timeoutMs: 25000 } }]);
   });
@@ -38,7 +38,7 @@ describe("the server entry", () => {
     const inputs: Record<string, unknown>[] = [];
     for (const synsPath of [undefined, "", "  "]) {
       const { handlers } = fakeBb(synsPath === undefined ? {} : { synsPath }, async (_method, input) => (inputs.push(input), rec("repo.ok")));
-      await handlers.threadPagesInvoke!({ method: "syns.repo", params: {}, caller: { sessionId: "thr_1" }, requestId: "r1" });
+      await handlers.threadPagesInvoke!({ method: "syns.repo", params: {}, caller: { sessionId: "thr_1", scope: null, workspace: { id: "proj_1", path: "/work/checkout", machine: "host_9" } }, requestId: "r1" });
     }
     for (const input of inputs) expect(input).not.toHaveProperty("synsPath");
   });
@@ -47,7 +47,7 @@ describe("the server entry", () => {
     const { handlers, lines } = fakeBb({}, async () => {
       throw new Error("host host_9 is offline");
     });
-    const answer = await handlers.threadPagesInvoke!({ method: "syns.repo", params: {}, caller: { sessionId: "thr_1" }, requestId: "r1" });
+    const answer = await handlers.threadPagesInvoke!({ method: "syns.repo", params: {}, caller: { sessionId: "thr_1", scope: null, workspace: { id: "proj_1", path: "/work/checkout", machine: "host_9" } }, requestId: "r1" });
     expect(answer).toMatchObject({ ok: false, error: { code: "handler_error" } });
     expect(lines.join("\n")).toContain("host_9 is offline");
   });

@@ -4,7 +4,7 @@ import { failureOf, harness, resultOf } from "./harness.js";
 
 /** A call from a document that set a scope (D43). The host's exact field may still change. */
 const scoped = (h: ReturnType<typeof harness>, scope: string | null | undefined, method = "syns.repo", params: unknown = {}) =>
-  h.invoke({ method, params, caller: { sessionId: "thr_page", scope }, requestId: "r" });
+  h.invoke({ method, params, caller: { sessionId: "thr_page", scope: scope as string | null }, requestId: "r" });
 
 /** `repo --json` at the session's root (acme/work) and in a folder placed in it, or in another repository. */
 const ROOT = { owner: "acme", name: "work", commitSha: "7ca9bc78ba047d9e7798b8d2733c254e24cfc837", version: 5, role: "owner", visibility: "private", fileCount: 40 };

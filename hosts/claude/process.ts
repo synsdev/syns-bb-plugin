@@ -6,16 +6,15 @@ import { createCli } from "../../src/cli.js";
 import { buildDeclaration } from "../../src/declaration.js";
 import { createDispatch, type Call, type Log } from "../../src/dispatch.js";
 import { METHODS } from "../../src/methods/index.js";
-import { createDaemonResolve, type Control } from "./resolve.js";
 import { createLocalRunner } from "./runner.js";
 
 /**
  * The Syns contributor on Claude Code: a process contributor (unife-pages 07 R-X5, U24). It registers the same
  * declaration bb gets (R-X1) with the Unife Pages daemon over its control socket, and answers each call the daemon
- * POSTs to it with the same dispatch as bb's plugin, the CLI running on this machine.
+ * POSTs to it with the same dispatch as bb's plugin, the CLI running on this machine in the folder the call names
+ * (`caller.workspace`, U44).
  *
  *   POST   /v1/contributors            { kind: "process", namespace: "syns", declaration, endpoint } → 201
- *   GET    /v1/sessions/{id}/workspace a caller's folder (held 10 s)
  *   DELETE /v1/contributors/syns       on stop
  *   the daemon POSTs { namespace, method, params, caller, requestId } to the endpoint and reads the answer
  *
@@ -54,6 +53,9 @@ export function optionsFromEnv(env: NodeJS.ProcessEnv, log: Log): ServeOptions {
   };
 }
 
+/** One request on the daemon's control socket. */
+export type Control = (method: string, path: string, body?: unknown) => Promise<{ status: number; text: string }>;
+
 /** HTTP over the daemon's control socket. */
 export function controlOver(socketPath: string): Control {
   return (method, path, body) =>
@@ -75,7 +77,7 @@ export function controlOver(socketPath: string): Control {
 export async function serve(options: ServeOptions): Promise<Served> {
   const { log } = options;
   const control = controlOver(join(options.home, "control.sock"));
-  const invoke = createDispatch({ cli: createCli(createLocalRunner(options.synsPath)), resolve: createDaemonResolve(control), log });
+  const invoke = createDispatch({ cli: createCli(createLocalRunner(options.synsPath)), log });
   const declaration = buildDeclaration(METHODS, { agentInstructions: options.agentInstructions });
 
   const server = http.createServer((req, res) => {

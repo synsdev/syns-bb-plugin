@@ -70,11 +70,11 @@ describe.skipIf(!present)(`the reference host code (${present ? MONO : `no Unife
   it("bb-pages' invoke reaches the session's folder without a scope, and the placed folder with one", async () => {
     const runs: Record<string, unknown>[] = [];
     const contributors = await discovery(async (_method, input) => (runs.push(input), rec("repo.ok")));
-    expect(await contributors.invoke("syns", { method: "syns.repo", params: {}, caller: { sessionId: "thr_1", scope: null }, requestId: "r1" })).toMatchObject({ ok: true });
+    expect(await contributors.invoke("syns", { method: "syns.repo", params: {}, caller: { sessionId: "thr_1", scope: null, workspace: { id: "proj_1", path: "/work/checkout", machine: "host_9" } }, requestId: "r1" })).toMatchObject({ ok: true });
     expect(runs).toEqual([expect.objectContaining({ cwd: "/work/checkout", args: ["repo", "--json"] })]);
     expect(runs[0]).not.toHaveProperty("within");
     runs.length = 0;
-    expect(await contributors.invoke("syns", { method: "syns.repo", params: {}, caller: { sessionId: "thr_1", scope: "clients/vela/crm" }, requestId: "r2" })).toMatchObject({ ok: true });
+    expect(await contributors.invoke("syns", { method: "syns.repo", params: {}, caller: { sessionId: "thr_1", scope: "clients/vela/crm", workspace: { id: "proj_1", path: "/work/checkout", machine: "host_9" } }, requestId: "r2" })).toMatchObject({ ok: true });
     expect(runs.at(-1)).toMatchObject({ cwd: "/work/checkout/clients/vela/crm", within: "/work/checkout", args: ["repo", "--json"] });
   });
 });
