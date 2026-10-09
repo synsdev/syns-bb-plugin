@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { VERSION, buildDeclaration } from "../src/declaration.js";
 import { K64, object, reasonsOf, type Method, type Schema } from "../src/method.js";
 import { METHODS } from "../src/methods/index.js";
-import { FRAGMENT, FRAGMENT_MAX } from "../src/text/fragment.js";
+import { FRAGMENT } from "../src/text/fragment.js";
 import { GUIDE_MAX, buildGuide } from "../src/text/guide.js";
 import { ok } from "./fake-runner.js";
 import { harness, resultOf } from "./harness.js";
@@ -191,8 +191,7 @@ describe("the declaration", () => {
 });
 
 describe("what agents are told", () => {
-  it("the fragment is within FRAGMENT_MAX, and the guide within GUIDE_MAX, 16 KiB less 512 (A8, S4.6, S6.34); the space bb leaves is checked live in instruction-cap.test.ts", () => {
-    expect(declaration.instruction!.length).toBeLessThanOrEqual(FRAGMENT_MAX);
+  it("the fragment is within the protocol's 2,048 bytes, and the guide within GUIDE_MAX, 16 KiB less 512, both in UTF-8 (07 §The declaration grammar, S6.34); bb's slot is checked live in instruction-cap.test.ts", () => {
     expect(Buffer.byteLength(declaration.instruction!)).toBeLessThanOrEqual(2 * 1024);
     expect(GUIDE_MAX).toBe(16 * 1024 - 512);
     expect(Buffer.byteLength(declaration.guide)).toBeLessThanOrEqual(GUIDE_MAX);
@@ -206,7 +205,6 @@ describe("what agents are told", () => {
     expect(text.split("\n")[0]).toContain("`syns cat TOOLS.md --repo bartsoj/syns-templates`");
     expect(text).toContain("`syns cat SETUP.md --repo bartsoj/syns-bb-plugin-setup`");
     expect(text).not.toContain("syns-tools");
-    expect(text.length).toBeLessThanOrEqual(1300);
   });
 
   it("the fragment and the guide say the folder rule: a placed folder is what the page sees, paths counted from it (A57, D36)", () => {
@@ -242,7 +240,13 @@ describe("what agents are told", () => {
 
   it("the fragment says in words that it applies only in a Syns repository, and where the rest is (S4.2)", () => {
     expect(declaration.instruction).toMatch(/When this session's folder is a Syns repository/);
-    expect(declaration.instruction).toContain("bb thread-page guide");
+    expect(declaration.instruction).toContain("Every method: the guide your standing instruction names.");
+  });
+
+  it("the fragment and the guide name no host: the declaration is the same on every host (07 R-X1)", () => {
+    for (const text of [declaration.instruction!, declaration.guide]) {
+      expect(text).not.toMatch(/\bbb (thread-page|pages|plugin)\b|unife-pages\.js|\$BB_|\bbb session\b/);
+    }
   });
 
   it("the fragment and the guide say shares act at once, from an explicit control only, and label public apart (D51, S6.30–S6.32, A72)", () => {

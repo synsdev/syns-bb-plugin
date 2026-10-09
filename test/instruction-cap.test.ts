@@ -1,54 +1,52 @@
 import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
-import { FRAGMENT, FRAGMENT_MAX } from "../src/text/fragment.js";
+import { VERSION } from "../src/declaration.js";
+import { FRAGMENT } from "../src/text/fragment.js";
 
 /**
- * bb cuts a plugin's agent instructions at 4,096 characters, and Thread Pages
- * sends the fragments inside its own instruction (HOST_FACTS §13, D35). The
- * space left for this fragment is whatever stands before it, which another
- * plugin can change: the standing instruction, a setting, another
- * contributor's block. So it is read from the bb on this machine, where there
- * is one: `bb thread-page status` prints the instruction a new session gets.
- * Without a bb (or with SYNS_SKIP_BB=1) the test is skipped, and the live
- * check's L0 stands in for it.
+ * On bb the fragments ride in their own instruction slot (`contributeInstructions`), which bb cuts at its cap
+ * (4,096 characters today), each fragment under `## <id> <version>`, joined in registration order (07 R6.29, U35).
+ * What is left for this fragment is the cap less what other contributors' fragments take before it. `bb pages
+ * status` prints each fragment's placement; this test reads it from the bb on this machine, where there is one with
+ * bb-pages, and measures this code's fragment against it. The protocol's own 2,048-byte cap is held in
+ * declaration.test.ts on every machine. Without a bb (or with SYNS_SKIP_BB=1) this test is skipped.
  */
-const CAP = 4096;
-const HEADING = "## From syns\n\n";
 /** Room the fragment must keep below the cut, so that a small edit before it is noticed here first. */
 const MARGIN = 50;
+const HEADING = `## syns ${VERSION}\n\n`;
+const PLACEMENT = /^fragment (\S+)(?: \S+)? → slot "([^"]+)": (\d+) characters of (\d+), /;
 
-/** The instruction a new session gets, or null when there is no bb to ask. Output from a bb that does not parse is a failure, not a skip. */
-function liveInstruction(): string | null {
+interface Placement { id: string; slot: string; chars: number; cap: number }
+
+/** The fragment placements a new session gets, or null when there is no bb-pages to ask. */
+function livePlacements(): Placement[] | null {
   if (process.env.SYNS_SKIP_BB === "1") return null;
   let out: string;
   try {
-    out = execFileSync("bb", ["thread-page", "status"], { encoding: "utf8", timeout: 15_000, stdio: ["ignore", "pipe", "ignore"] });
+    out = execFileSync("bb", ["pages", "status"], { encoding: "utf8", timeout: 15_000, stdio: ["ignore", "pipe", "ignore"] });
   } catch {
-    return null; // no bb, or no Thread Pages on it
+    return null; // no bb, or no bb-pages on it
   }
-  const marker = "## Instruction a new eligible session receives now\n\n";
-  const start = out.indexOf(marker);
-  const end = out.indexOf("\n\n## This session", start);
-  if (start < 0 || end < 0) return UNPARSED;
-  return out.slice(start + marker.length, end);
+  return out.split("\n").flatMap((line) => {
+    const m = PLACEMENT.exec(line);
+    return m ? [{ id: m[1]!, slot: m[2]!, chars: Number(m[3]), cap: Number(m[4]) }] : [];
+  });
 }
 
-const UNPARSED = "\u0000unparsed";
+const placements = livePlacements();
 
-const instruction = liveInstruction();
+describe.skipIf(placements === null)("the fragment against this machine's bb-pages slot (U35, S4.6)", () => {
+  it("bb pages status prints the syns fragment's placement where this test looks for it", () => {
+    expect(placements!.some((p) => p.id === "syns"), "no line 'fragment syns … → slot …: N characters of CAP' in bb pages status").toBe(true);
+  });
 
-it.skipIf(instruction === null)("bb's thread-page status, where there is a bb, prints the instruction where this test looks for it", () => {
-  expect(instruction, "bb thread-page status no longer prints '## Instruction a new eligible session receives now' followed by '## This session'").not.toBe(UNPARSED);
-});
-
-describe.skipIf(instruction === null || instruction === UNPARSED || instruction.startsWith("(none"))("the fragment against this machine's Thread Pages instruction (D35, S4.6)", () => {
-  it("fits whole below bb's cut, with room to spare, after everything that stands before it", () => {
-    const text = instruction!;
-    const ours = text.indexOf(HEADING);
-    // With our block present, the fragment starts after its heading; without it, it would be appended.
-    const before = ours >= 0 ? ours + HEADING.length : text.length + 2 + HEADING.length;
-    const space = CAP - before;
-    expect(FRAGMENT.trim().length + MARGIN, `${space} characters are left for the fragment`).toBeLessThanOrEqual(space);
-    expect(FRAGMENT_MAX, `FRAGMENT_MAX should be at most what is left (${space})`).toBeLessThanOrEqual(space);
+  it("fits whole below bb's cut, with room to spare, after the fragments placed before it in its slot", () => {
+    const at = placements!.findIndex((p) => p.id === "syns");
+    if (at < 0) return;
+    const ours = placements![at]!;
+    // Fragments in one slot are joined with a blank line between them.
+    const before = placements!.slice(0, at).filter((p) => p.slot === ours.slot).reduce((sum, p) => sum + p.chars + 2, 0);
+    const space = ours.cap - before;
+    expect(HEADING.length + FRAGMENT.trim().length + MARGIN, `${space} characters are left for the fragment and its heading`).toBeLessThanOrEqual(space);
   });
 });

@@ -1,0 +1,3430 @@
+{
+  "version": "0.6.1",
+  "methods": [
+    {
+      "name": "syns.repo",
+      "description": "The Syns repository of this session's folder, or the placed folder it is, and its head version. The method a page polls with watch: one cheap call.",
+      "effect": "read",
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[0-9a-f]{40}$",
+            "maxLength": 40,
+            "description": "The head. null for a repository with no commit yet."
+          },
+          "number": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "The head as a number, for display. Present where the CLI reports it: CLI 0.3.6 and later."
+          },
+          "role": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "visibility": {
+            "type": "string"
+          },
+          "fileCount": {
+            "type": "integer"
+          },
+          "holder": {
+            "type": "string",
+            "description": "In a placed folder: OWNER/NAME of the repository holding it. owner, name, role, visibility and fileCount are then the holder's."
+          },
+          "path": {
+            "type": "string",
+            "description": "In a placed folder: its path in the holder. Every path a page uses is counted from it."
+          },
+          "sharedFolder": {
+            "type": "boolean",
+            "description": "true in a folder-only collaborator's checkout of a shared folder: the record is the folder's identity, and fileCount is 0."
+          }
+        },
+        "required": [
+          "owner",
+          "name",
+          "version",
+          "role",
+          "visibility",
+          "fileCount"
+        ]
+      },
+      "maxRequestBytes": 65536,
+      "maxResponseBytes": 65536,
+      "reasons": {
+        "no_repo": {
+          "description": "The session's folder holds no Syns repository, or the caller is the home page."
+        },
+        "no_access": {
+          "description": "The machine's account cannot reach the repository, or is logged out."
+        },
+        "cli_missing": {
+          "description": "No syns on that machine; an operator installs it or sets synsPath."
+        },
+        "timeout": {
+          "description": "The CLI did not answer in time. Retry a read; after a write, re-read syns.repo first."
+        },
+        "folder_out_of_place": {
+          "description": "A placed folder stands away from the path its identity file records; an operator moves it back."
+        },
+        "bad_scope": {
+          "description": "The scope is not a placed folder of the session's own repository, or the CLI does not act there: a folder action at a root, a holder action in a placed folder, a folder's people before it is shared."
+        }
+      }
+    },
+    {
+      "name": "syns.whoami",
+      "description": "The Syns account logged in on this session's machine, every field the CLI reports. Any but id and username may be null.",
+      "effect": "read",
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          },
+          "emailVerified": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "image": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "bio": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "company": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "location": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pronouns": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timeZone": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updatedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "username",
+          "emailVerified",
+          "name",
+          "email",
+          "image",
+          "bio",
+          "company",
+          "location",
+          "pronouns",
+          "timeZone",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "maxRequestBytes": 65536,
+      "maxResponseBytes": 65536,
+      "reasons": {
+        "no_repo": {
+          "description": "The session's folder holds no Syns repository, or the caller is the home page."
+        },
+        "no_access": {
+          "description": "The machine's account cannot reach the repository, or is logged out."
+        },
+        "cli_missing": {
+          "description": "No syns on that machine; an operator installs it or sets synsPath."
+        },
+        "timeout": {
+          "description": "The CLI did not answer in time. Retry a read; after a write, re-read syns.repo first."
+        },
+        "folder_out_of_place": {
+          "description": "A placed folder stands away from the path its identity file records; an operator moves it back."
+        },
+        "bad_scope": {
+          "description": "The scope is not a placed folder of the session's own repository, or the CLI does not act there: a folder action at a root, a holder action in a placed folder, a folder's people before it is shared."
+        },
+        "not_logged_in": {
+          "description": "No Syns login on that machine."
+        }
+      }
+    },
+    {
+      "name": "syns.ls",
+      "description": "Files and folders under path (default root), one level or recursive, at version (default head). blob changes exactly when content does. Paged: up to 1500 entries from offset; nextOffset is null on the last page. Pass the version on.",
+      "effect": "read",
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "pattern": "^(?![/-])(?!(?:.*/)?\\.{1,2}(?:/|$))[^\\\\\\u0000-\\u001f\\u007f-\\u009f]+$"
+          },
+          "recursive": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
+            "maxLength": 40
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1500
+          }
+        },
+        "required": []
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
+            "maxLength": 40
+          },
+          "number": {
+            "type": "integer"
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "total": {
+            "type": "integer"
+          },
+          "nextOffset": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "file",
+                    "dir"
+                  ]
+                },
+                "size": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "blob": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "path",
+                "type",
+                "size",
+                "blob"
+              ]
+            }
+          }
+        },
+        "required": [
+          "version",
+          "number",
+          "truncated",
+          "total",
+          "nextOffset",
+          "entries"
+        ]
+      },
+      "maxRequestBytes": 65536,
+      "maxResponseBytes": 1048576,
+      "reasons": {
+        "no_repo": {
+          "description": "The session's folder holds no Syns repository, or the caller is the home page."
+        },
+        "no_access": {
+          "description": "The machine's account cannot reach the repository, or is logged out."
+        },
+        "cli_missing": {
+          "description": "No syns on that machine; an operator installs it or sets synsPath."
+        },
+        "timeout": {
+          "description": "The CLI did not answer in time. Retry a read; after a write, re-read syns.repo first."
+        },
+        "folder_out_of_place": {
+          "description": "A placed folder stands away from the path its identity file records; an operator moves it back."
+        },
+        "bad_scope": {
+          "description": "The scope is not a placed folder of the session's own repository, or the CLI does not act there: a folder action at a root, a holder action in a placed folder, a folder's people before it is shared."
+        }
+      }
+    },
+    {
+      "name": "syns.readMany",
+      "description": "Up to 64 whole files in one call, all at one version (default the head). Each entry is a text or an error: not_found, too_large, not_text. deferred lists paths that did not fit: ask again with them and the returned version.",
+      "effect": "read",
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "paths": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 64,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "pattern": "^(?![/-])(?!(?:.*/)?\\.{1,2}(?:/|$))[^\\\\\\u0000-\\u001f\\u007f-\\u009f]+$"
+            }
+          },
+          "version": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
+            "maxLength": 40
+          }
+        },
+        "required": [
+          "paths"
+        ]
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
+            "maxLength": 40
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "Either path, text, size and blob, or path and error; too_large and not_text also carry size and blob.",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "text": {
+                  "type": "string"
+                },
+                "size": {
+                  "type": "integer"
+                },
+                "blob": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "error": {
+                  "type": "string",
+                  "enum": [
+                    "not_found",
+                    "too_large",
+                    "not_text"
+                  ]
+                }
+              },
+              "required": [
+                "path"
+              ]
+            }
+          },
+          "deferred": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "version",
+          "files",
+          "deferred"
+        ]
+      },
+      "maxRequestBytes": 65536,
+      "maxResponseBytes": 1048576,
+      "reasons": {
+        "no_repo": {
+          "description": "The session's folder holds no Syns repository, or the caller is the home page."
+        },
+        "no_access": {
+          "description": "The machine's account cannot reach the repository, or is logged out."
+        },
+        "cli_missing": {
+          "description": "No syns on that machine; an operator installs it or sets synsPath."
+        },
+        "timeout": {
+          "description": "The CLI did not answer in time. Retry a read; after a write, re-read syns.repo first."
+        },
+        "folder_out_of_place": {
+          "description": "A placed folder stands away from the path its identity file records; an operator moves it back."
+        },
+        "bad_scope": {
+          "description": "The scope is not a placed folder of the session's own repository, or the CLI does not act there: a folder action at a root, a holder action in a placed folder, a folder's people before it is shared."
+        }
+      }
+    },
+    {
+      "name": "syns.history",
+      "description": "Newest versions first: who or what made each, and the paths it changed. A page's commit has by.integration syns-bb-plugin and by.trigger thread-page. No paging past limit (default 20); total says how many.",
+      "effect": "read",
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "pattern": "^(?![/-])(?!(?:.*/)?\\.{1,2}(?:/|$))[^\\\\\\u0000-\\u001f\\u007f-\\u009f]+$"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": []
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "integer"
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "version": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{40}$",
+                  "maxLength": 40
+                },
+                "number": {
+                  "type": "integer"
+                },
+                "parent": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "pattern": "^[0-9a-f]{40}$",
+                  "maxLength": 40
+                },
+                "author": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "at": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                },
+                "paths": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 200
+                },
+                "pathsTruncated": {
+                  "type": "boolean"
+                },
+                "by": {
+                  "type": "object",
+                  "properties": {
+                    "integration": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "run": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "trigger": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "integration",
+                    "run",
+                    "trigger"
+                  ]
+                }
+              },
+              "required": [
+                "version",
+                "number",
+                "parent",
+                "author",
+                "at",
+                "message",
+                "paths",
+                "pathsTruncated",
+                "by"
+              ]
+            }
+          }
+        },
+        "required": [
+          "total",
+          "entries"
+        ]
+      },
+      "maxRequestBytes": 65536,
+      "maxResponseBytes": 1048576,
+      "reasons": {
+        "no_repo": {
+          "description": "The session's folder holds no Syns repository, or the caller is the home page."
+        },
+        "no_access": {
+          "description": "The machine's account cannot reach the repository, or is logged out."
+        },
+        "cli_missing": {
+          "description": "No syns on that machine; an operator installs it or sets synsPath."
+        },
+        "timeout": {
+          "description": "The CLI did not answer in time. Retry a read; after a write, re-read syns.repo first."
+        },
+        "folder_out_of_place": {
+          "description": "A placed folder stands away from the path its identity file records; an operator moves it back."
+        },
+        "bad_scope": {
+          "description": "The scope is not a placed folder of the session's own repository, or the CLI does not act there: a folder action at a root, a holder action in a placed folder, a folder's people before it is shared."
+        }
+      }
+    },
+    {
+      "name": "syns.commit",
+      "description": "Several changes as one new version against base, all or nothing: files, each with text, base64 bytes, or an upload held by syns.writeBinary, and deletions. No path twice. Published at once.",
+      "effect": "contributed-write",
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "base": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
+            "maxLength": 40
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "files": {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1024,
+                  "pattern": "^(?![/-])(?!(?:.*/)?\\.{1,2}(?:/|$))[^\\\\\\u0000-\\u001f\\u007f-\\u009f]+$"
+                },
+                "text": {
+                  "type": "string",
+                  "maxLength": 1048576
+                },
+                "base64": {
+                  "type": "string",
+                  "maxLength": 983040,
+                  "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
+                },
+                "upload": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$",
+                  "maxLength": 64
+                }
+              },
+              "required": [
+                "path"
+              ]
+            }
+          },
+          "deletions": {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "pattern": "^(?![/-])(?!(?:.*/)?\\.{1,2}(?:/|$))[^\\\\\\u0000-\\u001f\\u007f-\\u009f]+$"
+            }
+          }
+        },
+        "required": [
+          "base"
+        ]
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
+            "maxLength": 40
+          },
+          "number": {
+            "type": "integer"
+          },
+          "changed": {
+            "type": "integer",
+            "description": "How many paths the new version changed. 0: nothing differed, and version is the unchanged head."
+          }
+        },
+        "required": [
+          "version",
+          "number",
+          "changed"
+        ]
+      },
+      "maxRequestBytes": 1048576,
+      "maxResponseBytes": 65536,
+      "reasons": {
+        "no_repo": {
+          "description": "The session's folder holds no Syns repository, or the caller is the home page."
+        },
+        "no_access": {
+          "description": "The machine's account cannot reach the repository, or is logged out."
+        },
+        "cli_missing": {
+          "description": "No syns on that machine; an operator installs it or sets synsPath."
+        },
+        "timeout": {
+          "description": "The CLI did not answer in time. Retry a read; after a write, re-read syns.repo first."
+        },
+        "folder_out_of_place": {
+          "description": "A placed folder stands away from the path its identity file records; an operator moves it back."
+        },
+        "bad_scope": {
+          "description": "The scope is not a placed folder of the session's own repository, or the CLI does not act there: a folder action at a root, a holder action in a placed folder, a folder's people before it is shared."
+        },
+        "folder_write_unsupported": {
+          "description": "The server is too old for writes in a placed folder. Nothing written; reads work."
+        },
+        "stale_head": {
+          "description": "The repository, or placed folder, changed after base; nothing written; detail.current is the head. Re-read, show what changed, never retry blindly.",
+          "detail": {
+            "type": "object",
+            "properties": {
+              "current": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$",
+                "maxLength": 40
+              }
+            },
+            "required": [
+              "current"
+            ]
+          }
+        },
+        "checkout_dirty": {
+          "description": "The session's folder has unpublished edits, usually its agent mid-turn. Nothing written; retry when syns.repo's version moves."
+        },
+        "invalid_change": {
+          "description": "A path named twice across files and deletions, or no change at all."
+        },
+        "bad_offset": {
+          "description": "Send the piece at detail.expected; 0 means start again (pieces or an upload are dropped after a minute).",
+          "detail": {
+            "type": "object",
+            "properties": {
+              "expected": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "expected"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "syns.read",
+      "description": "One file, a window of lines: limit lines (default 2000) from offset (default 1), at version (default head). With fit: true a window too large for one answer is cut short, limit saying how many lines came. Line ends come as \\n.",
+      "effect": "read",
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "pattern": "^(?![/-])(?!(?:.*/)?\\.{1,2}(?:/|$))[^\\\\\\u0000-\\u001f\\u007f-\\u009f]+$"
+          },
+          "version": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
+            "maxLength": 40
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5000
+          },
+          "fit": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
+            "maxLength": 40
+          },
+          "number": {
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "offset": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "totalLines": {
+            "type": "integer"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "blob": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "number",
+          "path",
+          "text",
+          "offset",
+          "limit",
+          "totalLines",
+          "size",
+          "blob"
+        ]
+      },
+      "maxRequestBytes": 65536,
+      "maxResponseBytes": 1048576,
+      "reasons": {
+        "no_repo": {
+          "description": "The session's folder holds no Syns repository, or the caller is the home page."
+        },
+        "no_access": {
+          "description": "The machine's account cannot reach the repository, or is logged out."
+        },
+        "cli_missing": {
+          "description": "No syns on that machine; an operator installs it or sets synsPath."
+        },
+        "timeout": {
+          "description": "The CLI did not answer in time. Retry a read; after a write, re-read syns.repo first."
+        },
+        "folder_out_of_place": {
+          "description": "A placed folder stands away from the path its identity file records; an operator moves it back."
+        },
+        "bad_scope": {
+          "description": "The scope is not a placed folder of the session's own repository, or the CLI does not act there: a folder action at a root, a holder action in a placed folder, a folder's people before it is shared."
+        }
+      }
+    },
+    {
+      "name": "syns.glob",
+      "description": "The files whose whole path matches a glob pattern such as notes/**/*.md, under path (default root), at version (default head). No match: an empty list. Paged: up to 2000 from offset; nextOffset is null on the last page.",
+      "effect": "read",
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "pattern": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "pattern": "^(?![/-])(?!(?:.*/)?\\.{1,2}(?:/|$))[^\\\\\\u0000-\\u001f\\u007f-\\u009f]+$"
+          },
+          "version": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
+            "maxLength": 40
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2000
+          }
+        },
+        "required": [
+          "pattern"
+        ]
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
+            "maxLength": 40
+          },
+          "number": {
+            "type": "integer"
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "total": {
+            "type": "integer"
+          },
+          "nextOffset": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "matches": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "size": {
+                  "type": "integer"
+                },
+                "blob": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path",
+                "size",
+                "blob"
+              ]
+            }
+          }
+        },
+        "required": [
+          "version",
+          "number",
+          "truncated",
+          "total",
+          "nextOffset",
+          "matches"
+        ]
+      },
+      "maxRequestBytes": 65536,
+      "maxResponseBytes": 1048576,
+      "reasons": {
+        "no_repo": {
+          "description": "The session's folder holds no Syns repository, or the caller is the home page."
+        },
+        "no_access": {
+          "description": "The machine's account cannot reach the repository, or is logged out."
+        },
+        "cli_missing": {
+          "description": "No syns on that machine; an operator installs it or sets synsPath."
+        },
+        "timeout": {
+          "description": "The CLI did not answer in time. Retry a read; after a write, re-read syns.repo first."
+        },
+        "folder_out_of_place": {
+          "description": "A placed folder stands away from the path its identity file records; an operator moves it back."
+        },
+        "bad_scope": {
+          "description": "The scope is not a placed folder of the session's own repository, or the CLI does not act there: a folder action at a root, a holder action in a placed folder, a folder's people before it is shared."
+        },
+        "bad_pattern": {
+          "description": "The regular expression or glob does not parse."
+        }
+      }
+    },
+    {
+      "name": "syns.grep",
+      "description": "Search file texts with a regular expression, under path, in files matching glob, at version (default head). output: content (default: matches with line and context), files, or count. headLimit caps rows (default 200, less with context)",
+      "effect": "read",
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "pattern": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "pattern": "^(?![/-])(?!(?:.*/)?\\.{1,2}(?:/|$))[^\\\\\\u0000-\\u001f\\u007f-\\u009f]+$"
+          },
+          "glob": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            }
+          },
+          "ignoreCase": {
+            "type": "boolean"
+          },
+          "context": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10,
+            "description": "Lines either side of each match. Only with output content."
+          },
+          "output": {
+            "type": "string",
+            "enum": [
+              "content",
+              "files",
+              "count"
+            ],
+            "maxLength": 7
+          },
+          "headLimit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "version": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
+            "maxLength": 40
+          }
+        },
+        "required": [
+          "pattern"
+        ]
+      },
+      "result": {
+        "type": "object",
+        "description": "Beside the common keys, exactly one of matches, files and counts: the one output names.",
+        "properties": {
+          "version": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
+            "maxLength": 40
+          },
+          "number": {
+            "type": "integer"
+          },
+          "output": {
+            "type": "string",
+            "enum": [
+              "content",
+              "files",
+              "count"
+            ]
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "skipped": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path",
+                "reason"
+              ]
+            }
+          },
+          "matches": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "line": {
+                  "type": "integer"
+                },
+                "text": {
+                  "type": "string"
+                },
+                "context": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "line": {
+                        "type": "integer"
+                      },
+                      "text": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "line",
+                      "text"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "path",
+                "line",
+                "text",
+                "context"
+              ]
+            }
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "counts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "count": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "path",
+                "count"
+              ]
+            }
+          }
+        },
+        "required": [
+          "version",
+          "number",
+          "output",
+          "truncated",
+          "skipped"
+        ]
+      },
+      "maxRequestBytes": 65536,
+      "maxResponseBytes": 1048576,
+      "reasons": {
+        "no_repo": {
+          "description": "The session's folder holds no Syns repository, or the caller is the home page."
+        },
+        "no_access": {
+          "description": "The machine's account cannot reach the repository, or is logged out."
+        },
+        "cli_missing": {
+          "description": "No syns on that machine; an operator installs it or sets synsPath."
+        },
+        "timeout": {
+          "description": "The CLI did not answer in time. Retry a read; after a write, re-read syns.repo first."
+        },
+        "folder_out_of_place": {
+          "description": "A placed folder stands away from the path its identity file records; an operator moves it back."
+        },
+        "bad_scope": {
+          "description": "The scope is not a placed folder of the session's own repository, or the CLI does not act there: a folder action at a root, a holder action in a placed folder, a folder's people before it is shared."
+        },
+        "bad_pattern": {
+          "description": "The regular expression or glob does not parse."
+        }
+      }
+    },
+    {
+      "name": "syns.diff",
+      "description": "The net change between two versions: each changed path with its status (added, modified, deleted). to defaults to the head. patch: true adds each file's patch text. After the head moves, diff { from } says which files to re-read.",
+      "effect": "read",
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "from": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
+            "maxLength": 40
+          },
+          "to": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
+            "maxLength": 40
+          },
+          "patch": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "from"
+        ]
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "object",
+            "properties": {
+              "version": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$",
+                "maxLength": 40
+              },
+              "number": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "version",
+              "number"
+            ]
+          },
+          "to": {
+            "type": "object",
+            "properties": {
+              "version": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$",
+                "maxLength": 40
+              },
+              "number": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "version",
+              "number"
+            ]
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "patch": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path",
+                "status"
+              ]
+            }
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "files"
+        ]
+      },
+      "maxRequestBytes": 65536,
+      "maxResponseBytes": 1048576,
+      "reasons": {
+        "no_repo": {
+          "description": "The session's folder holds no Syns repository, or the caller is the home page."
+        },
+        "no_access": {
+          "description": "The machine's account cannot reach the repository, or is logged out."
+        },
+        "cli_missing": {
+          "description": "No syns on that machine; an operator installs it or sets synsPath."
+        },
+        "timeout": {
+          "description": "The CLI did not answer in time. Retry a read; after a write, re-read syns.repo first."
+        },
+        "folder_out_of_place": {
+          "description": "A placed folder stands away from the path its identity file records; an operator moves it back."
+        },
+        "bad_scope": {
+          "description": "The scope is not a placed folder of the session's own repository, or the CLI does not act there: a folder action at a root, a holder action in a placed folder, a folder's people before it is shared."
+        }
+      }
+    },
+    {
+      "name": "syns.write",
+      "description": "One file's whole text as a new version, made against base. create: true refuses with exists when the path is already there at base. Published at once, with no confirmation.",
+      "effect": "contributed-write",
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "pattern": "^(?![/-])(?!(?:.*/)?\\.{1,2}(?:/|$))[^\\\\\\u0000-\\u001f\\u007f-\\u009f]+$"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 1048576
+          },
+          "base": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
+            "maxLength": 40
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "create": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path",
+          "text",
+          "base"
+        ]
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
+            "maxLength": 40
+          },
+          "number": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "number"
+        ]
+      },
+      "maxRequestBytes": 1048576,
+      "maxResponseBytes": 65536,
+      "reasons": {
+        "no_repo": {
+          "description": "The session's folder holds no Syns repository, or the caller is the home page."
+        },
+        "no_access": {
+          "description": "The machine's account cannot reach the repository, or is logged out."
+        },
+        "cli_missing": {
+          "description": "No syns on that machine; an operator installs it or sets synsPath."
+        },
+        "timeout": {
+          "description": "The CLI did not answer in time. Retry a read; after a write, re-read syns.repo first."
+        },
+        "folder_out_of_place": {
+          "description": "A placed folder stands away from the path its identity file records; an operator moves it back."
+        },
+        "bad_scope": {
+          "description": "The scope is not a placed folder of the session's own repository, or the CLI does not act there: a folder action at a root, a holder action in a placed folder, a folder's people before it is shared."
+        },
+        "folder_write_unsupported": {
+          "description": "The server is too old for writes in a placed folder. Nothing written; reads work."
+        },
+        "stale_head": {
+          "description": "The repository, or placed folder, changed after base; nothing written; detail.current is the head. Re-read, show what changed, never retry blindly.",
+          "detail": {
+            "type": "object",
+            "properties": {
+              "current": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$",
+                "maxLength": 40
+              }
+            },
+            "required": [
+              "current"
+            ]
+          }
+        },
+        "checkout_dirty": {
+          "description": "The session's folder has unpublished edits, usually its agent mid-turn. Nothing written; retry when syns.repo's version moves."
+        },
+        "exists": {
+          "description": "create was set and the path exists at base."
+        }
+      }
+    },
+    {
+      "name": "syns.edit",
+      "description": "Replace old with new in one file, as a new version made against base. old must occur exactly once unless replaceAll is true. old equal to new changes nothing: changed 0. Both at most 32,768 characters.",
+      "effect": "contributed-write",
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "pattern": "^(?![/-])(?!(?:.*/)?\\.{1,2}(?:/|$))[^\\\\\\u0000-\\u001f\\u007f-\\u009f]+$"
+          },
+          "old": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32768,
+            "pattern": "^[^\\u0000]*$"
+          },
+          "new": {
+            "type": "string",
+            "maxLength": 32768,
+            "pattern": "^[^\\u0000]*$"
+          },
+          "replaceAll": {
+            "type": "boolean"
+          },
+          "base": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
+            "maxLength": 40
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "path",
+          "old",
+          "new",
+          "base"
+        ]
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
+            "maxLength": 40
+          },
+          "number": {
+            "type": "integer"
+          },
+          "changed": {
+            "type": "integer",
+            "description": "How many paths the new version changed. 0: old equals new, and version is the unchanged head."
+          }
+        },
+        "required": [
+          "version",
+          "number",
+          "changed"
+        ]
+      },
+      "maxRequestBytes": 131072,
+      "maxResponseBytes": 65536,
+      "reasons": {
+        "no_repo": {
+          "description": "The session's folder holds no Syns repository, or the caller is the home page."
+        },
+        "no_access": {
+          "description": "The machine's account cannot reach the repository, or is logged out."
+        },
+        "cli_missing": {
+          "description": "No syns on that machine; an operator installs it or sets synsPath."
+        },
+        "timeout": {
+          "description": "The CLI did not answer in time. Retry a read; after a write, re-read syns.repo first."
+        },
+        "folder_out_of_place": {
+          "description": "A placed folder stands away from the path its identity file records; an operator moves it back."
+        },
+        "bad_scope": {
+          "description": "The scope is not a placed folder of the session's own repository, or the CLI does not act there: a folder action at a root, a holder action in a placed folder, a folder's people before it is shared."
+        },
+        "folder_write_unsupported": {
+          "description": "The server is too old for writes in a placed folder. Nothing written; reads work."
+        },
+        "stale_head": {
+          "description": "The repository, or placed folder, changed after base; nothing written; detail.current is the head. Re-read, show what changed, never retry blindly.",
+          "detail": {
+            "type": "object",
+            "properties": {
+              "current": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$",
+                "maxLength": 40
+              }
+            },
+            "required": [
+              "current"
+            ]
+          }
+        },
+        "checkout_dirty": {
+          "description": "The session's folder has unpublished edits, usually its agent mid-turn. Nothing written; retry when syns.repo's version moves."
+        },
+        "no_match": {
+          "description": "old occurs nowhere in the file."
+        },
+        "many_matches": {
+          "description": "old occurs detail.count times and replaceAll is not set.",
+          "detail": {
+            "type": "object",
+            "properties": {
+              "count": {
+                "type": "integer",
+                "minimum": 2
+              }
+            },
+            "required": [
+              "count"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "syns.rm",
+      "description": "Remove one path as a new version, made against base. A path that is not there is success with the unchanged version and changed: 0, as the CLI answers it. Published at once, with no confirmation.",
+      "effect": "contributed-write",
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "pattern": "^(?![/-])(?!(?:.*/)?\\.{1,2}(?:/|$))[^\\\\\\u0000-\\u001f\\u007f-\\u009f]+$"
+          },
+          "base": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
+            "maxLength": 40
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "path",
+          "base"
+        ]
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
+            "maxLength": 40
+          },
+          "number": {
+            "type": "integer"
+          },
+          "changed": {
+            "type": "integer",
+            "description": "How many paths the new version changed. 0: the path was not there, and version is the unchanged head."
+          }
+        },
+        "required": [
+          "version",
+          "number",
+          "changed"
+        ]
+      },
+      "maxRequestBytes": 65536,
+      "maxResponseBytes": 65536,
+      "reasons": {
+        "no_repo": {
+          "description": "The session's folder holds no Syns repository, or the caller is the home page."
+        },
+        "no_access": {
+          "description": "The machine's account cannot reach the repository, or is logged out."
+        },
+        "cli_missing": {
+          "description": "No syns on that machine; an operator installs it or sets synsPath."
+        },
+        "timeout": {
+          "description": "The CLI did not answer in time. Retry a read; after a write, re-read syns.repo first."
+        },
+        "folder_out_of_place": {
+          "description": "A placed folder stands away from the path its identity file records; an operator moves it back."
+        },
+        "bad_scope": {
+          "description": "The scope is not a placed folder of the session's own repository, or the CLI does not act there: a folder action at a root, a holder action in a placed folder, a folder's people before it is shared."
+        },
+        "folder_write_unsupported": {
+          "description": "The server is too old for writes in a placed folder. Nothing written; reads work."
+        },
+        "stale_head": {
+          "description": "The repository, or placed folder, changed after base; nothing written; detail.current is the head. Re-read, show what changed, never retry blindly.",
+          "detail": {
+            "type": "object",
+            "properties": {
+              "current": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$",
+                "maxLength": 40
+              }
+            },
+            "required": [
+              "current"
+            ]
+          }
+        },
+        "checkout_dirty": {
+          "description": "The session's folder has unpublished edits, usually its agent mid-turn. Nothing written; retry when syns.repo's version moves."
+        }
+      }
+    },
+    {
+      "name": "syns.revert",
+      "description": "Put one file back to its text at the earlier version to, as a new version. Today the CLI checks no base, so the head is not checked, and records no provenance: syns.history shows this commit with by all null.",
+      "effect": "contributed-write",
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "pattern": "^(?![/-])(?!(?:.*/)?\\.{1,2}(?:/|$))[^\\\\\\u0000-\\u001f\\u007f-\\u009f]+$"
+          },
+          "to": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
+            "maxLength": 40
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "path",
+          "to"
+        ]
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
+            "maxLength": 40
+          },
+          "number": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "number"
+        ]
+      },
+      "maxRequestBytes": 65536,
+      "maxResponseBytes": 65536,
+      "reasons": {
+        "no_repo": {
+          "description": "The session's folder holds no Syns repository, or the caller is the home page."
+        },
+        "no_access": {
+          "description": "The machine's account cannot reach the repository, or is logged out."
+        },
+        "cli_missing": {
+          "description": "No syns on that machine; an operator installs it or sets synsPath."
+        },
+        "timeout": {
+          "description": "The CLI did not answer in time. Retry a read; after a write, re-read syns.repo first."
+        },
+        "folder_out_of_place": {
+          "description": "A placed folder stands away from the path its identity file records; an operator moves it back."
+        },
+        "bad_scope": {
+          "description": "The scope is not a placed folder of the session's own repository, or the CLI does not act there: a folder action at a root, a holder action in a placed folder, a folder's people before it is shared."
+        },
+        "folder_write_unsupported": {
+          "description": "The server is too old for writes in a placed folder. Nothing written; reads work."
+        }
+      }
+    },
+    {
+      "name": "syns.readBinary",
+      "description": "One file's bytes as base64 in pieces of up to 720 KiB, at version (default head). Follow nextOffset with the first piece's version until it is null.",
+      "effect": "read",
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "pattern": "^(?![/-])(?!(?:.*/)?\\.{1,2}(?:/|$))[^\\\\\\u0000-\\u001f\\u007f-\\u009f]+$"
+          },
+          "version": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
+            "maxLength": 40
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 26214400
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
+            "maxLength": 40
+          },
+          "number": {
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "blob": {
+            "type": "string"
+          },
+          "mediaType": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "maxLength": 64
+          },
+          "offset": {
+            "type": "integer"
+          },
+          "base64": {
+            "type": "string"
+          },
+          "nextOffset": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "version",
+          "number",
+          "path",
+          "size",
+          "blob",
+          "mediaType",
+          "sha256",
+          "offset",
+          "base64",
+          "nextOffset"
+        ]
+      },
+      "maxRequestBytes": 65536,
+      "maxResponseBytes": 1048576,
+      "reasons": {
+        "no_repo": {
+          "description": "The session's folder holds no Syns repository, or the caller is the home page."
+        },
+        "no_access": {
+          "description": "The machine's account cannot reach the repository, or is logged out."
+        },
+        "cli_missing": {
+          "description": "No syns on that machine; an operator installs it or sets synsPath."
+        },
+        "timeout": {
+          "description": "The CLI did not answer in time. Retry a read; after a write, re-read syns.repo first."
+        },
+        "folder_out_of_place": {
+          "description": "A placed folder stands away from the path its identity file records; an operator moves it back."
+        },
+        "bad_scope": {
+          "description": "The scope is not a placed folder of the session's own repository, or the CLI does not act there: a folder action at a root, a holder action in a placed folder, a folder's people before it is shared."
+        }
+      }
+    },
+    {
+      "name": "syns.writeBinary",
+      "description": "Store a file's bytes against base: whole up to 720 KiB, or in ordered pieces with offset, size and sha256, published after the last. hold: true keeps it for syns.commit.",
+      "effect": "contributed-write",
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "pattern": "^(?![/-])(?!(?:.*/)?\\.{1,2}(?:/|$))[^\\\\\\u0000-\\u001f\\u007f-\\u009f]+$"
+          },
+          "base64": {
+            "type": "string",
+            "maxLength": 983040,
+            "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
+          },
+          "base": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
+            "maxLength": 40
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 26214400
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 52428800
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "maxLength": 64
+          },
+          "hold": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path",
+          "base64",
+          "base"
+        ]
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "complete": {
+            "type": "boolean",
+            "description": "false: send the piece at received. true: published (version, number, changed), or kept (upload)."
+          },
+          "received": {
+            "type": "integer"
+          },
+          "version": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
+            "maxLength": 40
+          },
+          "number": {
+            "type": "integer"
+          },
+          "changed": {
+            "type": "integer"
+          },
+          "upload": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "complete",
+          "received"
+        ]
+      },
+      "maxRequestBytes": 1048576,
+      "maxResponseBytes": 65536,
+      "reasons": {
+        "no_repo": {
+          "description": "The session's folder holds no Syns repository, or the caller is the home page."
+        },
+        "no_access": {
+          "description": "The machine's account cannot reach the repository, or is logged out."
+        },
+        "cli_missing": {
+          "description": "No syns on that machine; an operator installs it or sets synsPath."
+        },
+        "timeout": {
+          "description": "The CLI did not answer in time. Retry a read; after a write, re-read syns.repo first."
+        },
+        "folder_out_of_place": {
+          "description": "A placed folder stands away from the path its identity file records; an operator moves it back."
+        },
+        "bad_scope": {
+          "description": "The scope is not a placed folder of the session's own repository, or the CLI does not act there: a folder action at a root, a holder action in a placed folder, a folder's people before it is shared."
+        },
+        "folder_write_unsupported": {
+          "description": "The server is too old for writes in a placed folder. Nothing written; reads work."
+        },
+        "stale_head": {
+          "description": "The repository, or placed folder, changed after base; nothing written; detail.current is the head. Re-read, show what changed, never retry blindly.",
+          "detail": {
+            "type": "object",
+            "properties": {
+              "current": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$",
+                "maxLength": 40
+              }
+            },
+            "required": [
+              "current"
+            ]
+          }
+        },
+        "checkout_dirty": {
+          "description": "The session's folder has unpublished edits, usually its agent mid-turn. Nothing written; retry when syns.repo's version moves."
+        },
+        "bad_offset": {
+          "description": "Send the piece at detail.expected; 0 means start again (pieces or an upload are dropped after a minute).",
+          "detail": {
+            "type": "object",
+            "properties": {
+              "expected": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "expected"
+            ]
+          }
+        },
+        "bad_hash": {
+          "description": "The gathered bytes do not match sha256; nothing published."
+        },
+        "too_large": {
+          "description": "Past detail.max bytes, the most one file may hold (25 MiB).",
+          "detail": {
+            "type": "object",
+            "properties": {
+              "max": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "max"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "syns.place",
+      "description": "Place a template (OWNER/NAME, at version or its head) as a new folder at path of this session's repository: one version, the files on disk too. Runs at the session's folder whatever the scope.",
+      "effect": "contributed-write",
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "template": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 201,
+            "pattern": "^[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*$"
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "pattern": "^(?![/-])(?!(?:.*/)?\\.{1,2}(?:/|$))[^\\\\\\u0000-\\u001f\\u007f-\\u009f]+$"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "template",
+          "path"
+        ]
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "holder": {
+            "type": "string"
+          },
+          "template": {
+            "type": "object",
+            "properties": {
+              "repo": {
+                "type": "string"
+              },
+              "version": {
+                "type": "integer"
+              },
+              "sha": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "repo",
+              "version",
+              "sha"
+            ]
+          },
+          "version": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
+            "maxLength": 40
+          },
+          "number": {
+            "type": "integer"
+          },
+          "checks": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "enableChecks": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "path",
+          "holder",
+          "template",
+          "version",
+          "number",
+          "checks",
+          "enableChecks"
+        ]
+      },
+      "maxRequestBytes": 65536,
+      "maxResponseBytes": 65536,
+      "reasons": {
+        "no_repo": {
+          "description": "The session's folder holds no Syns repository, or the caller is the home page."
+        },
+        "no_access": {
+          "description": "The machine's account cannot reach the repository, or is logged out."
+        },
+        "cli_missing": {
+          "description": "No syns on that machine; an operator installs it or sets synsPath."
+        },
+        "timeout": {
+          "description": "The CLI did not answer in time. Retry a read; after a write, re-read syns.repo first."
+        },
+        "folder_out_of_place": {
+          "description": "A placed folder stands away from the path its identity file records; an operator moves it back."
+        },
+        "bad_scope": {
+          "description": "The scope is not a placed folder of the session's own repository, or the CLI does not act there: a folder action at a root, a holder action in a placed folder, a folder's people before it is shared."
+        },
+        "cli_too_old": {
+          "description": "The machine's syns is older than detail.need (detail.have): syns upgrade there.",
+          "detail": {
+            "type": "object",
+            "properties": {
+              "need": {
+                "type": "string"
+              },
+              "have": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "need",
+              "have"
+            ]
+          }
+        },
+        "folder_write_unsupported": {
+          "description": "The server is too old for writes in a placed folder. Nothing written; reads work."
+        },
+        "occupied": {
+          "description": "path already holds a file at the head or on disk; choose another."
+        },
+        "no_such_template": {
+          "description": "template is no repository the reader can read."
+        },
+        "stale_head": {
+          "description": "The repository, or placed folder, changed after base; nothing written; detail.current is the head. Re-read, show what changed, never retry blindly.",
+          "detail": {
+            "type": "object",
+            "properties": {
+              "current": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$",
+                "maxLength": 40
+              }
+            },
+            "required": [
+              "current"
+            ]
+          }
+        },
+        "checkout_dirty": {
+          "description": "The session's folder has unpublished edits, usually its agent mid-turn. Nothing written; retry when syns.repo's version moves."
+        }
+      }
+    },
+    {
+      "name": "syns.shareInfo",
+      "description": "Whether this placed folder is shared: its identity's record when it is, the name a share would offer when not, and the reader's holderRole. share . --show. At a repository's root: bad_scope.",
+      "effect": "read",
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "holder": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "holderRole": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "shared": {
+            "type": "boolean"
+          },
+          "offeredName": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "visibility": {
+            "type": "string"
+          },
+          "role": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sharedFolder": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "heldIn": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "owner": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "required": [
+          "holder",
+          "path",
+          "shared"
+        ]
+      },
+      "maxRequestBytes": 65536,
+      "maxResponseBytes": 65536,
+      "reasons": {
+        "no_repo": {
+          "description": "The session's folder holds no Syns repository, or the caller is the home page."
+        },
+        "no_access": {
+          "description": "The machine's account cannot reach the repository, or is logged out."
+        },
+        "cli_missing": {
+          "description": "No syns on that machine; an operator installs it or sets synsPath."
+        },
+        "timeout": {
+          "description": "The CLI did not answer in time. Retry a read; after a write, re-read syns.repo first."
+        },
+        "folder_out_of_place": {
+          "description": "A placed folder stands away from the path its identity file records; an operator moves it back."
+        },
+        "bad_scope": {
+          "description": "The scope is not a placed folder of the session's own repository, or the CLI does not act there: a folder action at a root, a holder action in a placed folder, a folder's people before it is shared."
+        },
+        "cli_too_old": {
+          "description": "The machine's syns is older than detail.need (detail.have): syns upgrade there.",
+          "detail": {
+            "type": "object",
+            "properties": {
+              "need": {
+                "type": "string"
+              },
+              "have": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "need",
+              "have"
+            ]
+          }
+        },
+        "not_permitted": {
+          "description": "Syns answered 403 for this account: a role too low for it, or a server limit. The CLI says no more."
+        }
+      }
+    },
+    {
+      "name": "syns.share",
+      "description": "Share this placed folder under an identity of its own, named name or the CLI's offer. Already shared: created false. Reaches people at once: only from the reader's own press on a control saying so.",
+      "effect": "contributed-write",
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100
+          }
+        },
+        "required": []
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "visibility": {
+            "type": "string"
+          },
+          "role": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sharedFolder": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "heldIn": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "owner": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              }
+            }
+          },
+          "holder": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "created": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "owner",
+          "name",
+          "holder",
+          "path",
+          "created"
+        ]
+      },
+      "maxRequestBytes": 65536,
+      "maxResponseBytes": 65536,
+      "reasons": {
+        "no_repo": {
+          "description": "The session's folder holds no Syns repository, or the caller is the home page."
+        },
+        "no_access": {
+          "description": "The machine's account cannot reach the repository, or is logged out."
+        },
+        "cli_missing": {
+          "description": "No syns on that machine; an operator installs it or sets synsPath."
+        },
+        "timeout": {
+          "description": "The CLI did not answer in time. Retry a read; after a write, re-read syns.repo first."
+        },
+        "folder_out_of_place": {
+          "description": "A placed folder stands away from the path its identity file records; an operator moves it back."
+        },
+        "bad_scope": {
+          "description": "The scope is not a placed folder of the session's own repository, or the CLI does not act there: a folder action at a root, a holder action in a placed folder, a folder's people before it is shared."
+        },
+        "cli_too_old": {
+          "description": "The machine's syns is older than detail.need (detail.have): syns upgrade there.",
+          "detail": {
+            "type": "object",
+            "properties": {
+              "need": {
+                "type": "string"
+              },
+              "have": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "need",
+              "have"
+            ]
+          }
+        },
+        "bad_name": {
+          "description": "name breaks the repository-name rule."
+        },
+        "name_taken": {
+          "description": "Another repository holds name; offer the reader another."
+        },
+        "not_permitted": {
+          "description": "Syns answered 403 for this account: a role too low for it, or a server limit. The CLI says no more."
+        }
+      }
+    },
+    {
+      "name": "syns.unshare",
+      "description": "Stop sharing this placed folder: all who reached it through the folder lose access; its identity retires unless the folder has a visibility of its own. Only from the reader's own press on a control saying so.",
+      "effect": "contributed-write",
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "holder": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "unshared": {
+            "type": "boolean"
+          },
+          "retired": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "owner",
+          "name",
+          "holder",
+          "path",
+          "unshared"
+        ]
+      },
+      "maxRequestBytes": 65536,
+      "maxResponseBytes": 65536,
+      "reasons": {
+        "no_repo": {
+          "description": "The session's folder holds no Syns repository, or the caller is the home page."
+        },
+        "no_access": {
+          "description": "The machine's account cannot reach the repository, or is logged out."
+        },
+        "cli_missing": {
+          "description": "No syns on that machine; an operator installs it or sets synsPath."
+        },
+        "timeout": {
+          "description": "The CLI did not answer in time. Retry a read; after a write, re-read syns.repo first."
+        },
+        "folder_out_of_place": {
+          "description": "A placed folder stands away from the path its identity file records; an operator moves it back."
+        },
+        "bad_scope": {
+          "description": "The scope is not a placed folder of the session's own repository, or the CLI does not act there: a folder action at a root, a holder action in a placed folder, a folder's people before it is shared."
+        },
+        "cli_too_old": {
+          "description": "The machine's syns is older than detail.need (detail.have): syns upgrade there.",
+          "detail": {
+            "type": "object",
+            "properties": {
+              "need": {
+                "type": "string"
+              },
+              "have": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "need",
+              "have"
+            ]
+          }
+        },
+        "not_permitted": {
+          "description": "Syns answered 403 for this account: a role too low for it, or a server limit. The CLI says no more."
+        }
+      }
+    },
+    {
+      "name": "syns.folderVisibility",
+      "description": "Give this placed folder a visibility of its own. public: anyone, signed in or not, can find and read it. There is no way back to inheriting. Only from the reader's own press on a control saying exactly that.",
+      "effect": "contributed-write",
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "public",
+              "private"
+            ],
+            "maxLength": 7
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 100
+          }
+        },
+        "required": [
+          "visibility"
+        ]
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "visibility": {
+            "type": "string"
+          },
+          "role": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sharedFolder": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "heldIn": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "owner": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              }
+            }
+          },
+          "holder": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "created": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "owner",
+          "name",
+          "visibility",
+          "holder",
+          "path"
+        ]
+      },
+      "maxRequestBytes": 65536,
+      "maxResponseBytes": 65536,
+      "reasons": {
+        "no_repo": {
+          "description": "The session's folder holds no Syns repository, or the caller is the home page."
+        },
+        "no_access": {
+          "description": "The machine's account cannot reach the repository, or is logged out."
+        },
+        "cli_missing": {
+          "description": "No syns on that machine; an operator installs it or sets synsPath."
+        },
+        "timeout": {
+          "description": "The CLI did not answer in time. Retry a read; after a write, re-read syns.repo first."
+        },
+        "folder_out_of_place": {
+          "description": "A placed folder stands away from the path its identity file records; an operator moves it back."
+        },
+        "bad_scope": {
+          "description": "The scope is not a placed folder of the session's own repository, or the CLI does not act there: a folder action at a root, a holder action in a placed folder, a folder's people before it is shared."
+        },
+        "cli_too_old": {
+          "description": "The machine's syns is older than detail.need (detail.have): syns upgrade there.",
+          "detail": {
+            "type": "object",
+            "properties": {
+              "need": {
+                "type": "string"
+              },
+              "have": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "need",
+              "have"
+            ]
+          }
+        },
+        "bad_name": {
+          "description": "name breaks the repository-name rule."
+        },
+        "name_taken": {
+          "description": "Another repository holds name; offer the reader another."
+        },
+        "not_permitted": {
+          "description": "Syns answered 403 for this account: a role too low for it, or a server limit. The CLI says no more."
+        }
+      }
+    },
+    {
+      "name": "syns.repoVisibility",
+      "description": "Set this repository's visibility, from its root. public: anyone, signed in or not, can find and read every file. In a placed folder: bad_scope. Only from the reader's own press on a control saying exactly that.",
+      "effect": "contributed-write",
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "public",
+              "private"
+            ],
+            "maxLength": 7
+          }
+        },
+        "required": [
+          "visibility"
+        ]
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "visibility": {
+            "type": "string"
+          },
+          "role": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sharedFolder": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "heldIn": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "owner": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "required": [
+          "owner",
+          "name",
+          "visibility"
+        ]
+      },
+      "maxRequestBytes": 65536,
+      "maxResponseBytes": 65536,
+      "reasons": {
+        "no_repo": {
+          "description": "The session's folder holds no Syns repository, or the caller is the home page."
+        },
+        "no_access": {
+          "description": "The machine's account cannot reach the repository, or is logged out."
+        },
+        "cli_missing": {
+          "description": "No syns on that machine; an operator installs it or sets synsPath."
+        },
+        "timeout": {
+          "description": "The CLI did not answer in time. Retry a read; after a write, re-read syns.repo first."
+        },
+        "folder_out_of_place": {
+          "description": "A placed folder stands away from the path its identity file records; an operator moves it back."
+        },
+        "bad_scope": {
+          "description": "The scope is not a placed folder of the session's own repository, or the CLI does not act there: a folder action at a root, a holder action in a placed folder, a folder's people before it is shared."
+        },
+        "not_permitted": {
+          "description": "Syns answered 403 for this account: a role too low for it, or a server limit. The CLI says no more."
+        }
+      }
+    },
+    {
+      "name": "syns.collaborators",
+      "description": "Who has access to this scope, and each one's role: a shared placed folder's own people (CLI 0.3.14), or at a root the whole repository's. limit at a time from offset; total says how many.",
+      "effect": "read",
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": []
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "user": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "username": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "name": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "email": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "image": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id"
+                  ]
+                },
+                "role": {
+                  "type": "string"
+                },
+                "createdAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "user",
+                "role"
+              ]
+            }
+          }
+        },
+        "required": [
+          "total",
+          "data"
+        ]
+      },
+      "maxRequestBytes": 65536,
+      "maxResponseBytes": 1048576,
+      "reasons": {
+        "no_repo": {
+          "description": "The session's folder holds no Syns repository, or the caller is the home page."
+        },
+        "no_access": {
+          "description": "The machine's account cannot reach the repository, or is logged out."
+        },
+        "cli_missing": {
+          "description": "No syns on that machine; an operator installs it or sets synsPath."
+        },
+        "timeout": {
+          "description": "The CLI did not answer in time. Retry a read; after a write, re-read syns.repo first."
+        },
+        "folder_out_of_place": {
+          "description": "A placed folder stands away from the path its identity file records; an operator moves it back."
+        },
+        "bad_scope": {
+          "description": "The scope is not a placed folder of the session's own repository, or the CLI does not act there: a folder action at a root, a holder action in a placed folder, a folder's people before it is shared."
+        },
+        "not_permitted": {
+          "description": "Syns answered 403 for this account: a role too low for it, or a server limit. The CLI says no more."
+        }
+      }
+    },
+    {
+      "name": "syns.collaboratorAdd",
+      "description": "Give a person, by Syns username or e-mail, a role on this scope: a shared placed folder (CLI 0.3.14), or at a root the whole repository. Only from the reader's own press on a control naming the person, role and scope.",
+      "effect": "contributed-write",
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "user": {
+            "type": "string",
+            "maxLength": 320
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "write",
+              "read"
+            ],
+            "maxLength": 5
+          }
+        },
+        "required": [
+          "user",
+          "role"
+        ]
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "added": {
+            "type": "boolean"
+          },
+          "target": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "added",
+          "target",
+          "role"
+        ]
+      },
+      "maxRequestBytes": 65536,
+      "maxResponseBytes": 65536,
+      "reasons": {
+        "no_repo": {
+          "description": "The session's folder holds no Syns repository, or the caller is the home page."
+        },
+        "no_access": {
+          "description": "The machine's account cannot reach the repository, or is logged out."
+        },
+        "cli_missing": {
+          "description": "No syns on that machine; an operator installs it or sets synsPath."
+        },
+        "timeout": {
+          "description": "The CLI did not answer in time. Retry a read; after a write, re-read syns.repo first."
+        },
+        "folder_out_of_place": {
+          "description": "A placed folder stands away from the path its identity file records; an operator moves it back."
+        },
+        "bad_scope": {
+          "description": "The scope is not a placed folder of the session's own repository, or the CLI does not act there: a folder action at a root, a holder action in a placed folder, a folder's people before it is shared."
+        },
+        "not_permitted": {
+          "description": "Syns answered 403 for this account: a role too low for it, or a server limit. The CLI says no more."
+        },
+        "no_such_user": {
+          "description": "user names nobody on Syns."
+        },
+        "already_collaborator": {
+          "description": "user already holds a grant here; nothing changed."
+        }
+      }
+    },
+    {
+      "name": "syns.collaboratorRole",
+      "description": "Change a collaborator's role on this scope, by the user id syns.collaborators answers. Only from the reader's own press on a control naming the person and the new role.",
+      "effect": "contributed-write",
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?!\\.{1,2}$)[^/\\\\]+$"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "write",
+              "read"
+            ],
+            "maxLength": 5
+          }
+        },
+        "required": [
+          "id",
+          "role"
+        ]
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "user": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "username": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "email": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "image": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "id"
+            ]
+          },
+          "role": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "user",
+          "role"
+        ]
+      },
+      "maxRequestBytes": 65536,
+      "maxResponseBytes": 65536,
+      "reasons": {
+        "no_repo": {
+          "description": "The session's folder holds no Syns repository, or the caller is the home page."
+        },
+        "no_access": {
+          "description": "The machine's account cannot reach the repository, or is logged out."
+        },
+        "cli_missing": {
+          "description": "No syns on that machine; an operator installs it or sets synsPath."
+        },
+        "timeout": {
+          "description": "The CLI did not answer in time. Retry a read; after a write, re-read syns.repo first."
+        },
+        "folder_out_of_place": {
+          "description": "A placed folder stands away from the path its identity file records; an operator moves it back."
+        },
+        "bad_scope": {
+          "description": "The scope is not a placed folder of the session's own repository, or the CLI does not act there: a folder action at a root, a holder action in a placed folder, a folder's people before it is shared."
+        },
+        "not_permitted": {
+          "description": "Syns answered 403 for this account: a role too low for it, or a server limit. The CLI says no more."
+        }
+      }
+    },
+    {
+      "name": "syns.collaboratorRemove",
+      "description": "Take a collaborator off this scope, by the user id syns.collaborators answers. Only from the reader's own press on a control naming the person.",
+      "effect": "contributed-write",
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?!\\.{1,2}$)[^/\\\\]+$"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "removed": {
+            "type": "boolean"
+          },
+          "userId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "removed",
+          "userId"
+        ]
+      },
+      "maxRequestBytes": 65536,
+      "maxResponseBytes": 65536,
+      "reasons": {
+        "no_repo": {
+          "description": "The session's folder holds no Syns repository, or the caller is the home page."
+        },
+        "no_access": {
+          "description": "The machine's account cannot reach the repository, or is logged out."
+        },
+        "cli_missing": {
+          "description": "No syns on that machine; an operator installs it or sets synsPath."
+        },
+        "timeout": {
+          "description": "The CLI did not answer in time. Retry a read; after a write, re-read syns.repo first."
+        },
+        "folder_out_of_place": {
+          "description": "A placed folder stands away from the path its identity file records; an operator moves it back."
+        },
+        "bad_scope": {
+          "description": "The scope is not a placed folder of the session's own repository, or the CLI does not act there: a folder action at a root, a holder action in a placed folder, a folder's people before it is shared."
+        },
+        "not_permitted": {
+          "description": "Syns answered 403 for this account: a role too low for it, or a server limit. The CLI says no more."
+        }
+      }
+    },
+    {
+      "name": "syns.enableChecks",
+      "description": "Turn on, for everyone working in the holder, the checks this placed folder recorded from its template; they run on every push. enabled: [] makes no version. Only from the reader's own press, naming the commands.",
+      "effect": "contributed-write",
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "holder": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "version": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
+            "maxLength": 40
+          },
+          "number": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "holder",
+          "path",
+          "enabled"
+        ]
+      },
+      "maxRequestBytes": 65536,
+      "maxResponseBytes": 65536,
+      "reasons": {
+        "no_repo": {
+          "description": "The session's folder holds no Syns repository, or the caller is the home page."
+        },
+        "no_access": {
+          "description": "The machine's account cannot reach the repository, or is logged out."
+        },
+        "cli_missing": {
+          "description": "No syns on that machine; an operator installs it or sets synsPath."
+        },
+        "timeout": {
+          "description": "The CLI did not answer in time. Retry a read; after a write, re-read syns.repo first."
+        },
+        "folder_out_of_place": {
+          "description": "A placed folder stands away from the path its identity file records; an operator moves it back."
+        },
+        "bad_scope": {
+          "description": "The scope is not a placed folder of the session's own repository, or the CLI does not act there: a folder action at a root, a holder action in a placed folder, a folder's people before it is shared."
+        },
+        "cli_too_old": {
+          "description": "The machine's syns is older than detail.need (detail.have): syns upgrade there.",
+          "detail": {
+            "type": "object",
+            "properties": {
+              "need": {
+                "type": "string"
+              },
+              "have": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "need",
+              "have"
+            ]
+          }
+        },
+        "folder_write_unsupported": {
+          "description": "The server is too old for writes in a placed folder. Nothing written; reads work."
+        },
+        "stale_head": {
+          "description": "The repository, or placed folder, changed after base; nothing written; detail.current is the head. Re-read, show what changed, never retry blindly.",
+          "detail": {
+            "type": "object",
+            "properties": {
+              "current": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$",
+                "maxLength": 40
+              }
+            },
+            "required": [
+              "current"
+            ]
+          }
+        },
+        "checkout_dirty": {
+          "description": "The session's folder has unpublished edits, usually its agent mid-turn. Nothing written; retry when syns.repo's version moves."
+        }
+      }
+    },
+    {
+      "name": "syns.explore",
+      "description": "Public Syns repositories matching query, every tag in tags (syns-app for app templates) and status, limit at a time from offset; total says how many.",
+      "effect": "read",
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "query": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 100
+            },
+            "maxItems": 8
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "draft",
+              "completed",
+              "abandoned"
+            ],
+            "maxLength": 9
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": []
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "owner": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "tags": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "status": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "visibility": {
+                  "type": "string"
+                },
+                "fileCount": {
+                  "type": "integer"
+                },
+                "forkCount": {
+                  "type": "integer"
+                },
+                "updatedAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "owner",
+                "name"
+              ]
+            }
+          }
+        },
+        "required": [
+          "total",
+          "data"
+        ]
+      },
+      "maxRequestBytes": 65536,
+      "maxResponseBytes": 1048576,
+      "reasons": {
+        "no_repo": {
+          "description": "The session's folder holds no Syns repository, or the caller is the home page."
+        },
+        "no_access": {
+          "description": "The machine's account cannot reach the repository, or is logged out."
+        },
+        "cli_missing": {
+          "description": "No syns on that machine; an operator installs it or sets synsPath."
+        },
+        "timeout": {
+          "description": "The CLI did not answer in time. Retry a read; after a write, re-read syns.repo first."
+        },
+        "folder_out_of_place": {
+          "description": "A placed folder stands away from the path its identity file records; an operator moves it back."
+        },
+        "bad_scope": {
+          "description": "The scope is not a placed folder of the session's own repository, or the CLI does not act there: a folder action at a root, a holder action in a placed folder, a folder's people before it is shared."
+        },
+        "cli_too_old": {
+          "description": "The machine's syns is older than detail.need (detail.have): syns upgrade there.",
+          "detail": {
+            "type": "object",
+            "properties": {
+              "need": {
+                "type": "string"
+              },
+              "have": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "need",
+              "have"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "syns.users",
+      "description": "Syns people whose handle or display name matches query, at most limit: id, username, name, image. For finding someone to share with.",
+      "effect": "read",
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "query": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "username": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "image": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "username"
+              ]
+            }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "maxRequestBytes": 65536,
+      "maxResponseBytes": 1048576,
+      "reasons": {
+        "no_repo": {
+          "description": "The session's folder holds no Syns repository, or the caller is the home page."
+        },
+        "no_access": {
+          "description": "The machine's account cannot reach the repository, or is logged out."
+        },
+        "cli_missing": {
+          "description": "No syns on that machine; an operator installs it or sets synsPath."
+        },
+        "timeout": {
+          "description": "The CLI did not answer in time. Retry a read; after a write, re-read syns.repo first."
+        },
+        "folder_out_of_place": {
+          "description": "A placed folder stands away from the path its identity file records; an operator moves it back."
+        },
+        "bad_scope": {
+          "description": "The scope is not a placed folder of the session's own repository, or the CLI does not act there: a folder action at a root, a holder action in a placed folder, a folder's people before it is shared."
+        }
+      }
+    }
+  ],
+  "instruction": "**Tool first.** Asked for a piece of work the person will keep working in? Look for a template first: `syns explore -t syns-app -q <words>`, then follow `syns cat TOOLS.md --repo bartsoj/syns-templates`.\n\n**Syns repository.** When this session's folder is a Syns repository, or a folder placed in one, the page reads and writes it through `syns.*`. Not in `context.get`, or `unavailable` / `no_repo`: say so and keep the rest working; never show invented data.\n\n- **The page names no repository:** it sees the one, or the placed folder, its session's folder belongs to; paths count from there.\n- **Pages show pushed state:** your edits reach the page after your turn is pushed.\n- **Every write needs `base`,** the `version` last read from `syns.repo`. On `stale_head`, re-read and let the reader retry; on `checkout_dirty` an agent is mid-turn: retry when `version` moves.\n- **Load with `syns.ls` and `syns.readMany`;** poll only `syns.repo` with `watch`. Writes and shares act at once: only from a control saying what changes, for whom.\n\nEvery method: `bb thread-page guide`. Installing or diagnosing the plugin: `syns cat SETUP.md --repo bartsoj/syns-bb-plugin-setup`.",
+  "guide": "# Syns: the session's repository, from a page\n\n## When this applies\n\nOnly when the session's folder is a Syns repository, or a folder placed in one. At load, look for `syns.repo` in `context.get` and call it. Absent, or `unavailable` / `no_repo`: say so on the page and keep the rest working. The page never names a repository, session or folder. Never show invented data in its place.\n\n## A placed folder\n\nA folder placed in a repository (a tool) is all the page sees: every `path` is counted from it; nothing outside is reachable. A document may also set a scope: a placed folder of the session's own repository, holding its own identity file; its calls then answer for that folder alone. `bad_scope` refuses anything else: a plain folder, one below a placed folder, another checkout, a folder outside the session's, or any scope where the session's folder is no Syns repository. `syns.repo` adds `holder` (OWNER/NAME) and `path`: show those. `owner`, `name`, `role`, `visibility` and `fileCount` are the holder's; build no path or link from them. `version` is the holder's head, so `syns.diff` may list nothing. Once the CLI checks writes against the folder only, a write is `stale_head` only when the folder changed after `base`; before, any change to the holder. Writes publish to all who share the holder. `syns.place { template, path }` places a template as a new folder, always at the session's folder.\n\n## Versions\n\n`version` is a commit id, opaque: compare it, pass it back, show it to nobody. `number` is the same version for display. `blob` changes exactly when a file's content does.\n\n## Loading a wiki\n\n1. `syns.ls { recursive: true }`: every file with its `blob`, and the `version` listed. `truncated: true` means incomplete: list folder by folder.\n2. `syns.readMany { paths, version }` in groups of up to 64, passing that `version`; follow `deferred` the same way. `too_large` carries `size` (the bound counts the text as JSON escapes it): read it with `syns.read`.\n\n300 files: one `syns.ls` and about five `syns.readMany`, inside the shared 120 calls a minute. A `syns.read` window's lines are joined with `\\n`, without `\\r` or a final newline: to write a file back exactly, read it with `syns.readMany`.\n\n## Staying current\n\nPoll only `syns.repo`, with the host's `watch`. When its `version` differs from the one held, `syns.diff { from }` lists each changed path and `status` up to `to.version`; re-read those at `to.version`. There is no push.\n\n`syns.history` says who changed what. A page's write has `by.integration` `syns-bb-plugin` and `by.trigger` `thread-page`; then `by.run` is the bb session whose page made it. Others set `by.run` too: never read it alone as a page's. `syns.revert` records none.\n\n## Writing\n\nEvery file write but `syns.revert` carries `base`, the `version` last read; the returned `version` is the next `base`. A new file: `syns.write` with `create: true`, which refuses rather than overwrite. `changed: 0`: nothing differed, or the path was gone; no version made. A request past a method's bound comes back from the bridge as `invalid_response`: split it. `syns.revert` has no stale check and no provenance: call `syns.repo` just before offering it, and say what it overwrites. A picture larger than 720 KiB goes in ordered pieces; `bad_offset`: send from `detail.expected`. Beside texts in one version: `hold: true`, then its `upload` in `syns.commit`.\n\n## Sharing and people\n\nEach method acts where the CLI acts, in the page's own scope. In a placed folder: `syns.shareInfo`, `syns.share`, `syns.unshare`, `syns.folderVisibility`, `syns.enableChecks`. At a repository's root: `syns.repoVisibility`. The collaborator methods act on the scope's people: in a shared placed folder its own (CLI 0.3.14; until shared, `bad_scope` saying to share first; older CLIs, `bad_scope`); at a root the **whole repository's**, so never offer root people for one folder. Elsewhere the CLI refuses: `bad_scope`; show controls only where they apply (`syns.repo`'s `holder`, `syns.shareInfo`'s `shared`). `syns.collaboratorRole` and `syns.collaboratorRemove` take the `user.id` that `syns.collaborators` answers; find someone with `syns.users`. Roles are the CLI's; a shared folder takes `read` or `write`.\n\nThey act at once, with no dialog, and reach other people. So:\n\n- **Only from a control the reader presses for that action:** never on load, from a timer or `watch`, or chained after another call.\n- **The control shows who gets what** before it is pressed: the person and the role, or everyone the folder reaches. `admin` can also share, change visibility and manage people: say so.\n- **Public is labelled apart:** \"anyone, signed in or not, can find and read this\". Never a default; never one option in a list beside private. A public name beginning with a private holder's name shows that name: say so first.\n- **`syns.unshare`** removes everyone who reached the folder through it; its name stays reserved.\n\nPoll none of these with `watch`. Errors come back from the CLI: a refusal with no reason carries the CLI's own words as `message`.\n\n## Every method\n\nThe host's roster above (*Registered now*) gives each method's effect, bounds, description and every reason it may answer. `path` is counted from the repository's root, or the placed folder, with `/` separators, at most 1,024 characters; no leading `/` or `-`, no `\\` or control character, no `.` or `..` segment. A `?` marks an optional key; a bare `version` or `path` key has that type; no other key is accepted. `…collaborator` is `{ user?: { id: string, username?: string|null, name?: string|null, email?: string|null, image?: string|null }, role?: string, createdAt?: string|null }`. `…record` is `{ owner?: string, name?: string, visibility?: string, role?: string|null, sharedFolder?: bool, status?: string, description?: string|null, heldIn?: { owner?: string, name?: string, path?: string }|null }`.\n\n### `syns.repo`\n- Params: `{}`\n- Result: `{ owner: string, name: string, version: version|null, number?: int|null, role: string|null, visibility: string, fileCount: int, holder?: string, path?: string, sharedFolder?: bool }`\n\n### `syns.whoami`\n- Params: `{}`\n- Result: `{ id: string, username: string, emailVerified: bool|null, name: string|null, email: string|null, image: string|null, bio: string|null, company: string|null, location: string|null, pronouns: string|null, timeZone: string|null, createdAt: string|null, updatedAt: string|null }`\n\n### `syns.ls`\n- Params: `{ path?, recursive?: bool, version?, offset?: int(0–…), limit?: int(1–1500) }`\n- Result: `{ version, number: int, truncated: bool, total: int, nextOffset: int|null, entries: [{ path: string, type: \"file\"|\"dir\", size: int|null, blob: string|null }] }`\n\n### `syns.readMany`\n- Params: `{ paths: [path] (1–64), version? }`\n- Result: `{ version, files: [{ path: string, text?: string, size?: int, blob?: string|null, error?: \"not_found\"|\"too_large\"|\"not_text\" }], deferred: [string] }`\n\n### `syns.history`\n- Params: `{ path?, limit?: int(1–100) }`\n- Result: `{ total: int, entries: [{ version, number: int, parent: version|null, author: string|null, at: string, message: string, paths: [string] (0–200), pathsTruncated: bool, by: { integration: string|null, run: string|null, trigger: string|null } }] }`\n\n### `syns.commit`\n- Params: `{ base: version, message?: string(≤500), files?: [{ path, text?: string(≤1048576), base64?: string(≤983040), upload?: string(≤64) }] (0–64), deletions?: [path] (0–64) }`\n- Result: `{ version, number: int, changed: int }`\n\n### `syns.read`\n- Params: `{ path, version?, offset?: int(1–…), limit?: int(1–5000), fit?: bool }`\n- Result: `{ version, number: int, path: string, text: string, offset: int, limit: int, totalLines: int, size: int, blob: string }`\n\n### `syns.glob`\n- Params: `{ pattern: string(≤512), path?, version?, offset?: int(0–…), limit?: int(1–2000) }`\n- Result: `{ version, number: int, truncated: bool, total: int, nextOffset: int|null, matches: [{ path: string, size: int, blob: string }] }`\n\n### `syns.grep`\n- Params: `{ pattern: string(≤512), path?, glob?: [string(≤512)] (0–8), ignoreCase?: bool, context?: int(0–10), output?: \"content\"|\"files\"|\"count\", headLimit?: int(1–1000), version? }`\n- Result: `{ version, number: int, output: \"content\"|\"files\"|\"count\", truncated: bool, skipped: [{ path: string, reason: string }], matches?: [{ path: string, line: int, text: string, context: [{ line: int, text: string }] }], files?: [string], counts?: [{ path: string, count: int }] }`\n\n### `syns.diff`\n- Params: `{ from: version, to?: version, patch?: bool }`\n- Result: `{ from: { version, number: int }, to: { version, number: int }, files: [{ path: string, status: string, patch?: string }] }`\n\n### `syns.write`\n- Params: `{ path, text: string(≤1048576), base: version, message?: string(≤500), create?: bool }`\n- Result: `{ version, number: int }`\n\n### `syns.edit`\n- Params: `{ path, old: string(≤32768), new: string(≤32768), replaceAll?: bool, base: version, message?: string(≤500) }`\n- Result: `{ version, number: int, changed: int }`\n\n### `syns.rm`\n- Params: `{ path, base: version, message?: string(≤500) }`\n- Result: `{ version, number: int, changed: int }`\n\n### `syns.revert`\n- Params: `{ path, to: version, message?: string(≤500) }`\n- Result: `{ version, number: int }`\n\n### `syns.readBinary`\n- Params: `{ path, version?, offset?: int(0–26214400) }`\n- Result: `{ version, number: int, path: string, size: int, blob: string, mediaType: string|null, sha256: string(≤64), offset: int, base64: string, nextOffset: int|null }`\n\n### `syns.writeBinary`\n- Params: `{ path, base64: string(≤983040), base: version, message?: string(≤500), offset?: int(0–26214400), size?: int(0–52428800), sha256?: string(≤64), hold?: bool }`\n- Result: `{ complete: bool, received: int, version?, number?: int, changed?: int, upload?: string(≤64) }`\n\n### `syns.place`\n- Params: `{ template: string(≤201), path, version?: int(1–…) }`\n- Result: `{ path: string, holder: string, template: { repo: string, version: int, sha: string }, version, number: int, checks: [string], enableChecks: string|null }`\n\n### `syns.shareInfo`\n- Params: `{}`\n- Result: `{ …record, holder: string, path: string, holderRole?: string|null, shared: bool, offeredName?: string }`\n\n### `syns.share`\n- Params: `{ name?: string(≤100) }`\n- Result: `{ …record, holder: string, path: string, created: bool }`\n\n### `syns.unshare`\n- Params: `{}`\n- Result: `{ owner: string, name: string, holder: string, path: string, unshared: bool, retired?: bool|null }`\n\n### `syns.folderVisibility`\n- Params: `{ visibility: \"public\"|\"private\", name?: string(≤100) }`\n- Result: `{ …record, holder: string, path: string, created?: bool }`\n\n### `syns.repoVisibility`\n- Params: `{ visibility: \"public\"|\"private\" }`\n- Result: `{ …record }`\n\n### `syns.collaborators`\n- Params: `{ limit?: int(1–100), offset?: int(0–…) }`\n- Result: `{ total: int, limit?: int, offset?: int, data: [{ …collaborator }] }`\n\n### `syns.collaboratorAdd`\n- Params: `{ user: string(≤320), role: \"admin\"|\"write\"|\"read\" }`\n- Result: `{ added: bool, target: string, role: string }`\n\n### `syns.collaboratorRole`\n- Params: `{ id: string(≤128), role: \"admin\"|\"write\"|\"read\" }`\n- Result: `{ …collaborator }`\n\n### `syns.collaboratorRemove`\n- Params: `{ id: string(≤128) }`\n- Result: `{ removed: bool, userId: string }`\n\n### `syns.enableChecks`\n- Params: `{}`\n- Result: `{ holder: string, path: string, enabled: [string], version?, number?: int }`\n\n### `syns.explore`\n- Params: `{ query?: string(≤200), tags?: [string(≤100)] (0–8), status?: \"active\"|\"draft\"|\"completed\"|\"abandoned\", limit?: int(1–100), offset?: int(0–…) }`\n- Result: `{ total: int, limit?: int, offset?: int, data: [{ owner: string, name: string, description?: string|null, tags?: [string], status?: string|null, visibility?: string, fileCount?: int, forkCount?: int, updatedAt?: string|null }] }`\n\n### `syns.users`\n- Params: `{ query: string(≤100), limit?: int(1–100) }`\n- Result: `{ data: [{ id: string, username: string, name?: string|null, image?: string|null }] }`\n\n## Errors\n\nBranch on `reason` when there is one, else on `code`: `conflict` means re-read, `unavailable` means not now or not here, `not_found` means it is not there. `message` may be shown to the reader.\n\n- `unavailable` / `no_repo` — The session's folder holds no Syns repository, or the caller is the home page.\n- `unavailable` / `no_access` — The machine's account cannot reach the repository, or is logged out.\n- `unavailable` / `cli_missing` — No syns on that machine; an operator installs it or sets synsPath.\n- `unavailable` / `timeout` — The CLI did not answer in time. Retry a read; after a write, re-read syns.repo first.\n- `unavailable` / `folder_out_of_place` — A placed folder stands away from the path its identity file records; an operator moves it back.\n- `invalid_params` / `bad_scope` — The scope is not a placed folder of the session's own repository, or the CLI does not act there: a folder action at a root, a holder action in a placed folder, a folder's people before it is shared.\n- `unavailable` / `not_logged_in` — No Syns login on that machine.\n- `unavailable` / `folder_write_unsupported` — The server is too old for writes in a placed folder. Nothing written; reads work.\n- `conflict` / `stale_head` — The repository, or placed folder, changed after base; nothing written; detail.current is the head. Re-read, show what changed, never retry blindly.\n- `conflict` / `checkout_dirty` — The session's folder has unpublished edits, usually its agent mid-turn. Nothing written; retry when syns.repo's version moves.\n- `invalid_params` / `invalid_change` — A path named twice across files and deletions, or no change at all.\n- `conflict` / `bad_offset` — Send the piece at detail.expected; 0 means start again (pieces or an upload are dropped after a minute).\n- `invalid_params` / `bad_pattern` — The regular expression or glob does not parse.\n- `conflict` / `exists` — create was set and the path exists at base.\n- `invalid_params` / `no_match` — old occurs nowhere in the file.\n- `invalid_params` / `many_matches` — old occurs detail.count times and replaceAll is not set.\n- `invalid_params` / `bad_hash` — The gathered bytes do not match sha256; nothing published.\n- `invalid_params` / `too_large` — Past detail.max bytes, the most one file may hold (25 MiB).\n- `unavailable` / `cli_too_old` — The machine's syns is older than detail.need (detail.have): syns upgrade there.\n- `conflict` / `occupied` — path already holds a file at the head or on disk; choose another.\n- `not_found` / `no_such_template` — template is no repository the reader can read.\n- `unavailable` / `not_permitted` — Syns answered 403 for this account: a role too low for it, or a server limit. The CLI says no more.\n- `invalid_params` / `bad_name` — name breaks the repository-name rule.\n- `conflict` / `name_taken` — Another repository holds name; offer the reader another.\n- `not_found` / `no_such_user` — user names nobody on Syns.\n- `conflict` / `already_collaborator` — user already holds a grant here; nothing changed.\n- `not_found` — the path, the `version`, or what was named does not exist.\n- `invalid_params` — the parameters do not fit the method; fix the page.\n- `response_too_large` — ask for less.\n- `handler_error` — anything else; `message` holds the CLI's own words when it gave some.\n\n## What a page cannot do here\n\nChoose a repository, or reach outside its scope. Read unpublished edits. Write a file without a `base`, but for `syns.revert`. Set a commit's provenance. Run any CLI command but the ones behind these methods: no login, upgrade, push, pull, sync, delete or fork."
+}

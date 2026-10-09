@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { CLI_NOT_FOUND } from "../src/cli.js";
-import hostEntry, { MAX_OUTPUT, findSyns, runSyns } from "../src/host-entry.js";
+import hostEntry from "../src/host-entry.js";
+import { MAX_OUTPUT, findSyns, runSyns } from "../src/syns-process.js";
 
 // The SDK's host bundle loads only inside bb's host worker ("Dynamic require of child_process").
 vi.mock("@get-bb/plugin-sdk/host", () => ({ experimental_defineHostEntry: (entry: unknown) => entry }));
@@ -14,7 +15,7 @@ const imports = (text: string): { names: string[]; from: string }[] =>
 
 describe("the plugin opens no repository file (A5, S2.5, S2.6)", () => {
   it("the host half's only file-system access is looking for the executable", () => {
-    const text = source("host-entry.ts");
+    const text = source("syns-process.ts");
     const fromFs = imports(text).filter((entry) => entry.from.startsWith("node:fs") || entry.from === "fs" || entry.from.startsWith("fs/"));
     expect(fromFs.flatMap((entry) => entry.names).sort()).toEqual(["access", "constants"]);
     expect(text).not.toMatch(/\brequire\s*\(|\bimport\s*\(/);
@@ -27,13 +28,13 @@ describe("the plugin opens no repository file (A5, S2.5, S2.6)", () => {
     expect(text).not.toMatch(/readFile|readdir|createReadStream|writeFile|\bopen(Sync)?\s*\(|opendir/);
   });
   it("starts the CLI with an argument array and no shell (S2.10)", () => {
-    const text = source("host-entry.ts");
+    const text = source("syns-process.ts");
     const fromChild = imports(text).filter((entry) => entry.from === "node:child_process");
     expect(fromChild.flatMap((entry) => entry.names)).toEqual(["spawn"]);
     expect(text).not.toMatch(/shell\s*:/);
   });
   it("nothing else in the plugin touches the file system or starts a process", () => {
-    const files = [...readdirSync(new URL("../src/", import.meta.url), { recursive: true })].map(String).filter((name) => name.endsWith(".ts") && name !== "host-entry.ts" && name !== "scope.ts"); // scope.ts: the host half's own, guarded above (D43)
+    const files = [...readdirSync(new URL("../src/", import.meta.url), { recursive: true })].map(String).filter((name) => name.endsWith(".ts") && name !== "syns-process.ts" && name !== "scope.ts"); // both guarded above (D43)
     expect(files.length).toBeGreaterThan(8);
     for (const name of files) {
       for (const entry of imports(source(name))) expect(entry.from, name).not.toMatch(/^(node:)?(fs|child_process)(\/|$)/);

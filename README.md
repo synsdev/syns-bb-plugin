@@ -17,7 +17,7 @@ Syns CLI → Syns API      the only thing that touches the repository
 
 ## Install
 
-Requires bb 0.43 or later, Thread Pages 1.4.0 or later, and the Syns CLI —
+Requires bb 0.43 or later, bb-pages (or Thread Pages 1.4.0 or later), and the Syns CLI —
 installed and logged in (`syns login`) on every machine whose sessions should
 reach a repository. The page methods need 0.3.3 or later, placed folders and
 checks 0.3.6, `syns.explore` 0.3.6 (older ones ignore its filters), the
@@ -48,7 +48,7 @@ its own, holds the `syns.*` essentials and two pointers:
 - the setup and diagnosis doc,
   `syns cat SETUP.md --repo bartsoj/syns-bb-plugin-setup`.
 
-The full method reference is in `bb thread-page guide`.
+The full method reference is in `bb pages guide`.
 
 ## The methods
 
@@ -90,7 +90,7 @@ Failures carry a fixed `code` and usually a `reason`: `no_repo`, `no_access`,
 as an upload `syns.writeBinary` gathered with `hold: true`.
 
 Page authors get the full reference, generated from the code, with
-`bb thread-page guide`, section *Capabilities from other plugins*.
+`bb pages guide`, section *Capabilities from other plugins*.
 
 ## Known limits
 

@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.7.0
+
+The same declaration on every Unife Pages host (07 R-X1). No method changed.
+
+- The fragment names no host's command: "Every method: the guide your
+  standing instruction names." The guide says "the session whose page made
+  it" and names `threadPage.setScope` where it explains a scope.
+- The fragment is held to the protocol's 2,048 bytes; the 1,200-character
+  cap of the one-slot era is gone. The live check reads the fragment's slot
+  from `bb pages status`.
+- The tests run the declaration through the protocol's own validator and
+  bb-pages' discovery, and diff it against a frozen copy.
+- `src/syns-process.ts` holds finding and running the CLI, apart from bb's
+  host entry, so another host's runner can use it.
+
 ## 0.6.1
 
 Text and one error message, for Syns CLI 0.3.14 (D-124), which lets a shared
