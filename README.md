@@ -17,9 +17,8 @@ Syns CLI → Syns API      the only thing that touches the repository
 
 ## Install
 
-On bb: bb 0.43 or later and bb-pages with the session's workspace in the call (unife-pages U44); on Claude Code:
-Unife Pages with U44 and U45 (see *On Claude Code* below). Thread Pages 1.x and bb-pages before U44 send no
-workspace, so every call there answers `no_repo`. Both need the Syns CLI —
+On bb: bb 0.43 or later and Thread Pages 1.10.0 or later; on Claude Code: Unife Pages 0.2.0 or later (see *On Claude
+Code* below). Thread Pages 1.9 and earlier pass no session folder, so every call there answers `no_repo`. Both need the Syns CLI —
 installed and logged in (`syns login`) on every machine whose sessions should
 reach a repository. The page methods need 0.3.3 or later, placed folders and
 checks 0.3.6, `syns.explore` 0.3.6 (older ones ignore its filters), the
@@ -42,10 +41,18 @@ plugin id, and the methods are `syns.*`.
 
 ## On Claude Code
 
-`hosts/claude` is a Claude Code plugin, `syns-pages`. Its `unife-pages.json` names `bin/syns-pages.mjs`, a
-self-contained bundle of the same table and dispatch (`npm run build:claude`; Node 22.18 or later). Install it beside
-Unife Pages, or load it with `claude --plugin-dir …/hosts/claude`: the Unife Pages daemon starts the process and
-supervises it, and it registers the same declaration as on bb. The CLI runs on this machine, in the folder the
+`hosts/claude` is a Claude Code plugin, `syns-pages`, published in the Syns marketplace. Everything Syns, in one
+command:
+
+```sh
+claude plugin install syns --marketplace synsdev/syns-claude-plugins
+```
+
+or this plugin alone (it brings Unife Pages): `claude plugin install syns-pages --marketplace
+synsdev/syns-claude-plugins`. Its `unife-pages.json` names `bin/syns-pages.mjs`, a self-contained bundle of the same
+table and dispatch (`npm run build:claude`). The Unife Pages daemon starts the process and supervises it, and it
+registers the same declaration as on bb. For development, load the checkout with `claude --plugin-dir …/hosts/claude`
+beside Unife Pages. The CLI runs on this machine, in the folder the
 daemon names for the calling session. Settings are the environment: `SYNS_PATH` (the executable) and
 `SYNS_PAGES_INSTRUCTION=0` (declare no fragment). `node hosts/claude/bin/syns-pages.mjs` also runs by hand.
 
@@ -101,7 +108,7 @@ Failures carry a fixed `code` and usually a `reason`: `no_repo`, `no_access`,
 as an upload `syns.writeBinary` gathered with `hold: true`.
 
 Page authors get the full reference, generated from the code, with
-`bb pages guide`, section *Capabilities from other plugins*.
+`bb pages guide`, section *Capabilities from contributors*.
 
 ## Known limits
 

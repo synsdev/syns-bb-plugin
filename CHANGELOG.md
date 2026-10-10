@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Docs: on bb the host is Thread Pages 1.10.0 or later (the Unife Pages host under its bb name); on Claude Code the
+  Syns marketplace installs everything in one command. PLUGIN_OVERVIEW.md updated for the BB Community listing.
+
 ## 0.8.2
 
 - Claude Code: `syns-pages` declares its dependency on `unife-pages`, so installing it (or the `syns` bundle from

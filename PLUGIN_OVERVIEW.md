@@ -1,16 +1,12 @@
-# Syns
-
-Give a bb Thread Page the Syns repository of its own session.
-
 ## What it does
 
 [Thread Pages](https://github.com/unifedev/bb-thread-pages) gives every agent
 session a web page. A page runs in a sandbox and can reach nothing on your
-machine. This plugin adds twenty-nine `syns.*` capabilities to every page, so a page
-built over a Syns repository — a wiki, a task board, a notebook — can list, read,
-search and change that repository's files. Since 0.6.0 a page can also act on
-its own scope as a whole: share its placed folder, set its visibility, manage
-the repository's people from its root, turn on a placed template's checks, and
+machine. This plugin adds `syns.*` capabilities to every page, so a page built
+over a Syns repository — a wiki, a task board, a notebook — can list, read,
+search and change that repository's files. A page can also act on its own scope
+as a whole: share its placed folder, set its visibility, manage the
+repository's people from its root, turn on a placed template's checks, and
 search public templates and people. Each of those is one CLI command, whose
 answer and refusals are the CLI's own; they reach other people at once, so a
 page offers them only on a control the reader presses, saying who gets what.
@@ -37,13 +33,19 @@ Every write carries the version the page last read. If the repository has moved,
 the write is refused and the page re-reads; nothing is overwritten unseen. Every
 commit a page makes records that a page made it, and which session's page.
 
-Pages learn of changes by polling one cheap call, `syns.repo`, with Thread Pages'
-`watch`.
+Pages show published state: an agent's edits reach a page after its turn ends
+and is pushed. Pages learn of changes by polling one call, `syns.repo`. Page
+authors find every method in the page guide, section *Capabilities from
+contributors*.
 
 ## Getting started
 
-Install bb-pages with the session's workspace in the call (unife-pages U44), and
-the Syns CLI, logged in, on each machine whose sessions should reach a
-repository. Then install this plugin. New sessions are told about `syns.*`
-automatically; turn that off with
-`bb plugin config syns set agentInstructions false`.
+- bb 0.43 or later, with Thread Pages 1.10.0 or later. Earlier Thread Pages
+  pass no session folder, so every call answers `no_repo`.
+- The Syns CLI, installed and logged in (`syns login`), on each machine whose
+  sessions should reach a repository. Some methods need a recent CLI:
+  `syns upgrade`. If bb does not find `syns`, set its absolute path with
+  `bb plugin config syns set synsPath <path>`.
+- Then install this plugin. New sessions are told about `syns.*`
+  automatically; turn that off with
+  `bb plugin config syns set agentInstructions false`.
