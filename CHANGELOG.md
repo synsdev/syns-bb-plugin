@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.2
+
+- Claude Code: `syns-pages` declares its dependency on `unife-pages`, so installing it (or the `syns` bundle from
+  the Syns marketplace) brings Unife Pages along.
+
 ## 0.8.1
 
 - Claude Code: the process no longer re-registers every 10–15 seconds. It

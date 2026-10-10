@@ -676,7 +676,7 @@ function buildGuide(table) {
 //#endregion
 //#region src/declaration.ts
 /** The plugin's version, as declared to the host. A test holds it equal to package.json's. */
-const VERSION = "0.8.1";
+const VERSION = "0.8.2";
 /** threadPagesContributions, generated from the table. With `agentInstructions` off no fragment is declared (S4.5). */
 function buildDeclaration(table, settings) {
 	return {
