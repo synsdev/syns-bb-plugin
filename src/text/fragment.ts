@@ -9,7 +9,7 @@
  * reaches the agent before that instruction, so the text says where, not "above".
  * The protocol allows 2,048 bytes.
  */
-export const FRAGMENT = `**Tool first.** Asked for a piece of work the person will keep working in? Look for a template first: \`syns explore -t syns-app -q <words>\`, then follow \`syns cat TOOLS.md --repo bartsoj/syns-templates\`.
+export const FRAGMENT = `**Tool first.** Asked to open a Syns template, or for a piece of work the person will keep working in? Follow \`syns cat TOOLS.md --repo bartsoj/syns-templates\` (find a template with \`syns explore -t syns-app -q <words>\`).
 
 **Syns repository.** When this session's folder is a Syns repository, or a folder placed in one, the page reads and writes it through \`syns.*\`. Not in \`context.get\`, or \`unavailable\` / \`no_repo\`: say so and keep the rest working; never show invented data.
 

@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.8.3
+
+- The instruction's first line also covers "open this Syns template": the agent follows TOOLS.md, so the
+  person gets their own copy with the app as the page, instead of a pull of the template itself.
 
 - Docs: on bb the host is Thread Pages 1.10.0 or later (the Unife Pages host under its bb name); on Claude Code the
   Syns marketplace installs everything in one command. PLUGIN_OVERVIEW.md updated for the BB Community listing.

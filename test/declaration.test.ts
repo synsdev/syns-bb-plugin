@@ -200,7 +200,7 @@ describe("what agents are told", () => {
 
   it("the fragment leads with one tool-first line naming the two commands, and points at the setup doc (A56, D45)", () => {
     const text = declaration.instruction!;
-    expect(text.startsWith("**Tool first.** Asked for a piece of work the person will keep working in?")).toBe(true);
+    expect(text.startsWith("**Tool first.** Asked to open a Syns template, or for a piece of work the person will keep working in?")).toBe(true);
     expect(text.split("\n")[0]).toContain("`syns explore -t syns-app -q <words>`");
     expect(text.split("\n")[0]).toContain("`syns cat TOOLS.md --repo bartsoj/syns-templates`");
     expect(text).toContain("`syns cat SETUP.md --repo bartsoj/syns-bb-plugin-setup`");
