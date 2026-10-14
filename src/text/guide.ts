@@ -110,9 +110,12 @@ const CODES = [
 
 function errorSection(table: readonly Method[]): string {
   const declared = [...new Set(table.flatMap(reasonsOf))];
-  const groups = CODES.map(([code, meaning]) => {
+  // A code this list does not name still gets its reasons, under the bare code.
+  const named = new Map<string, string>(CODES);
+  const codes = [...named.keys(), ...new Set(declared.map((reason) => REASONS[reason].code as string).filter((code) => !named.has(code)))];
+  const groups = codes.map((code) => {
     const rows = declared.filter((reason) => REASONS[reason].code === code).map((reason) => `- \`${reason}\` — ${REASONS[reason].meaning}`);
-    return `\`${code}\`: ${meaning}.\n${rows.join("\n")}`.trim();
+    return `\`${code}\`${named.has(code) ? `: ${named.get(code)}.` : ""}\n${rows.join("\n")}`.trim();
   });
   return `## Errors\n\nBranch on \`reason\` when there is one, else on \`code\`. \`message\` may be shown to the reader.\n\n${groups.join("\n\n")}\n\n\`response_too_large\`: ask for less. \`handler_error\`: anything else; \`message\` holds the CLI's own words when it gave some.\n`;
 }

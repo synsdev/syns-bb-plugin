@@ -666,8 +666,10 @@ const CODES = [
 ];
 function errorSection(table) {
 	const declared = [...new Set(table.flatMap(reasonsOf))];
-	return `## Errors\n\nBranch on \`reason\` when there is one, else on \`code\`. \`message\` may be shown to the reader.\n\n${CODES.map(([code, meaning]) => {
-		return `\`${code}\`: ${meaning}.\n${declared.filter((reason) => REASONS[reason].code === code).map((reason) => `- \`${reason}\` — ${REASONS[reason].meaning}`).join("\n")}`.trim();
+	const named = new Map(CODES);
+	return `## Errors\n\nBranch on \`reason\` when there is one, else on \`code\`. \`message\` may be shown to the reader.\n\n${[...named.keys(), ...new Set(declared.map((reason) => REASONS[reason].code).filter((code) => !named.has(code)))].map((code) => {
+		const rows = declared.filter((reason) => REASONS[reason].code === code).map((reason) => `- \`${reason}\` — ${REASONS[reason].meaning}`);
+		return `\`${code}\`${named.has(code) ? `: ${named.get(code)}.` : ""}\n${rows.join("\n")}`.trim();
 	}).join("\n\n")}\n\n\`response_too_large\`: ask for less. \`handler_error\`: anything else; \`message\` holds the CLI's own words when it gave some.\n`;
 }
 function buildGuide(table) {

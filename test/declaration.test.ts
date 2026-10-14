@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { VERSION, buildDeclaration } from "../src/declaration.js";
 import { K64, object, reasonsOf, type Method, type Schema } from "../src/method.js";
 import { METHODS } from "../src/methods/index.js";
+import { REASONS } from "../src/errors.js";
 import { FRAGMENT } from "../src/text/fragment.js";
 import { GUIDE_MAX, buildGuide } from "../src/text/guide.js";
 import { ok } from "./fake-runner.js";
@@ -273,6 +274,21 @@ describe("what agents are told", () => {
     expect(section).not.toContain("- Reasons:");
     expect(section).toContain("`…record` is `{ owner?: string");
     expect(section).toContain("- `syns.repoVisibility` `{ visibility: \"public\"|\"private\" }` → `{ …record }`");
+  });
+
+  it("the error section lists every declared reason under its own code, a code the guide does not name included (D79)", () => {
+    const errors = (guide: string): string => guide.slice(guide.indexOf("## Errors"), guide.indexOf("## What a page cannot do"));
+    for (const method of declaration.methods) for (const reason of Object.keys(method.reasons)) expect(errors(declaration.guide), reason).toContain(`- \`${reason}\` — `);
+    const reasons = REASONS as unknown as Record<string, { code: string; message: string; meaning: string }>;
+    reasons.ping_gone = { code: "gone", message: "Gone.", meaning: "Only in this test." };
+    try {
+      const ping = { ...METHODS[0]!, name: "syns.ping", reasons: ["ping_gone"] } as unknown as Method;
+      const text = errors(buildGuide([...METHODS, ping]));
+      expect(text).toContain("`gone`");
+      expect(text).toContain("- `ping_gone` — Only in this test.");
+    } finally {
+      delete reasons.ping_gone;
+    }
   });
 
   it("the guide's statements about each method come from its declaration (S4.3)", () => {
