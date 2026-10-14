@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildDeclaration } from "../../src/declaration.js";
 import { METHODS } from "../../src/methods/index.js";
-import { serve, type Served } from "../../hosts/claude/process.js";
+import { controlOver, serve, type Served } from "../../hosts/claude/process.js";
 import { fakeBb } from "../fake-bb.js";
 import { rec } from "../fake-runner.js";
 
@@ -72,6 +72,28 @@ describe("Claude Code: the declaration is bb's, byte for byte (07 R-X1)", () => 
       }
     });
   }
+});
+
+describe("Claude Code: a request on the control socket, whatever its size", () => {
+  // Node 26.7 on macOS: a POST sent with Connection: close failed with EPIPE, with no answer, at about one body size in
+  // four (15,000, 16,000, 23,000… bytes), against a Node server that read it whole. The 0.8.4 declaration was one.
+  it("every body from 1,000 to 120,000 bytes gets the daemon's answer", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "syns-ctl-"));
+    const daemon = fakeDaemon(join(dir, "control.sock"));
+    await daemon.listen();
+    try {
+      const control = controlOver(join(dir, "control.sock"));
+      const failed: string[] = [];
+      for (let size = 1000; size <= 120_000; size += 1000) {
+        const answer = await control("POST", "/v1/contributors", { pad: "x".repeat(size - 10) }).catch((error: Error) => ({ status: 0, text: error.message }));
+        if (answer.status !== 201) failed.push(`${size}: ${answer.status} ${answer.text}`);
+      }
+      expect(failed).toEqual([]);
+    } finally {
+      await daemon.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
 });
 
 describe("Claude Code: the process against a daemon's control socket (R-X5)", () => {

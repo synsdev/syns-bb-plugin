@@ -96,14 +96,25 @@ function render(schema: Schema, grouping = true): string {
 }
 
 function methodSection(table: readonly Method[]): string {
-  const blocks = table.map((method) => [`### \`${method.name}\``, `- Params: \`${render(method.params)}\``, `- Result: \`${render(method.result)}\``].join("\n"));
-  return `## Every method\n\nThe host's roster above (*Registered now*) gives each method's effect, bounds, description and every reason it may answer. \`path\` is counted from the repository's root, or the placed folder, with \`/\` separators, at most 1,024 characters; no leading \`/\` or \`-\`, no \`\\\` or control character, no \`.\` or \`..\` segment. A \`?\` marks an optional key; a bare \`version\` or \`path\` key has that type; no other key is accepted. ${[...GROUPS].map(([name, keys]) => `\`…${name}\` is \`${render({ type: "object", properties: keys }, false)}\`.`).join(" ")}\n\n${blocks.join("\n\n")}\n`;
+  const lines = table.map((method) => `- \`${method.name}\` \`${render(method.params)}\` → \`${render(method.result)}\``);
+  return `## Every method\n\nThe host's roster above (*Registered now*) gives each method's effect, bounds, description and every reason it may answer. Each line below: the method, its params → its result. \`path\` is counted from the repository's root, or the placed folder, with \`/\` separators, at most 1,024 characters; no leading \`/\` or \`-\`, no \`\\\` or control character, no \`.\` or \`..\` segment. A \`?\` marks an optional key; a bare \`version\` or \`path\` key has that type; no other key is accepted. ${[...GROUPS].map(([name, keys]) => `\`…${name}\` is \`${render({ type: "object", properties: keys }, false)}\`.`).join(" ")}\n\n${lines.join("\n")}\n`;
 }
+
+/** The codes a reason may carry, in the order the guide lists them, with what each means for the page. */
+const CODES = [
+  ["unavailable", "not now or not here"],
+  ["conflict", "re-read"],
+  ["invalid_params", "fix the page; with no reason, the parameters do not fit the method"],
+  ["not_found", "it is not there; with no reason, the path, the `version`, or what was named"],
+] as const;
 
 function errorSection(table: readonly Method[]): string {
   const declared = [...new Set(table.flatMap(reasonsOf))];
-  const rows = declared.map((reason) => `- \`${REASONS[reason].code}\` / \`${reason}\` — ${REASONS[reason].meaning}`);
-  return `## Errors\n\nBranch on \`reason\` when there is one, else on \`code\`: \`conflict\` means re-read, \`unavailable\` means not now or not here, \`not_found\` means it is not there. \`message\` may be shown to the reader.\n\n${rows.join("\n")}\n- \`not_found\` — the path, the \`version\`, or what was named does not exist.\n- \`invalid_params\` — the parameters do not fit the method; fix the page.\n- \`response_too_large\` — ask for less.\n- \`handler_error\` — anything else; \`message\` holds the CLI's own words when it gave some.\n`;
+  const groups = CODES.map(([code, meaning]) => {
+    const rows = declared.filter((reason) => REASONS[reason].code === code).map((reason) => `- \`${reason}\` — ${REASONS[reason].meaning}`);
+    return `\`${code}\`: ${meaning}.\n${rows.join("\n")}`.trim();
+  });
+  return `## Errors\n\nBranch on \`reason\` when there is one, else on \`code\`. \`message\` may be shown to the reader.\n\n${groups.join("\n\n")}\n\n\`response_too_large\`: ask for less. \`handler_error\`: anything else; \`message\` holds the CLI's own words when it gave some.\n`;
 }
 
 export function buildGuide(table: readonly Method[]): string {

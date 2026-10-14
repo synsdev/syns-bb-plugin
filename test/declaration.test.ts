@@ -198,6 +198,17 @@ describe("what agents are told", () => {
     expect(declaration.instruction).toBe(FRAGMENT.trim());
   });
 
+  it("the guide keeps room for one more method of today's average size, its line and one new error row, inside GUIDE_MAX (S6.34, B-0002)", () => {
+    const guide = declaration.guide;
+    const first = guide.lastIndexOf("\n", guide.indexOf("`syns.", guide.indexOf("## Every method"))) + 1;
+    const method = Buffer.byteLength(guide.slice(first, guide.indexOf("## Errors"))) / METHODS.length;
+    const errorRows = guide.split("\n").filter((line) => /^- `[a-z_]+`( \/ `[a-z_]+`)? — /.test(line));
+    const errorRow = errorRows.reduce((sum, row) => sum + Buffer.byteLength(row) + 1, 0) / errorRows.length;
+    const room = GUIDE_MAX - Buffer.byteLength(guide);
+    // 0.8.3 had 6 bytes free; the figures after B-0002 are in spec 06 S6.34.
+    expect(room, `room ${room}, one more method ${Math.ceil(method + errorRow)}`).toBeGreaterThanOrEqual(method + errorRow);
+  });
+
   it("the fragment leads with one tool-first line naming the two commands, and points at the setup doc (A56, D45)", () => {
     const text = declaration.instruction!;
     expect(text.startsWith("**Tool first.** Asked to open a Syns template, or for a piece of work the person will keep working in?")).toBe(true);
@@ -261,7 +272,7 @@ describe("what agents are told", () => {
     expect(section).not.toMatch(/^### .*—/m);
     expect(section).not.toContain("- Reasons:");
     expect(section).toContain("`…record` is `{ owner?: string");
-    expect(section).toContain("Result: `{ …record }`");
+    expect(section).toContain("- `syns.repoVisibility` `{ visibility: \"public\"|\"private\" }` → `{ …record }`");
   });
 
   it("the guide's statements about each method come from its declaration (S4.3)", () => {

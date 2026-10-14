@@ -67,17 +67,22 @@ export type Control = (method: string, path: string, body?: unknown) => Promise<
  * HTTP over the daemon's control socket, a fresh connection each time. With Node's keep-alive agent a socket reused
  * after the 5 s poll still carries its 5 s idle timer, which fires as the next request starts: a third of the polls
  * then failed and the process registered again every 10–15 s (measured on the owner's daemon, 9 October 2026).
+ * The request still says keep-alive and the socket is closed here once the answer is read: sent with Connection: close,
+ * about one body size in four failed with EPIPE and no answer (Node 26.7 on macOS, 14 October 2026).
  */
 export function controlOver(socketPath: string, token?: string): Control {
   return (method, path, body) =>
     new Promise((resolve, reject) => {
       const text = body === undefined ? undefined : JSON.stringify(body);
-      const headers = { ...(text === undefined ? {} : { "content-type": "application/json", "content-length": Buffer.byteLength(text) }), ...(token ? { "x-unife-contributor-token": token } : {}) };
+      const headers = { connection: "keep-alive", ...(text === undefined ? {} : { "content-type": "application/json", "content-length": Buffer.byteLength(text) }), ...(token ? { "x-unife-contributor-token": token } : {}) };
       const req = http.request({ socketPath, path, method, timeout: 5_000, headers, agent: false }, (res) => {
         let out = "";
         res.setEncoding("utf8");
         res.on("data", (d: string) => (out += d));
-        res.on("end", () => resolve({ status: res.statusCode ?? 0, text: out }));
+        res.on("end", () => {
+          req.destroy();
+          resolve({ status: res.statusCode ?? 0, text: out });
+        });
       });
       req.on("timeout", () => req.destroy(new Error("timeout")));
       req.on("error", reject);

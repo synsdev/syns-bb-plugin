@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.4
+
+- The guide text is 14,930 bytes, 942 under its 15,872 limit (was 6): room for about three more methods. Each method
+  is one line, its params → its result, and the error reasons are grouped under their code. Nothing it said is gone.
+- Claude Code: registering with the Unife Pages daemon no longer fails with EPIPE at some declaration sizes (about
+  one size in four on Node 26.7, macOS; 0.8.4's guide made the declaration one). Each control request now says
+  keep-alive and closes its own connection once the answer is read.
+
 ## 0.8.3
 
 - The instruction's first line also covers "open this Syns template": the agent follows TOOLS.md, so the

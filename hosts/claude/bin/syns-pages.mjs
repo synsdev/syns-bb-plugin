@@ -651,18 +651,24 @@ function render(schema, grouping = true) {
 	return types.map(one).join("|");
 }
 function methodSection(table) {
-	const blocks = table.map((method) => [
-		`### \`${method.name}\``,
-		`- Params: \`${render(method.params)}\``,
-		`- Result: \`${render(method.result)}\``
-	].join("\n"));
-	return `## Every method\n\nThe host's roster above (*Registered now*) gives each method's effect, bounds, description and every reason it may answer. \`path\` is counted from the repository's root, or the placed folder, with \`/\` separators, at most 1,024 characters; no leading \`/\` or \`-\`, no \`\\\` or control character, no \`.\` or \`..\` segment. A \`?\` marks an optional key; a bare \`version\` or \`path\` key has that type; no other key is accepted. ${[...GROUPS].map(([name, keys]) => `\`…${name}\` is \`${render({
+	const lines = table.map((method) => `- \`${method.name}\` \`${render(method.params)}\` → \`${render(method.result)}\``);
+	return `## Every method\n\nThe host's roster above (*Registered now*) gives each method's effect, bounds, description and every reason it may answer. Each line below: the method, its params → its result. \`path\` is counted from the repository's root, or the placed folder, with \`/\` separators, at most 1,024 characters; no leading \`/\` or \`-\`, no \`\\\` or control character, no \`.\` or \`..\` segment. A \`?\` marks an optional key; a bare \`version\` or \`path\` key has that type; no other key is accepted. ${[...GROUPS].map(([name, keys]) => `\`…${name}\` is \`${render({
 		type: "object",
 		properties: keys
-	}, false)}\`.`).join(" ")}\n\n${blocks.join("\n\n")}\n`;
+	}, false)}\`.`).join(" ")}\n\n${lines.join("\n")}\n`;
 }
+/** The codes a reason may carry, in the order the guide lists them, with what each means for the page. */
+const CODES = [
+	["unavailable", "not now or not here"],
+	["conflict", "re-read"],
+	["invalid_params", "fix the page; with no reason, the parameters do not fit the method"],
+	["not_found", "it is not there; with no reason, the path, the `version`, or what was named"]
+];
 function errorSection(table) {
-	return `## Errors\n\nBranch on \`reason\` when there is one, else on \`code\`: \`conflict\` means re-read, \`unavailable\` means not now or not here, \`not_found\` means it is not there. \`message\` may be shown to the reader.\n\n${[...new Set(table.flatMap(reasonsOf))].map((reason) => `- \`${REASONS[reason].code}\` / \`${reason}\` — ${REASONS[reason].meaning}`).join("\n")}\n- \`not_found\` — the path, the \`version\`, or what was named does not exist.\n- \`invalid_params\` — the parameters do not fit the method; fix the page.\n- \`response_too_large\` — ask for less.\n- \`handler_error\` — anything else; \`message\` holds the CLI's own words when it gave some.\n`;
+	const declared = [...new Set(table.flatMap(reasonsOf))];
+	return `## Errors\n\nBranch on \`reason\` when there is one, else on \`code\`. \`message\` may be shown to the reader.\n\n${CODES.map(([code, meaning]) => {
+		return `\`${code}\`: ${meaning}.\n${declared.filter((reason) => REASONS[reason].code === code).map((reason) => `- \`${reason}\` — ${REASONS[reason].meaning}`).join("\n")}`.trim();
+	}).join("\n\n")}\n\n\`response_too_large\`: ask for less. \`handler_error\`: anything else; \`message\` holds the CLI's own words when it gave some.\n`;
 }
 function buildGuide(table) {
 	return [
@@ -676,7 +682,7 @@ function buildGuide(table) {
 //#endregion
 //#region src/declaration.ts
 /** The plugin's version, as declared to the host. A test holds it equal to package.json's. */
-const VERSION = "0.8.3";
+const VERSION = "0.8.4";
 /** threadPagesContributions, generated from the table. With `agentInstructions` off no fragment is declared (S4.5). */
 function buildDeclaration(table, settings) {
 	return {
@@ -3136,11 +3142,14 @@ function optionsFromEnv(env, log) {
 * HTTP over the daemon's control socket, a fresh connection each time. With Node's keep-alive agent a socket reused
 * after the 5 s poll still carries its 5 s idle timer, which fires as the next request starts: a third of the polls
 * then failed and the process registered again every 10–15 s (measured on the owner's daemon, 9 October 2026).
+* The request still says keep-alive and the socket is closed here once the answer is read: sent with Connection: close,
+* about one body size in four failed with EPIPE and no answer (Node 26.7 on macOS, 14 October 2026).
 */
 function controlOver(socketPath, token) {
 	return (method, path, body) => new Promise((resolve, reject) => {
 		const text = body === void 0 ? void 0 : JSON.stringify(body);
 		const headers = {
+			connection: "keep-alive",
 			...text === void 0 ? {} : {
 				"content-type": "application/json",
 				"content-length": Buffer.byteLength(text)
@@ -3158,10 +3167,13 @@ function controlOver(socketPath, token) {
 			let out = "";
 			res.setEncoding("utf8");
 			res.on("data", (d) => out += d);
-			res.on("end", () => resolve({
-				status: res.statusCode ?? 0,
-				text: out
-			}));
+			res.on("end", () => {
+				req.destroy();
+				resolve({
+					status: res.statusCode ?? 0,
+					text: out
+				});
+			});
 		});
 		req.on("timeout", () => req.destroy(/* @__PURE__ */ new Error("timeout")));
 		req.on("error", reject);
