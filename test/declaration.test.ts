@@ -229,6 +229,17 @@ describe("what agents are told", () => {
     expect(declaration.guide).not.toContain("Choose a repository: it is the session's.");
   });
 
+  it("the fragment and the guide say one rule on base: the version of the last read, from any read; each read's result carries it (A73, S4.8, D81)", () => {
+    const line = (declaration.instruction ?? "").split("\n").find((l) => l.includes("**Every write needs `base`"));
+    expect(line).toBeDefined();
+    expect(line).not.toMatch(/last read from `syns\.repo`/);
+    for (const read of ["syns.repo", "syns.ls", "syns.readMany"]) {
+      expect(line, read).toContain(`\`${read}\``);
+      expect(METHODS.find((m) => m.name === read)!.result.required, read).toContain("version");
+    }
+    expect(declaration.guide).toContain("carries `base`, the `version` last read; the returned `version` is the next `base`");
+  });
+
   it("the guide names exactly the registered methods, the fragment none other (A9, S4.4)", () => {
     expect(namesIn(declaration.guide)).toEqual(ALL);
     for (const name of namesIn(declaration.instruction!)) expect(ALL).toContain(name);

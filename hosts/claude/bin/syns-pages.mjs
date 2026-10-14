@@ -562,7 +562,7 @@ const FRAGMENT = `**Tool first.** Asked to open a Syns template, or for a piece 
 
 - **The page names no repository:** it sees the one, or the placed folder, its session's folder belongs to; paths count from there.
 - **Pages show pushed state:** your edits reach the page after your turn is pushed.
-- **Every write needs \`base\`,** the \`version\` last read from \`syns.repo\`. On \`stale_head\`, re-read and let the reader retry; on \`checkout_dirty\` an agent is mid-turn: retry when \`version\` moves.
+- **Every write needs \`base\`,** the \`version\` last read: \`syns.repo\`, \`syns.ls\` and \`syns.readMany\` each answer one, a write the next. On \`stale_head\`, re-read and let the reader retry; on \`checkout_dirty\` an agent is mid-turn: retry when \`version\` moves.
 - **Load with \`syns.ls\` and \`syns.readMany\`;** poll only \`syns.repo\` with \`watch\`. Writes and shares act at once: only from a control saying what changes, for whom.
 
 Every method: the page guide (its command is in your page instruction's *More*), section *Capabilities from contributors*. Installing or diagnosing the plugin: \`syns cat SETUP.md --repo bartsoj/syns-bb-plugin-setup\`.
@@ -684,7 +684,7 @@ function buildGuide(table) {
 //#endregion
 //#region src/declaration.ts
 /** The plugin's version, as declared to the host. A test holds it equal to package.json's. */
-const VERSION = "0.8.4";
+const VERSION = "0.8.5";
 /** threadPagesContributions, generated from the table. With `agentInstructions` off no fragment is declared (S4.5). */
 function buildDeclaration(table, settings) {
 	return {

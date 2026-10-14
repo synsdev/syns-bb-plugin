@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.5
+
+- The instruction says one rule on `base`, as the guide does: the `version` last read, which `syns.repo`, `syns.ls`
+  and `syns.readMany` each answer, and each write answers the next. It said "from `syns.repo`", narrower than what
+  is true; a `base` taken from `syns.readMany` was always guarded.
+
 ## 0.8.4
 
 - The guide text is 14,930 bytes, 942 under its 15,872 limit (was 6): room for about three more methods. Each method
