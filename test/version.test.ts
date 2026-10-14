@@ -64,10 +64,35 @@ describe("a method with minCli (D41)", () => {
     expect(failureOf(await harness({ "--version": spawnFailed("cli_not_found") }, { table: [needs] }).call("syns.needsNew"))).toMatchObject({ reason: "cli_missing" });
   });
 
-  it("declares cli_too_old only on methods that set minCli", async () => {
+  it("declares cli_too_old only on methods that set minCli or minCliFor", async () => {
     const { reasonsOf } = await import("../src/method.js");
     expect(reasonsOf(needs)).toContain("cli_too_old");
+    expect(reasonsOf(needsWithOption)).toContain("cli_too_old");
     const { METHODS } = await import("../src/methods/index.js");
-    for (const method of METHODS.filter((m) => !m.minCli)) expect(reasonsOf(method), method.name).not.toContain("cli_too_old");
+    for (const method of METHODS.filter((m) => !m.minCli && !m.minCliFor)) expect(reasonsOf(method), method.name).not.toContain("cli_too_old");
+  });
+});
+
+/** A method that needs CLI 0.3.11 only when its `newer` param is set. */
+const needsWithOption: Method = {
+  ...needs,
+  name: "syns.needsNewSometimes",
+  minCli: undefined,
+  params: object({ newer: { type: "boolean" } }),
+  minCliFor: (params: { newer?: boolean }) => (params.newer ? "0.3.11" : undefined),
+};
+
+describe("a method whose params set the CLI it needs (minCliFor, D-156)", () => {
+  it("without the param it runs on any CLI and asks no version", async () => {
+    const h = harness({ fine: ok({ fine: true }) }, { table: [needsWithOption] });
+    expect(resultOf(await h.call("syns.needsNewSometimes", {}))).toEqual({ fine: true });
+    expect(h.runner.calls.map((call) => call.args)).toEqual([["fine", "--json"]]);
+  });
+
+  it("with it, an older CLI answers cli_too_old and a new enough one runs", async () => {
+    const old = harness({ "--version": printed("syns 0.3.10") }, { table: [needsWithOption] });
+    expect(failureOf(await old.call("syns.needsNewSometimes", { newer: true }))).toMatchObject({ reason: "cli_too_old", detail: { need: "0.3.11", have: "0.3.10" } });
+    const fresh = harness({ "--version": printed("syns 0.3.11"), fine: ok({ fine: true }) }, { table: [needsWithOption] });
+    expect(resultOf(await fresh.call("syns.needsNewSometimes", { newer: true }))).toEqual({ fine: true });
   });
 });

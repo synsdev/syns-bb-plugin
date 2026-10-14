@@ -95,6 +95,7 @@ describe("syns.grep", () => {
       number: 6,
       output: "content",
       truncated: false,
+      nextOffset: null,
       skipped: [],
       matches: [
         { path: "notes/n01.md", line: 5, text: "# Note 01", context: [{ line: 4, text: "" }, { line: 6, text: "" }] },
@@ -105,7 +106,7 @@ describe("syns.grep", () => {
   });
   it("files: the paths that match (A21)", async () => {
     const h = harness({ grep: rec("grep.files.ok") });
-    expect(resultOf(await h.call("syns.grep", { pattern: "Note", output: "files", headLimit: 2 }))).toEqual({ version: HEAD, number: 6, output: "files", truncated: false, skipped: [], files: ["notes/n01.md", "notes/n02.md"] });
+    expect(resultOf(await h.call("syns.grep", { pattern: "Note", output: "files", headLimit: 2 }))).toEqual({ version: HEAD, number: 6, output: "files", truncated: false, nextOffset: null, skipped: [], files: ["notes/n01.md", "notes/n02.md"] });
     // The CLI refuses --line-number and --context under any output but content.
     expect(h.runner.calls[0]!.args).toEqual(["grep", "--output=files", "--head-limit=2", "--json", "--", "Note"]);
   });
@@ -116,6 +117,7 @@ describe("syns.grep", () => {
       number: 6,
       output: "count",
       truncated: false,
+      nextOffset: null,
       skipped: [],
       counts: [{ path: "notes/n01.md", count: 1 }, { path: "notes/n02.md", count: 1 }],
     });
@@ -146,6 +148,63 @@ describe("syns.grep", () => {
     const cases = [{ pattern: "" }, { pattern: "x".repeat(513) }, { pattern: "x", context: 11 }, { pattern: "x", context: -1 }, { pattern: "x", headLimit: 0 }, { pattern: "x", headLimit: 1001 }, { pattern: "x", output: "json" }, { pattern: "x", glob: Array.from({ length: 9 }, () => "*.md") }, { pattern: "x", glob: [""] }, { pattern: "x", output: "files", context: 2 }, {}];
     for (const params of cases) expect(failureOf(await h.call("syns.grep", params)).code, JSON.stringify(params).slice(0, 80)).toBe("invalid_params");
     expect(h.runner.calls).toHaveLength(0);
+  });
+});
+
+/** `syns --version` prints plain text (HOST_FACTS §15). */
+const printed = (text: string) => ({ exitCode: 0, stdout: `${text}\n`, stderr: "", timedOut: false, spawnError: null, overflowed: false });
+const window = (nextOffset: number | null, from: number, count: number) =>
+  ok({ commitSha: HEAD, version: 6, pattern: "x", output: "files", truncated: nextOffset !== null, nextOffset, skipped: [], files: Array.from({ length: count }, (_, i) => `f${String(from + i).padStart(4, "0")}.md`) });
+
+describe("syns.grep paging past the 400-file fan-out (issue 260, D-156)", () => {
+  it("passes offset as --offset and the CLI's nextOffset on, so following it reaches every file", async () => {
+    const h = harness({ "--version": printed("syns 0.3.20"), grep: (request) => (request.args.includes("--offset=400") ? window(null, 400, 100) : window(400, 0, 400)) });
+    const first = resultOf<any>(await h.call("syns.grep", { pattern: "x", output: "files", headLimit: 1000 }));
+    expect(first).toMatchObject({ truncated: true, nextOffset: 400 });
+    const last = resultOf<any>(await h.call("syns.grep", { pattern: "x", output: "files", headLimit: 1000, offset: first.nextOffset, version: first.version }));
+    expect(last).toMatchObject({ truncated: false, nextOffset: null });
+    expect([...first.files, ...last.files]).toEqual(Array.from({ length: 500 }, (_, i) => `f${String(i).padStart(4, "0")}.md`));
+    expect(h.runner.calls.map((call) => call.args)).toEqual([
+      ["grep", "--output=files", "--head-limit=1000", "--json", "--", "x"],
+      ["--version"],
+      ["grep", "--output=files", "--head-limit=1000", "--offset=400", `--version=${HEAD}`, "--json", "--", "x"],
+    ]);
+  });
+  it("offset absent or 0 runs on any CLI, asks no version and passes no --offset; nextOffset is null where the CLI answers none", async () => {
+    const h = harness({ grep: rec("grep.files.ok") });
+    for (const params of [{ pattern: "Note", output: "files" }, { pattern: "Note", output: "files", offset: 0 }]) {
+      expect(resultOf<any>(await h.call("syns.grep", params)).nextOffset).toBeNull();
+    }
+    expect(h.runner.calls.map((call) => call.args)).toEqual([
+      ["grep", "--output=files", "--head-limit=200", "--json", "--", "Note"],
+      ["grep", "--output=files", "--head-limit=200", "--json", "--", "Note"],
+    ]);
+  });
+  it("offset above 0 on a CLI without --offset answers unavailable / cli_too_old, running no search", async () => {
+    const h = harness({ "--version": printed("syns 0.3.19"), grep: rec("grep.files.ok") });
+    expect(failureOf(await h.call("syns.grep", { pattern: "Note", offset: 400, version: OLD }))).toMatchObject({ code: "unavailable", reason: "cli_too_old", detail: { need: "0.3.20", have: "0.3.19" } });
+    expect(h.runner.calls.map((call) => call.args)).toEqual([["--version"]]);
+  });
+  it("refuses an offset above 0 without the version of the first page, before any process, as syns.readBinary does (D-156, verify F1)", async () => {
+    const h = harness({ "--version": printed("syns 0.3.20"), grep: window(null, 400, 100) });
+    const error = failureOf(await h.call("syns.grep", { pattern: "x", output: "files", offset: 400 }));
+    expect(error.code).toBe("invalid_params");
+    expect(error.message).toContain("version");
+    expect(h.runner.calls).toHaveLength(0);
+  });
+  it("refuses an offset that is no count, before any process", async () => {
+    const h = harness();
+    for (const offset of [-1, 1.5, "400", null, 4294967296]) expect(failureOf(await h.call("syns.grep", { pattern: "x", offset })).code, String(offset)).toBe("invalid_params");
+    expect(h.runner.calls).toHaveLength(0);
+  });
+  it("its description states the cap and how to continue, within the host's 240 characters", async () => {
+    const { grep } = await import("../src/methods/grep.js");
+    expect(grep.description).toContain("400 files");
+    expect(grep.description).toContain("nextOffset");
+    expect(grep.description).toContain("the first page's version");
+    expect(grep.description.length).toBeLessThanOrEqual(240);
+    // The default row bound shrinks with context; the param says so where the description has no room.
+    expect((grep.params.properties as any).headLimit.description).toContain("fewer with context");
   });
 });
 

@@ -112,12 +112,13 @@ export function createDispatch({ table = METHODS, cli, log, held = createHeld(),
     // A scope must be a folder of the session's own repository: the placed folder's holder, or the session's own identity (D46).
     if (where !== session) await sameRepository(session, where, scope!, deadline);
 
-    // A method that needs a newer CLI asks the machine's version first, once a minute at most.
-    if (method.minCli) {
-      const need = parseTriple(method.minCli)!;
+    // A method that needs a newer CLI, or these params of it, asks the machine's version first, once a minute at most.
+    const minCli = method.minCli ?? method.minCliFor?.(params);
+    if (minCli) {
+      const need = parseTriple(minCli)!;
       const found = await versions.of(where, deadline);
       if (found.spawnError === CLI_NOT_FOUND) throw fail("cli_missing");
-      if (!found.triple || !atLeast(found.triple, need)) throw fail("cli_too_old", { need: method.minCli, have: found.text });
+      if (!found.triple || !atLeast(found.triple, need)) throw fail("cli_too_old", { need: minCli, have: found.text });
     }
 
     const declared = method.reasons ?? [];

@@ -130,7 +130,7 @@ describe("the declaration", () => {
       "syns.commit": [...common, ...write, "bad_offset", "invalid_change"].sort(),
       "syns.read": common,
       "syns.glob": [...common, "bad_pattern"].sort(),
-      "syns.grep": [...common, "bad_pattern"].sort(),
+      "syns.grep": [...common, "bad_pattern", "cli_too_old"].sort(), // only with an offset above 0 (D-156)
       "syns.diff": common,
       "syns.write": [...common, ...write, "exists"].sort(),
       "syns.edit": [...common, ...write, "many_matches", "no_match"].sort(),

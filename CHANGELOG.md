@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.7
+
+- `syns.grep` pages past its 400-file fan-out (Syns issue 260, D-156). It takes `offset`, the count of matching
+  files to skip in path order (0 to 4,294,967,295, the CLI's bound), and answers `nextOffset`: where to continue, or
+  `null` on the last window, past the end, or where `headLimit` closed the search early. Following `nextOffset` from
+  0 searches every file once, at one version: an `offset` above 0 without `version` is `invalid_params`, as on
+  `syns.readBinary`, so pass the first page's `version` with each later page. The description states the cap.
+  `offset` above 0 needs Syns CLI 0.3.20 (`--offset`); an older CLI answers `unavailable` / `cli_too_old`. Without
+  `offset` every CLI serves the call, and `nextOffset` is `null` where the CLI names none.
+
 ## 0.8.6
 
 - Signed out of Syns, every method answers `unavailable` / `not_logged_in`, not `no_access`, so a page can tell the

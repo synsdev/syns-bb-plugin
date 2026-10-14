@@ -418,7 +418,7 @@ const EVERY_WRITE = ["stale_head", "checkout_dirty"];
 /** Every reason a method can answer with: the common ones, a write's, and its own. S3.2 */
 const reasonsOf = (method) => [
 	...EVERY_METHOD,
-	...method.minCli ? ["cli_too_old"] : [],
+	...method.minCli || method.minCliFor ? ["cli_too_old"] : [],
 	...fileWrite(method) ? EVERY_CHANGE : [],
 	...fileWrite(method) && !method.unguarded ? EVERY_WRITE : [],
 	...method.reasons ?? []
@@ -694,7 +694,7 @@ function buildGuide(table) {
 //#endregion
 //#region src/declaration.ts
 /** The plugin's version, as declared to the host. A test holds it equal to package.json's. */
-const VERSION = "0.8.6";
+const VERSION = "0.8.7";
 /** threadPagesContributions, generated from the table. With `agentInstructions` off no fragment is declared (S4.5). */
 function buildDeclaration(table, settings) {
 	return {
@@ -1350,6 +1350,8 @@ const glob = {
 };
 //#endregion
 //#region src/methods/grep.ts
+/** The first Syns CLI with `grep --offset` and `nextOffset` (issue 260, D-156). */
+const OFFSET_CLI = "0.3.20";
 const record$2 = (value) => typeof value === "object" && value !== null ? value : {};
 const rows = (value) => Array.isArray(value) ? value.map(record$2) : void 0;
 const lineAndText = {
@@ -1363,7 +1365,7 @@ const lineAndText = {
 const mostRows = (params) => (params.output ?? "content") === "content" ? Math.min(1e3, Math.floor(9e3 / (5 + 6 * (params.context ?? 0)))) : 1e3;
 const grep = {
 	name: "syns.grep",
-	description: "Search file texts with a regular expression, under path, in files matching glob, at version (default head). output: content (default: matches with line and context), files, or count. headLimit caps rows (default 200, less with context)",
+	description: "Regex search under path, in files matching glob, at version (default head). output: content (default), files or count. headLimit caps rows (default 200). At most 400 files a call: pass nextOffset as offset and the first page's version",
 	effect: "read",
 	params: object({
 		pattern: {
@@ -1400,7 +1402,14 @@ const grep = {
 		headLimit: {
 			type: "integer",
 			minimum: 1,
-			maximum: 1e3
+			maximum: 1e3,
+			description: "Rows at most: default 200, fewer with context."
+		},
+		offset: {
+			type: "integer",
+			minimum: 0,
+			maximum: 4294967295,
+			description: "Files to skip, in path order: the last call's nextOffset."
 		},
 		version
 	}, ["pattern"]),
@@ -1419,6 +1428,7 @@ const grep = {
 				]
 			},
 			truncated: { type: "boolean" },
+			nextOffset: nullable("integer"),
 			skipped: {
 				type: "array",
 				items: {
@@ -1472,13 +1482,16 @@ const grep = {
 			"number",
 			"output",
 			"truncated",
+			"nextOffset",
 			"skipped"
 		]
 	},
 	maxRequestBytes: K64,
 	maxResponseBytes: M1,
 	reasons: ["bad_pattern"],
+	minCliFor: (params) => (params.offset ?? 0) > 0 ? OFFSET_CLI : void 0,
 	check(params) {
+		if ((params.offset ?? 0) > 0 && params.version === void 0) throw new SynsError("invalid_params", { message: "Invalid parameters for syns.grep: a later page needs the version of the first" });
 		if ((params.headLimit ?? 0) > mostRows(params)) throw new SynsError("invalid_params", { message: `Invalid parameters for syns.grep: with this output and context, headLimit can be at most ${mostRows(params)}` });
 		if ((params.context ?? 0) > 0 && (params.output ?? "content") !== "content") throw new SynsError("invalid_params", { message: "Invalid parameters for syns.grep: context applies only with output content" });
 	},
@@ -1492,15 +1505,18 @@ const grep = {
 			context: content && params.context ? params.context : void 0,
 			output: params.output ?? "content",
 			"head-limit": params.headLimit ?? Math.min(200, mostRows(params)),
+			offset: params.offset ? params.offset : void 0,
 			version: params.version
 		}, [params.pattern]) };
 	},
 	shape(out) {
+		const nextOffset = typeof out.nextOffset === "number" ? out.nextOffset : null;
 		const common = {
 			version: out.commitSha,
 			number: out.version,
 			output: out.output,
 			truncated: out.truncated,
+			nextOffset,
 			skipped: rows(out.skipped)?.map((skip) => ({
 				path: skip.path,
 				reason: skip.reason
@@ -2899,12 +2915,13 @@ function createDispatch({ table = METHODS, cli, log, held = createHeld(), versio
 			within: session.cwd
 		};
 		if (where !== session) await sameRepository(session, where, scope, deadline);
-		if (method.minCli) {
-			const need = parseTriple(method.minCli);
+		const minCli = method.minCli ?? method.minCliFor?.(params);
+		if (minCli) {
+			const need = parseTriple(minCli);
 			const found = await versions.of(where, deadline);
 			if (found.spawnError === "cli_not_found") throw fail("cli_missing");
 			if (!found.triple || !atLeast(found.triple, need)) throw fail("cli_too_old", {
-				need: method.minCli,
+				need: minCli,
 				have: found.text
 			});
 		}
