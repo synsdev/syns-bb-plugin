@@ -39,9 +39,14 @@ describe("syns.repo", () => {
     const result = resultOf(await harness({ repo: ok({ owner: "o", name: "n", commitSha: HEAD, version: "12", holder: 7, path: null, description: "d", tags: ["x"], role: "owner", visibility: "private", fileCount: 1 }) }).call("syns.repo"));
     expect(Object.keys(result).sort()).toEqual(["fileCount", "name", "owner", "role", "version", "visibility"]);
   });
-  it("answers no_access when the CLI prints the 404 and repo, asked again, fails too (S3.5)", async () => {
-    const h = harness({ repo: rec("not-found-404") });
+  it("answers no_access when the CLI prints the 404, and the machine has a login (S3.5)", async () => {
+    const h = harness({ repo: rec("not-found-404"), whoami: rec("whoami.ok") });
     expect(failureOf(await h.call("syns.repo"))).toMatchObject({ code: "unavailable", reason: "no_access" });
+  });
+  it("answers not_logged_in when the machine has no login: its own 404 is the repo check, then whoami, two processes (B-0011)", async () => {
+    const h = harness({ repo: rec("signed-out.repo"), whoami: rec("auth-required") });
+    expect(failureOf(await h.call("syns.repo"))).toMatchObject({ code: "unavailable", reason: "not_logged_in", message: expect.stringContaining("syns login") });
+    expect(h.runner.calls.map((call) => call.args)).toEqual([["repo", "--json"], ["whoami", "--json"]]);
   });
 });
 

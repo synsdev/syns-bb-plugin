@@ -7,9 +7,9 @@ const never = async () => {
   throw new Error("repo must not be run");
 };
 
-async function failure(run: Parameters<typeof interpret>[0], declared: string[] = [], runRepo: Parameters<typeof interpret>[2] = never): Promise<SynsError> {
+async function failure(run: Parameters<typeof interpret>[0], declared: string[] = [], runRepo: Parameters<typeof interpret>[2] = never, runWhoami: Parameters<typeof interpret>[4] = never): Promise<SynsError> {
   try {
-    await interpret(run, declared, runRepo);
+    await interpret(run, declared, runRepo, {}, runWhoami);
   } catch (error) {
     if (error instanceof SynsError) return error;
     throw error;
@@ -34,9 +34,8 @@ describe("the recognition table (S3.4, A36)", () => {
   it("row 3: 'holds unpublished local changes' is checkout_dirty", async () => {
     expect(toAnswer(await failure(rec("checkout-dirty"))).error).toMatchObject({ code: "conflict", reason: "checkout_dirty" });
   });
-  it("row 4: 'authentication required' is not_logged_in where the method declares it, else no_access", async () => {
-    expect(toAnswer(await failure(rec("auth-required"), ["not_logged_in"])).error).toMatchObject({ code: "unavailable", reason: "not_logged_in" });
-    expect(toAnswer(await failure(rec("auth-required"))).error).toMatchObject({ code: "unavailable", reason: "no_access" });
+  it("row 4: 'authentication required' is not_logged_in, for every method (B-0011)", async () => {
+    expect(toAnswer(await failure(rec("auth-required"))).error).toMatchObject({ code: "unavailable", reason: "not_logged_in" });
   });
   it("row 5: '--old matched no content' is no_match", async () => {
     expect(toAnswer(await failure(rec("edit-no-match"))).error).toMatchObject({ code: "invalid_params", reason: "no_match" });
@@ -93,9 +92,25 @@ describe("the 404 (S3.5, A37)", () => {
     expect(toAnswer(error).error).toEqual({ code: "not_found", message: expect.any(String) });
     expect(asked).toBe(1);
   });
-  it("is no_access when repo fails too", async () => {
-    const error = await failure(rec("not-found-404"), [], async () => rec("not-found-404"));
+  it("is no_access when repo fails too and the machine has a login", async () => {
+    let asked = 0;
+    const error = await failure(rec("not-found-404"), [], async () => rec("not-found-404"), async () => {
+      asked += 1;
+      return rec("whoami.ok");
+    });
     expect(toAnswer(error).error).toMatchObject({ code: "unavailable", reason: "no_access" });
+    expect(asked).toBe(1);
+  });
+  it("is not_logged_in when repo fails too and whoami says nobody is logged in (B-0011)", async () => {
+    const error = await failure(rec("signed-out.repo"), [], async () => rec("signed-out.repo"), async () => rec("auth-required"));
+    expect(toAnswer(error).error).toMatchObject({ code: "unavailable", reason: "not_logged_in" });
+  });
+  it("is no_access when whoami cannot answer either (B-0011)", async () => {
+    expect(toAnswer(await failure(rec("signed-out.repo"), [], async () => rec("signed-out.repo"), async () => timedOut())).error).toMatchObject({ reason: "no_access" });
+  });
+  it("asks whoami only when repo fails (B-0011)", async () => {
+    const error = await failure(rec("not-found-404"), [], async () => rec("repo.ok"), never);
+    expect(error.code).toBe("not_found");
   });
 });
 

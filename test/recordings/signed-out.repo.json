@@ -1,0 +1,1 @@
+{ "source": "HOST_FACTS.md §8 Logged out, repo on a private repository (measured again 2026-10-14, CLI 0.3.15)", "exitCode": 1, "json": { "error": "server error (404): not_found" } }

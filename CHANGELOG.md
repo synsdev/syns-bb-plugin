@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.6
+
+- Signed out of Syns, every method answers `unavailable` / `not_logged_in`, not `no_access`, so a page can tell the
+  reader to run `syns login`. The CLI prints the same 404 for a signed-out machine as for a repository out of reach;
+  when the plugin's check of the repository fails too, it now asks `whoami` once to tell them apart. Only on that
+  failure: a successful call runs no extra process. `syns.repo` no longer runs `repo` twice on a 404.
+- A scoped call on a signed-out machine answers `not_logged_in` instead of `bad_scope`.
+
 ## 0.8.5
 
 - The instruction says one rule on `base`, as the guide does: the `version` last read, which `syns.repo`, `syns.ls`

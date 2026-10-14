@@ -21,7 +21,6 @@ export const whoami: SimpleMethod = {
   },
   maxRequestBytes: K64,
   maxResponseBytes: K64,
-  reasons: ["not_logged_in"],
   command: () => ({ args: buildArgs("whoami") }),
   shape: (out) => ({
     id: out.id,

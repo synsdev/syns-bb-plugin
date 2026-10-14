@@ -110,8 +110,8 @@ const REASONS = {
 	},
 	not_logged_in: {
 		code: "unavailable",
-		message: "Nobody is logged in to Syns on this session's machine.",
-		meaning: "No Syns login on that machine."
+		message: "Nobody is logged in to Syns on this session's machine. Run syns login there.",
+		meaning: "No Syns login on that machine: someone runs syns login there."
 	},
 	cli_missing: {
 		code: "unavailable",
@@ -332,7 +332,15 @@ function redact(text, where = {}) {
 	const absolute = String.raw`(?:file:\/\/|\/|[A-Za-z]:[\\/]|\\\\)`;
 	return out.replace(new RegExp(String.raw`(['"` + "`" + String.raw`])${absolute}[^'"` + "`" + String.raw`\n]*\1`, "g"), (_, quote) => `${quote}<path>${quote}`).replace(new RegExp(String.raw`file:\/\/${PATH_CHAR}*`, "g"), "<path>").replace(new RegExp(String.raw`\\\\${PATH_CHAR}+`, "g"), "<path>").replace(new RegExp(String.raw`(?<![\w])[A-Za-z]:[\\/]${PATH_CHAR}*`, "g"), "<path>").replace(new RegExp(String.raw`(?<![\w.:/<\\])\/${PATH_CHAR}+`, "g"), "<path>");
 }
-async function interpret(run, declared, runRepo, where = {}) {
+/** Whether `whoami --json` says nobody is logged in on the machine (HOST_FACTS §8). Anything else, a timeout included, is no. */
+async function signedOut(runWhoami) {
+	const run = await runWhoami();
+	if (run.exitCode !== 1 || run.spawnError !== null || run.timedOut) return false;
+	const parsed = parse(run.stdout);
+	const error = parsed && typeof parsed.value === "object" && parsed.value !== null ? parsed.value.error : void 0;
+	return typeof error === "string" && error.includes("authentication required");
+}
+async function interpret(run, declared, runRepo, where = {}, runWhoami) {
 	if (run.spawnError !== null) {
 		if (run.spawnError === "cli_not_found") throw fail("cli_missing");
 		if (run.spawnError === "scope_outside") throw fail("bad_scope");
@@ -353,7 +361,7 @@ async function interpret(run, declared, runRepo, where = {}) {
 	if (exit === 2 && error.startsWith("folder out of place")) throw fail("folder_out_of_place");
 	if (exit === 1 && error.startsWith("folder_write_unsupported")) throw fail("folder_write_unsupported");
 	if (exit === 1 && error.includes("holds unpublished local changes")) throw fail("checkout_dirty");
-	if (exit === 1 && error.includes("authentication required")) throw fail(declared.includes("not_logged_in") ? "not_logged_in" : "no_access");
+	if (exit === 1 && error.includes("authentication required")) throw fail("not_logged_in");
 	if (exit === 1 && error.includes("--old matched no content")) throw fail("no_match");
 	if (exit === 1 && error.startsWith("configuration error") && error.includes(" already holds ")) throw fail("occupied");
 	if (exit === 1 && error.startsWith("not_found:") && error.includes("is no repository you can read")) throw fail("no_such_template");
@@ -374,6 +382,7 @@ async function interpret(run, declared, runRepo, where = {}) {
 	if (exit === 1 && error.includes("(404)")) {
 		const repo = await runRepo();
 		if (repo.exitCode === 0 && repo.spawnError === null && !repo.timedOut) throw new SynsError("not_found", where.notFound ? { message: where.notFound } : {});
+		if (runWhoami && await signedOut(runWhoami)) throw fail("not_logged_in");
 		throw fail("no_access");
 	}
 	if (exit === 1 && error.includes("invalid pattern")) throw fail("bad_pattern");
@@ -397,6 +406,7 @@ const bytes = (value) => Buffer.byteLength(JSON.stringify(value), "utf8");
 const EVERY_METHOD = [
 	"no_repo",
 	"no_access",
+	"not_logged_in",
 	"cli_missing",
 	"timeout",
 	"folder_out_of_place",
@@ -684,7 +694,7 @@ function buildGuide(table) {
 //#endregion
 //#region src/declaration.ts
 /** The plugin's version, as declared to the host. A test holds it equal to package.json's. */
-const VERSION = "0.8.5";
+const VERSION = "0.8.6";
 /** threadPagesContributions, generated from the table. With `agentInstructions` off no fragment is declared (S4.5). */
 function buildDeclaration(table, settings) {
 	return {
@@ -2701,7 +2711,6 @@ const METHODS = [
 		},
 		maxRequestBytes: K64,
 		maxResponseBytes: K64,
-		reasons: ["not_logged_in"],
 		command: () => ({ args: buildArgs("whoami") }),
 		shape: (out) => ({
 			id: out.id,
@@ -2867,7 +2876,8 @@ function createDispatch({ table = METHODS, cli, log, held = createHeld(), versio
 		};
 		let own;
 		try {
-			own = repositoryOf(await interpret(await cli.run(session, ["repo", "--json"], void 0, deadline), [], never, { folder: session.cwd }));
+			const ran = await cli.run(session, ["repo", "--json"], void 0, deadline);
+			own = repositoryOf(await interpret(ran, [], async () => ran, { folder: session.cwd }, () => cli.run(session, ["whoami", "--json"], void 0, deadline)));
 		} catch (error) {
 			if (error instanceof SynsError && (error.reason === "no_repo" || error.reason === "no_access")) throw fail("bad_scope");
 			throw error;
@@ -2900,6 +2910,7 @@ function createDispatch({ table = METHODS, cli, log, held = createHeld(), versio
 		}
 		const declared = method.reasons ?? [];
 		let repoCheck;
+		let whoamiCheck;
 		const context = {
 			sessionId,
 			limits: cli.limits,
@@ -2911,10 +2922,13 @@ function createDispatch({ table = METHODS, cli, log, held = createHeld(), versio
 					SYNS_RUN: mark.run,
 					SYNS_TRIGGER: mark.trigger
 				} : void 0;
-				return interpret(await cli.run(where, args, stdin, deadline, env), declared, () => repoCheck ??= cli.run(where, ["repo", "--json"], void 0, deadline), {
+				const ran = await cli.run(where, args, stdin, deadline, env);
+				const repoCheckOf = () => repoCheck ??= args.join(" ") === "repo --json" ? Promise.resolve(ran) : cli.run(where, ["repo", "--json"], void 0, deadline);
+				const whoamiCheckOf = () => whoamiCheck ??= cli.run(where, ["whoami", "--json"], void 0, deadline);
+				return interpret(ran, declared, repoCheckOf, {
 					folder: session.cwd,
 					...method.notFound ? { notFound: method.notFound } : {}
-				});
+				}, whoamiCheckOf);
 			}
 		};
 		let result;

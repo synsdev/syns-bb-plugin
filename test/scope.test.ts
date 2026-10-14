@@ -41,6 +41,14 @@ describe("a document's scope (D43, D46)", () => {
     const h = harness({ repo: repoBy({ "/work/checkout/clients/vela/q3-board": PLACED }) });
     expect(failureOf(await scoped(h, "clients/vela/q3-board"))).toMatchObject({ reason: "bad_scope" });
   });
+  it("answers not_logged_in, not bad_scope, when the machine has no login (B-0011)", async () => {
+    const h = harness({ repo: rec("signed-out.repo"), whoami: rec("auth-required") });
+    expect(failureOf(await scoped(h, "clients/vela/q3-board"))).toMatchObject({ code: "unavailable", reason: "not_logged_in" });
+  });
+  it("still refuses the scope when the session's own repository is out of reach and the machine has a login", async () => {
+    const h = harness({ repo: rec("not-found-404"), whoami: rec("whoami.ok") });
+    expect(failureOf(await scoped(h, "clients/vela/q3-board"))).toMatchObject({ reason: "bad_scope" });
+  });
   it("refuses a scope the host half finds outside, unplaced (no .syns.yaml of its own) or missing", async () => {
     const { spawnFailed } = await import("./fake-runner.js");
     const h = harness({ repo: (request: { cwd: string }) => (request.cwd === "/work/checkout" ? { exitCode: 0, stdout: JSON.stringify(ROOT), stderr: "", timedOut: false, spawnError: null, overflowed: false } : spawnFailed("scope_outside")) });

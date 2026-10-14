@@ -37,8 +37,8 @@ export const REASONS = {
   },
   not_logged_in: {
     code: "unavailable",
-    message: "Nobody is logged in to Syns on this session's machine.",
-    meaning: "No Syns login on that machine.",
+    message: "Nobody is logged in to Syns on this session's machine. Run syns login there.",
+    meaning: "No Syns login on that machine: someone runs syns login there.",
   },
   cli_missing: {
     code: "unavailable",
@@ -219,7 +219,9 @@ function parse(text: string): { value: unknown } | null {
 /**
  * One finished CLI run becomes its parsed document, or throws the failure a
  * page sees. `declared` is the reasons the calling method declares beyond the
- * common ones; `runRepo` runs `repo --json` for the 404 rule.
+ * common ones; `runRepo` runs `repo --json` for the 404 rule, and `runWhoami`
+ * `whoami --json` when that fails too: signed out, the CLI prints the same 404
+ * as for a repository out of reach (B-0011).
  * spec S2.13, S3.4–S3.7
  */
 /** What the page may be told about where things are on its machine (fix round 1, finding 2). */
@@ -257,7 +259,16 @@ export function redact(text: string, where: Redaction = {}): string {
     .replace(new RegExp(String.raw`(?<![\w.:/<\\])\/${PATH_CHAR}+`, "g"), "<path>");
 }
 
-export async function interpret(run: RunResult, declared: readonly string[], runRepo: () => Promise<RunResult>, where: Redaction & { notFound?: string } = {}): Promise<unknown> {
+/** Whether `whoami --json` says nobody is logged in on the machine (HOST_FACTS §8). Anything else, a timeout included, is no. */
+async function signedOut(runWhoami: () => Promise<RunResult>): Promise<boolean> {
+  const run = await runWhoami();
+  if (run.exitCode !== 1 || run.spawnError !== null || run.timedOut) return false;
+  const parsed = parse(run.stdout);
+  const error = parsed && typeof parsed.value === "object" && parsed.value !== null ? (parsed.value as Record<string, unknown>).error : undefined;
+  return typeof error === "string" && error.includes("authentication required");
+}
+
+export async function interpret(run: RunResult, declared: readonly string[], runRepo: () => Promise<RunResult>, where: Redaction & { notFound?: string } = {}, runWhoami?: () => Promise<RunResult>): Promise<unknown> {
   if (run.spawnError !== null) {
     if (run.spawnError === CLI_NOT_FOUND) throw fail("cli_missing");
     // A scope that resolves outside the session's folder, or to no folder, symlinks followed (D43).
@@ -285,7 +296,7 @@ export async function interpret(run: RunResult, declared: readonly string[], run
   if (exit === 2 && error.startsWith("folder out of place")) throw fail("folder_out_of_place");
   if (exit === 1 && error.startsWith("folder_write_unsupported")) throw fail("folder_write_unsupported");
   if (exit === 1 && error.includes("holds unpublished local changes")) throw fail("checkout_dirty");
-  if (exit === 1 && error.includes("authentication required")) throw fail(declared.includes("not_logged_in") ? "not_logged_in" : "no_access");
+  if (exit === 1 && error.includes("authentication required")) throw fail("not_logged_in");
   if (exit === 1 && error.includes("--old matched no content")) throw fail("no_match");
   // syns place (D43, HOST_FACTS §14).
   if (exit === 1 && error.startsWith("configuration error") && error.includes(" already holds ")) throw fail("occupied");
@@ -308,6 +319,8 @@ export async function interpret(run: RunResult, declared: readonly string[], run
     // A missing path and an unreachable repository print the same line. S3.5
     const repo = await runRepo();
     if (repo.exitCode === 0 && repo.spawnError === null && !repo.timedOut) throw new SynsError("not_found", where.notFound ? { message: where.notFound } : {});
+    // Out of reach, or signed out: only whoami tells them apart. Paid only on this failure (B-0011).
+    if (runWhoami && (await signedOut(runWhoami))) throw fail("not_logged_in");
     throw fail("no_access");
   }
   if (exit === 1 && error.includes("invalid pattern")) throw fail("bad_pattern");

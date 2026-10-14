@@ -119,11 +119,11 @@ describe("the declaration", () => {
 
   it("declares every reason a method can answer with (S3.2)", () => {
     const reasons = Object.fromEntries(declaration.methods.map((method) => [method.name, Object.keys(method.reasons).sort()]));
-    const common = ["bad_scope", "cli_missing", "folder_out_of_place", "no_access", "no_repo", "timeout"];
+    const common = ["bad_scope", "cli_missing", "folder_out_of_place", "no_access", "no_repo", "not_logged_in", "timeout"];
     const write = ["checkout_dirty", "folder_write_unsupported", "stale_head"];
     expect(reasons).toEqual({
       "syns.repo": common,
-      "syns.whoami": [...common, "not_logged_in"].sort(),
+      "syns.whoami": common,
       "syns.ls": common,
       "syns.readMany": common,
       "syns.history": common,
@@ -349,7 +349,7 @@ describe("one table drives everything (A33, S2.21)", () => {
     expect(buildGuide(table)).toContain("`syns.ping`");
     const h = harness({ ping: ok({ pong: true }) }, { table });
     expect(resultOf(await h.call("syns.ping"))).toEqual({ pong: true });
-    expect(reasonsOf(ping)).toEqual(["no_repo", "no_access", "cli_missing", "timeout", "folder_out_of_place", "bad_scope"]);
+    expect(reasonsOf(ping)).toEqual(["no_repo", "no_access", "not_logged_in", "cli_missing", "timeout", "folder_out_of_place", "bad_scope"]);
   });
 
   it("and is nowhere without it", async () => {

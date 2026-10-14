@@ -88,7 +88,7 @@ export interface ProcedureMethod extends Common {
 
 export type Method = SimpleMethod | ProcedureMethod;
 
-export const EVERY_METHOD: readonly Reason[] = ["no_repo", "no_access", "cli_missing", "timeout", "folder_out_of_place", "bad_scope"];
+export const EVERY_METHOD: readonly Reason[] = ["no_repo", "no_access", "not_logged_in", "cli_missing", "timeout", "folder_out_of_place", "bad_scope"];
 /** Every write, syns.revert included: a placed folder's write against a server without folder writes (D38). */
 export const EVERY_CHANGE: readonly Reason[] = ["folder_write_unsupported"];
 export const EVERY_WRITE: readonly Reason[] = ["stale_head", "checkout_dirty"];

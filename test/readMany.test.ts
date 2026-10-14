@@ -108,7 +108,7 @@ describe("syns.readMany", () => {
   it("fails as a whole for a reason that applies to every path (S1.16)", async () => {
     const version = harness({ cat: rec("version-not-found") });
     expect(failureOf(await version.call("syns.readMany", { paths: ["a.md", "b.md"], version: OLD })).code).toBe("not_found");
-    const access = harness({ cat: rec("not-found-404"), repo: rec("not-found-404") });
+    const access = harness({ whoami: rec("whoami.ok"), cat: rec("not-found-404"), repo: rec("not-found-404") });
     expect(failureOf(await access.call("syns.readMany", { paths: ["a.md"], version: OLD }))).toMatchObject({ code: "unavailable", reason: "no_access" });
     const slow = harness({ cat: (request) => (pathOf(request) === "b.md" ? timedOut() : file(request)) });
     expect(failureOf(await slow.call("syns.readMany", { paths: ["a.md", "b.md"], version: OLD }))).toMatchObject({ code: "unavailable", reason: "timeout" });

@@ -82,7 +82,9 @@ export function createDispatch({ table = METHODS, cli, log, held = createHeld(),
     const never = async () => { throw fail("bad_scope"); };
     let own: string | null;
     try {
-      own = repositoryOf(await interpret(await cli.run(session, ["repo", "--json"], undefined, deadline), [], never, { folder: session.cwd }));
+      // The run is its own repo check; a 404 there asks whoami, so a signed-out machine says so (B-0011).
+      const ran = await cli.run(session, ["repo", "--json"], undefined, deadline);
+      own = repositoryOf(await interpret(ran, [], async () => ran, { folder: session.cwd }, () => cli.run(session, ["whoami", "--json"], undefined, deadline)));
     } catch (error) {
       // A session whose folder is no Syns repository has no folder of a repository to scope to.
       if (error instanceof SynsError && (error.reason === "no_repo" || error.reason === "no_access")) throw fail("bad_scope");
@@ -120,6 +122,7 @@ export function createDispatch({ table = METHODS, cli, log, held = createHeld(),
 
     const declared = method.reasons ?? [];
     let repoCheck: Promise<RunResult> | undefined;
+    let whoamiCheck: Promise<RunResult> | undefined;
     const context: Context = {
       sessionId,
       limits: cli.limits,
@@ -128,8 +131,10 @@ export function createDispatch({ table = METHODS, cli, log, held = createHeld(),
         const mark = provenance(sessionId);
         const env = options?.provenanceEnv ? { SYNS_INTEGRATION: mark.integration!, SYNS_RUN: mark.run!, SYNS_TRIGGER: mark.trigger! } : undefined;
         const ran = await cli.run(where, args, stdin, deadline, env);
-        // The 404 rule's `repo` runs at most once per call. S3.5
-        return interpret(ran, declared, () => (repoCheck ??= cli.run(where, ["repo", "--json"], undefined, deadline)), { folder: session.cwd, ...(method.notFound ? { notFound: method.notFound } : {}) });
+        // The 404 rule's `repo` runs at most once per call, and not again after `repo` itself; then `whoami` once. S3.5, B-0011
+        const repoCheckOf = () => (repoCheck ??= args.join(" ") === "repo --json" ? Promise.resolve(ran) : cli.run(where, ["repo", "--json"], undefined, deadline));
+        const whoamiCheckOf = () => (whoamiCheck ??= cli.run(where, ["whoami", "--json"], undefined, deadline));
+        return interpret(ran, declared, repoCheckOf, { folder: session.cwd, ...(method.notFound ? { notFound: method.notFound } : {}) }, whoamiCheckOf);
       },
     };
 
