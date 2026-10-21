@@ -4,20 +4,20 @@ import type { Method } from "../src/method.js";
 import type { Held } from "../src/held.js";
 import { fakeRunner } from "./fake-runner.js";
 
-export const FAST: Limits = { processMs: 20, callMs: 60, perMachine: 16, perCall: 8 };
+export const FAST: Limits = { processMs: 20, callMs: 60, perMachine: 16 };
 export const HEAD = "7ca9bc78ba047d9e7798b8d2733c254e24cfc837";
 export const OLD = "43a6f2ca62274f4dd4e43146d232379058b32cd3";
 
 type Reply = RunResult | ((request: RunRequest) => RunResult | Promise<RunResult>);
 
 /** The server half above the Runner seam, with a fake runner, a fixed resolution and a captured log. */
-export function harness(replies: Record<string, Reply> = {}, options: { table?: readonly Method[]; limits?: Limits; where?: Where | null; held?: Held } = {}) {
-  // Methods that need a newer CLI ask its version first; a current one unless a test says otherwise.
-  const runner = fakeRunner({ "--version": { exitCode: 0, stdout: "syns 0.3.13\n", stderr: "", timedOut: false, spawnError: null, overflowed: false }, ...replies });
+export function harness(replies: Record<string, Reply> = {}, options: { table?: readonly Method[]; limits?: Limits; where?: Where | null; held?: Held; now?: () => number } = {}) {
+  const runner = fakeRunner(replies);
   const log: string[] = [];
   const dispatch = createDispatch({
     ...(options.table ? { table: options.table } : {}),
     ...(options.held ? { held: options.held } : {}),
+    ...(options.now ? { now: options.now } : {}),
     cli: createCli(runner, options.limits ?? FAST),
     log: { info: (line) => log.push(line), warn: (line) => log.push(line) },
   });

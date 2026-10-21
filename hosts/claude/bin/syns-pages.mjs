@@ -12,8 +12,7 @@ const SCOPE_OUTSIDE = "scope_outside";
 const LIMITS = {
 	processMs: 2e4,
 	callMs: 25e3,
-	perMachine: 16,
-	perCall: 8
+	perMachine: 16
 };
 /**
 * The argument array of one CLI run: every option as `--option=value`, always
@@ -44,18 +43,32 @@ function createCli(runner, limits = LIMITS) {
 	const machines = /* @__PURE__ */ new Map();
 	return {
 		limits,
-		async run(where, args, stdin, deadline, env) {
+		async run(where, args, stdin, deadline, env, signal) {
+			if (signal?.aborted) return TIMED_OUT;
 			let machine = machines.get(where.hostId);
 			if (!machine) machines.set(where.hostId, machine = {
 				running: 0,
 				waiting: []
 			});
 			const slots = machine;
-			if (slots.running >= limits.perMachine) await new Promise((resolve) => slots.waiting.push(resolve));
-			else slots.running += 1;
+			if (slots.running >= limits.perMachine) {
+				if (!await new Promise((resolve) => {
+					const take = () => {
+						signal?.removeEventListener("abort", leave);
+						resolve(true);
+					};
+					const leave = () => {
+						const at = slots.waiting.indexOf(take);
+						if (at !== -1) slots.waiting.splice(at, 1);
+						resolve(false);
+					};
+					slots.waiting.push(take);
+					signal?.addEventListener("abort", leave, { once: true });
+				})) return TIMED_OUT;
+			} else slots.running += 1;
 			try {
 				const left = deadline - Date.now();
-				if (left <= 0) return TIMED_OUT;
+				if (left <= 0 || signal?.aborted) return TIMED_OUT;
 				const input = stdin === void 0 ? {} : typeof stdin === "string" ? { stdin } : { stdinBase64: stdin.toString("base64") };
 				return await runner.run({
 					hostId: where.hostId,
@@ -64,7 +77,8 @@ function createCli(runner, limits = LIMITS) {
 					args,
 					...env ? { env } : {},
 					...input,
-					timeoutMs: Math.min(limits.processMs, left)
+					timeoutMs: Math.min(limits.processMs, left),
+					...signal ? { signal } : {}
 				});
 			} finally {
 				const next = slots.waiting.shift();
@@ -73,20 +87,6 @@ function createCli(runner, limits = LIMITS) {
 			}
 		}
 	};
-}
-/** `fn` over `items`, at most `size` at once, results in the order of `items`. */
-async function pool(items, size, fn) {
-	const out = new Array(items.length);
-	let next = 0;
-	const worker = async () => {
-		while (next < items.length) {
-			const index = next;
-			next += 1;
-			out[index] = await fn(items[index], index);
-		}
-	};
-	await Promise.all(Array.from({ length: Math.min(size, items.length) }, worker));
-	return out;
 }
 //#endregion
 //#region src/errors.ts
@@ -122,19 +122,6 @@ const REASONS = {
 		code: "unavailable",
 		message: "Syns did not answer in time. Try again.",
 		meaning: "The CLI did not answer in time. Retry a read; after a write, re-read syns.repo first."
-	},
-	cli_too_old: {
-		code: "unavailable",
-		message: "The Syns command-line tool on this session's machine is too old for this. Run syns upgrade there.",
-		meaning: "The machine's syns is older than detail.need (detail.have): syns upgrade there.",
-		detail: {
-			type: "object",
-			properties: {
-				need: { type: "string" },
-				have: { type: ["string", "null"] }
-			},
-			required: ["need", "have"]
-		}
 	},
 	folder_out_of_place: {
 		code: "unavailable",
@@ -263,7 +250,7 @@ const REASONS = {
 		meaning: "A path named twice across files and deletions, or no change at all."
 	}
 };
-/** bad_scope's sentence when the CLI says the placed folder is not shared yet (CLI 0.3.14, D63). */
+/** bad_scope's sentence when the CLI says the placed folder is not shared yet (D63). */
 const NOT_SHARED_YET = "This folder is not shared yet: share it first, then add people to it. If it was just shared, try again after the next sync.";
 /** Sentences for failures that carry a code and no reason. */
 const CODE_MESSAGES = {
@@ -332,6 +319,8 @@ function redact(text, where = {}) {
 	const absolute = String.raw`(?:file:\/\/|\/|[A-Za-z]:[\\/]|\\\\)`;
 	return out.replace(new RegExp(String.raw`(['"` + "`" + String.raw`])${absolute}[^'"` + "`" + String.raw`\n]*\1`, "g"), (_, quote) => `${quote}<path>${quote}`).replace(new RegExp(String.raw`file:\/\/${PATH_CHAR}*`, "g"), "<path>").replace(new RegExp(String.raw`\\\\${PATH_CHAR}+`, "g"), "<path>").replace(new RegExp(String.raw`(?<![\w])[A-Za-z]:[\\/]${PATH_CHAR}*`, "g"), "<path>").replace(new RegExp(String.raw`(?<![\w.:/<\\])\/${PATH_CHAR}+`, "g"), "<path>");
 }
+/** The first line of standard error that starts `error:`, or nothing. */
+const stderrError = (stderr) => stderr.split("\n").find((line) => line.startsWith("error:")) ?? "";
 /** Whether `whoami --json` says nobody is logged in on the machine (HOST_FACTS §8). Anything else, a timeout included, is no. */
 async function signedOut(runWhoami) {
 	const run = await runWhoami();
@@ -389,7 +378,7 @@ async function interpret(run, declared, runRepo, where = {}, runWhoami) {
 	if (exit === 1 && error.startsWith("payload_too_large")) throw fail("too_large", { max: FILE_MAX });
 	if (exit === 1 && error.includes("path not found at version")) throw new SynsError("not_found");
 	if (exit === 1 && error.includes("version not found")) throw new SynsError("not_found", { subject: "version" });
-	const words = redact(error.trim(), where);
+	const words = redact((error || stderrError(run.stderr)).trim(), where);
 	throw new SynsError("handler_error", {
 		...words ? { message: words.slice(0, 300) } : {},
 		log: `exit=${exit} output=${(run.stdout + run.stderr).trim().slice(0, 500)}`
@@ -418,7 +407,6 @@ const EVERY_WRITE = ["stale_head", "checkout_dirty"];
 /** Every reason a method can answer with: the common ones, a write's, and its own. S3.2 */
 const reasonsOf = (method) => [
 	...EVERY_METHOD,
-	...method.minCli || method.minCliFor ? ["cli_too_old"] : [],
 	...fileWrite(method) ? EVERY_CHANGE : [],
 	...fileWrite(method) && !method.unguarded ? EVERY_WRITE : [],
 	...method.reasons ?? []
@@ -596,7 +584,7 @@ A folder placed in a repository (a tool) is all the page sees: every \`path\` is
 ## Loading a wiki
 
 1. \`syns.ls { recursive: true }\`: every file with its \`blob\`, and the \`version\` listed. \`truncated: true\` means incomplete: list folder by folder.
-2. \`syns.readMany { paths, version }\` in groups of up to 64, passing that \`version\`; follow \`deferred\` the same way. \`too_large\` carries \`size\` (the bound counts the text as JSON escapes it): read it with \`syns.read\`.
+2. \`syns.readMany { paths, version }\` in groups of up to 64, passing that \`version\`; follow \`deferred\` the same way. \`too_large\` carries \`size\` when known (the bound counts the text as JSON escapes it): read it with \`syns.read\`.
 
 300 files: one \`syns.ls\` and about five \`syns.readMany\`, inside the shared 120 calls a minute. A \`syns.read\` window's lines are joined with \`\\n\`, without \`\\r\` or a final newline: to write a file back exactly, read it with \`syns.readMany\`.
 
@@ -612,7 +600,7 @@ Every file write but \`syns.revert\` carries \`base\`, the \`version\` last read
 `;
 const SHARING = `## Sharing and people
 
-Each method acts where the CLI acts, in the page's own scope. In a placed folder: \`syns.shareInfo\`, \`syns.share\`, \`syns.unshare\`, \`syns.folderVisibility\`, \`syns.enableChecks\`. At a repository's root: \`syns.repoVisibility\`. The collaborator methods act on the scope's people: in a shared placed folder its own (CLI 0.3.14; until shared, \`bad_scope\` saying to share first; older CLIs, \`bad_scope\`); at a root the **whole repository's**, so never offer root people for one folder. Elsewhere the CLI refuses: \`bad_scope\`; show controls only where they apply (\`syns.repo\`'s \`holder\`, \`syns.shareInfo\`'s \`shared\`). \`syns.collaboratorRole\` and \`syns.collaboratorRemove\` take the \`user.id\` that \`syns.collaborators\` answers; find someone with \`syns.users\`. Roles are the CLI's; a shared folder takes \`read\` or \`write\`.
+Each method acts where the CLI acts, in the page's own scope. In a placed folder: \`syns.shareInfo\`, \`syns.share\`, \`syns.unshare\`, \`syns.folderVisibility\`, \`syns.enableChecks\`. At a repository's root: \`syns.repoVisibility\`. The collaborator methods act on the scope's people: in a shared placed folder its own (until shared, \`bad_scope\` saying to share first); at a root the **whole repository's**, so never offer root people for one folder. Elsewhere the CLI refuses: \`bad_scope\`; show controls only where they apply (\`syns.repo\`'s \`holder\`, \`syns.shareInfo\`'s \`shared\`). \`syns.collaboratorRole\` and \`syns.collaboratorRemove\` take the \`user.id\` that \`syns.collaborators\` answers; find someone with \`syns.users\`. Roles are the CLI's; a shared folder takes \`read\` or \`write\`.
 
 They act at once, with no dialog, and reach other people. So:
 
@@ -694,7 +682,7 @@ function buildGuide(table) {
 //#endregion
 //#region src/declaration.ts
 /** The plugin's version, as declared to the host. A test holds it equal to package.json's. */
-const VERSION = "0.8.7";
+const VERSION = "0.9.0";
 /** threadPagesContributions, generated from the table. With `agentInstructions` off no fragment is declared (S4.5). */
 function buildDeclaration(table, settings) {
 	return {
@@ -791,7 +779,7 @@ const sha256 = {
 	maxLength: 64
 };
 const hash = (data) => createHash("sha256").update(data).digest("hex");
-const record$7 = (value) => typeof value === "object" && value !== null && !Array.isArray(value) ? value : {};
+const record$8 = (value) => typeof value === "object" && value !== null && !Array.isArray(value) ? value : {};
 /** Held keys: a picture read, one being gathered, one gathered whole and kept for syns.commit. */
 const readKey = (session, at, file) => `read|${session}|${at}|${file}`;
 const gatherKey = (session, file, parent, digest) => `gather|${session}|${file}|${parent}|${digest}`;
@@ -844,7 +832,7 @@ const readBinary = {
 	async procedure(params, context) {
 		let held = params.version === void 0 ? void 0 : context.held.get(readKey(context.sessionId, params.version, params.path));
 		if (!held) {
-			const out = record$7(await context.syns(buildArgs("cat", { version: params.version }, [params.path])));
+			const out = record$8(await context.syns(buildArgs("cat", { version: params.version }, [params.path])));
 			const data = typeof out.contentBase64 === "string" ? Buffer.from(out.contentBase64, "base64") : typeof out.content === "string" ? Buffer.from(out.content, "utf8") : null;
 			if (!data || typeof out.commitSha !== "string") throw new SynsError("handler_error", { log: "exit=0 cat carries neither content nor contentBase64" });
 			held = {
@@ -884,7 +872,7 @@ async function publish(params, data, context) {
 		message: params.message || `Write ${params.path} from a page`.slice(0, 500),
 		...provenance(context.sessionId)
 	}, [params.path]);
-	const out = record$7(await context.syns(args, data));
+	const out = record$8(await context.syns(args, data));
 	return {
 		complete: true,
 		received: data.length,
@@ -1020,7 +1008,7 @@ const writeBinary = {
 //#endregion
 //#region src/methods/commit.ts
 const pathsOf = (params) => [...(params.files ?? []).map((file) => file.path), ...params.deletions ?? []];
-const record$6 = (value) => typeof value === "object" && value !== null && !Array.isArray(value) ? value : {};
+const record$7 = (value) => typeof value === "object" && value !== null && !Array.isArray(value) ? value : {};
 const commit = {
 	name: "syns.commit",
 	description: "Several changes as one new version against base, all or nothing: files, each with text, base64 bytes, or an upload held by syns.writeBinary, and deletions. No path twice. Published at once.",
@@ -1102,7 +1090,7 @@ const commit = {
 			files,
 			deletions: (params.deletions ?? []).map((deleted) => ({ path: deleted }))
 		});
-		const out = record$6(await context.syns(buildArgs("commit", {
+		const out = record$7(await context.syns(buildArgs("commit", {
 			parent: params.base,
 			message: params.message || fallback,
 			...provenance(context.sessionId)
@@ -1117,7 +1105,7 @@ const commit = {
 };
 //#endregion
 //#region src/methods/diff.ts
-const record$5 = (value) => typeof value === "object" && value !== null ? value : {};
+const record$6 = (value) => typeof value === "object" && value !== null ? value : {};
 const end = {
 	type: "object",
 	properties: {
@@ -1168,18 +1156,18 @@ const diff = {
 			if (typeof head !== "string") throw new SynsError("not_found");
 			to = head;
 		}
-		const out = record$5(await context.syns(buildArgs("diff", {
+		const out = record$6(await context.syns(buildArgs("diff", {
 			from: params.from,
 			to
 		})));
-		const ends = [record$5(out.from), record$5(out.to)].map((one) => ({
+		const ends = [record$6(out.from), record$6(out.to)].map((one) => ({
 			version: one.sha,
 			number: one.version
 		}));
 		return {
 			from: ends[0],
 			to: ends[1],
-			files: Array.isArray(out.files) ? out.files.map(record$5).map((file) => ({
+			files: Array.isArray(out.files) ? out.files.map(record$6).map((file) => ({
 				path: file.path,
 				status: file.status,
 				...params.patch === true && typeof file.diff === "string" ? { patch: file.diff } : {}
@@ -1191,7 +1179,7 @@ const diff = {
 //#region src/methods/edit.ts
 const MAX_TEXT = 32768;
 const NO_NUL = "^[^\\u0000]*$";
-const record$4 = (value) => typeof value === "object" && value !== null && !Array.isArray(value) ? value : {};
+const record$5 = (value) => typeof value === "object" && value !== null && !Array.isArray(value) ? value : {};
 const edit = {
 	name: "syns.edit",
 	description: "Replace old with new in one file, as a new version made against base. old must occur exactly once unless replaceAll is true. old equal to new changes nothing: changed 0. Both at most 32,768 characters.",
@@ -1239,7 +1227,7 @@ const edit = {
 	reasons: ["no_match", "many_matches"],
 	async procedure(params, context) {
 		if (params.old === params.new) {
-			const newest = record$4(record$4(await context.syns(buildArgs("history", { limit: 1 }))).data?.[0]);
+			const newest = record$5(record$5(await context.syns(buildArgs("history", { limit: 1 }))).data?.[0]);
 			if (typeof newest.sha !== "string" || typeof newest.version !== "number") throw new SynsError("handler_error", { log: "exit=0 history names no head" });
 			if (newest.sha !== params.base) throw fail("stale_head", { current: newest.sha });
 			return {
@@ -1248,7 +1236,7 @@ const edit = {
 				changed: 0
 			};
 		}
-		const out = record$4(await context.syns(buildArgs("edit", {
+		const out = record$5(await context.syns(buildArgs("edit", {
 			old: params.old,
 			new: params.new,
 			"replace-all": params.replaceAll === true,
@@ -1266,7 +1254,7 @@ const edit = {
 //#endregion
 //#region src/methods/glob.ts
 const PAGE$1 = 2e3;
-const record$3 = (value) => typeof value === "object" && value !== null ? value : {};
+const record$4 = (value) => typeof value === "object" && value !== null ? value : {};
 const glob = {
 	name: "syns.glob",
 	description: "The files whose whole path matches a glob pattern such as notes/**/*.md, under path (default root), at version (default head). No match: an empty list. Paged: up to 2000 from offset; nextOffset is null on the last page.",
@@ -1331,7 +1319,7 @@ const glob = {
 		version: params.version
 	}, [params.pattern]) }),
 	shape: (out, params) => {
-		const all = Array.isArray(out.matches) ? out.matches.map(record$3) : void 0;
+		const all = Array.isArray(out.matches) ? out.matches.map(record$4) : void 0;
 		const offset = params.offset ?? 0;
 		const end = offset + (params.limit ?? PAGE$1);
 		return {
@@ -1350,10 +1338,8 @@ const glob = {
 };
 //#endregion
 //#region src/methods/grep.ts
-/** The first Syns CLI with `grep --offset` and `nextOffset` (issue 260, D-156). */
-const OFFSET_CLI = "0.3.20";
-const record$2 = (value) => typeof value === "object" && value !== null ? value : {};
-const rows = (value) => Array.isArray(value) ? value.map(record$2) : void 0;
+const record$3 = (value) => typeof value === "object" && value !== null ? value : {};
+const rows = (value) => Array.isArray(value) ? value.map(record$3) : void 0;
 const lineAndText = {
 	type: "object",
 	properties: {
@@ -1489,7 +1475,6 @@ const grep = {
 	maxRequestBytes: K64,
 	maxResponseBytes: M1,
 	reasons: ["bad_pattern"],
-	minCliFor: (params) => (params.offset ?? 0) > 0 ? OFFSET_CLI : void 0,
 	check(params) {
 		if ((params.offset ?? 0) > 0 && params.version === void 0) throw new SynsError("invalid_params", { message: "Invalid parameters for syns.grep: a later page needs the version of the first" });
 		if ((params.headLimit ?? 0) > mostRows(params)) throw new SynsError("invalid_params", { message: `Invalid parameters for syns.grep: with this output and context, headLimit can be at most ${mostRows(params)}` });
@@ -1544,7 +1529,7 @@ const grep = {
 //#endregion
 //#region src/methods/history.ts
 const MAX_PATHS = 200;
-const record$1 = (value) => typeof value === "object" && value !== null ? value : {};
+const record$2 = (value) => typeof value === "object" && value !== null ? value : {};
 const history = {
 	name: "syns.history",
 	description: "Newest versions first: who or what made each, and the paths it changed. A page's commit has by.integration syns-pages and by.trigger page. No paging past limit (default 20); total says how many.",
@@ -1619,9 +1604,9 @@ const history = {
 	}) }),
 	shape: (out, params) => ({
 		total: out.total,
-		entries: Array.isArray(out.data) ? out.data.map(record$1).map((row) => {
+		entries: Array.isArray(out.data) ? out.data.map(record$2).map((row) => {
 			const paths = Array.isArray(row.filesChanged) ? row.filesChanged : typeof params.path === "string" ? [params.path] : void 0;
-			const provenance = record$1(row.provenance);
+			const provenance = record$2(row.provenance);
 			return {
 				version: row.sha,
 				number: row.version,
@@ -1643,10 +1628,13 @@ const history = {
 //#endregion
 //#region src/methods/ls.ts
 const PAGE = 1500;
-const record = (value) => typeof value === "object" && value !== null ? value : {};
+const LINES_PAGE = 9e3;
+const record$1 = (value) => typeof value === "object" && value !== null ? value : {};
+/** One entry as one string: `path\tblob\tsize`, a folder's blob and size empty. */
+const line = (entry) => `${String(entry.path)}\t${entry.sha ?? ""}\t${entry.size ?? ""}`;
 const ls = {
 	name: "syns.ls",
-	description: "Files and folders under path (default root), one level or recursive, at version (default head). blob changes exactly when content does. Paged: up to 1500 entries from offset; nextOffset is null on the last page. Pass the version on.",
+	description: "Files and folders under path (default root), one level or recursive, at version (default head). blob changes exactly when content does. Paged from offset: 1500 entries, or 9000 with format lines; nextOffset null at the end. Pass version on.",
 	effect: "read",
 	params: object({
 		path,
@@ -1659,11 +1647,19 @@ const ls = {
 		limit: {
 			type: "integer",
 			minimum: 1,
-			maximum: PAGE
+			maximum: LINES_PAGE,
+			description: "At most 1500, or 9000 with format lines."
+		},
+		format: {
+			type: "string",
+			enum: ["lines"],
+			maxLength: 5,
+			description: "lines: each entry one string path\\tblob\\tsize in lines, a folder's blob and size empty."
 		}
 	}),
 	result: {
 		type: "object",
+		description: "entries, or with format lines, lines.",
 		properties: {
 			version,
 			number: { type: "integer" },
@@ -1690,6 +1686,10 @@ const ls = {
 						"blob"
 					]
 				}
+			},
+			lines: {
+				type: "array",
+				items: { type: "string" }
 			}
 		},
 		required: [
@@ -1697,32 +1697,61 @@ const ls = {
 			"number",
 			"truncated",
 			"total",
-			"nextOffset",
-			"entries"
+			"nextOffset"
 		]
 	},
 	maxRequestBytes: K64,
 	maxResponseBytes: M1,
+	check(params) {
+		if (params.format !== "lines" && (params.limit ?? 0) > PAGE) throw new SynsError("invalid_params", { message: `Invalid parameters for syns.ls: limit can be at most ${PAGE}, or ${LINES_PAGE} with format lines` });
+	},
 	command: (params) => ({ args: buildArgs("ls", {
 		recursive: params.recursive === true,
 		version: params.version
 	}, params.path === void 0 ? [] : [params.path]) }),
 	shape: (out, params) => {
-		const all = Array.isArray(out.entries) ? out.entries.map(record) : void 0;
+		if (!Array.isArray(out.entries)) throw new SynsError("handler_error", { log: "exit=0 the result lacks what the specification requires at $.entries" });
+		const all = out.entries.map(record$1);
 		const offset = params.offset ?? 0;
-		const end = offset + (params.limit ?? PAGE);
-		return {
+		const common = {
 			version: out.commitSha,
 			number: out.version,
 			truncated: out.truncated,
-			total: all?.length,
-			nextOffset: all === void 0 ? void 0 : end < all.length ? end : null,
-			entries: all?.slice(offset, end).map((entry) => ({
-				path: entry.path,
-				type: entry.type,
-				size: entry.size ?? null,
-				blob: entry.sha ?? null
-			}))
+			total: all.length
+		};
+		if (params.format !== "lines") {
+			const end = offset + (params.limit ?? PAGE);
+			return {
+				...common,
+				nextOffset: end < all.length ? end : null,
+				entries: all.slice(offset, end).map((entry) => ({
+					path: entry.path,
+					type: entry.type,
+					size: entry.size ?? null,
+					blob: entry.sha ?? null
+				}))
+			};
+		}
+		const end = Math.min(all.length, offset + (params.limit ?? LINES_PAGE));
+		const room = 1047552 - bytes({
+			...common,
+			nextOffset: all.length,
+			lines: []
+		});
+		const lines = [];
+		let used = 0;
+		for (let at = offset; at < end; at += 1) {
+			const one = line(all[at]);
+			const size = bytes(one) + 1;
+			if (lines.length > 0 && used + size > room) break;
+			lines.push(one);
+			used += size;
+		}
+		const next = offset + lines.length;
+		return {
+			...common,
+			nextOffset: next < all.length ? next : null,
+			lines
 		};
 	}
 };
@@ -1841,7 +1870,6 @@ const place = {
 	effect: "contributed-write",
 	unguarded: true,
 	atRoot: true,
-	minCli: "0.3.6",
 	params: object({
 		template,
 		path,
@@ -1916,6 +1944,7 @@ const place = {
 };
 //#endregion
 //#region src/methods/readMany.ts
+const record = (value) => typeof value === "object" && value !== null && !Array.isArray(value) ? value : {};
 const readMany = {
 	name: "syns.readMany",
 	description: "Up to 64 whole files in one call, all at one version (default the head). Each entry is a text or an error: not_found, too_large, not_text. deferred lists paths that did not fit: ask again with them and the returned version.",
@@ -1937,7 +1966,7 @@ const readMany = {
 				type: "array",
 				items: {
 					type: "object",
-					description: "Either path, text, size and blob, or path and error; too_large and not_text also carry size and blob.",
+					description: "Either path, text, size and blob, or path and error. not_text carries size and blob; too_large does when known.",
 					properties: {
 						path: { type: "string" },
 						text: { type: "string" },
@@ -1972,44 +2001,63 @@ const readMany = {
 		if (new Set(params.paths).size !== params.paths.length) throw new SynsError("invalid_params", { message: "Invalid parameters for syns.readMany: paths must be distinct" });
 	},
 	async procedure(params, context) {
-		let at = params.version;
-		if (at === void 0) {
-			const head = (await context.syns(buildArgs("repo")))?.commitSha;
-			if (typeof head !== "string") throw new SynsError("not_found");
-			at = head;
-		}
-		const entries = await pool(params.paths, context.limits.perCall, async (filePath) => {
-			try {
-				const out = await context.syns(buildArgs("cat", { version: at }, [filePath]));
-				if (typeof out?.content !== "string") return {
-					path: filePath,
-					error: "not_text",
-					size: out?.size,
-					blob: out?.sha ?? null
-				};
-				return {
-					path: filePath,
-					text: out.content,
-					size: out.size,
-					blob: out.sha ?? null
-				};
-			} catch (error) {
-				if (error instanceof SynsError && error.code === "not_found" && error.subject !== "version") return {
-					path: filePath,
-					error: "not_found"
-				};
-				if (error instanceof SynsError && error.code === "response_too_large") return {
-					path: filePath,
-					error: "too_large"
-				};
-				throw error;
-			}
-		});
 		const room = readMany.maxResponseBytes - ENVELOPE - bytes({
-			version: at,
+			version: "0".repeat(40),
 			files: [],
 			deferred: params.paths
 		});
+		const out = record(await context.syns(buildArgs("cat", {
+			version: params.version,
+			"paths-from": "-",
+			"max-bytes": room
+		}), `${params.paths.join("\n")}\n`));
+		const served = new Map(Array.isArray(out.files) ? out.files.map(record).map((entry) => [entry.path, entry]) : []);
+		const later = new Set(Array.isArray(out.deferred) ? out.deferred : []);
+		const entries = [];
+		const deferredByCli = [];
+		for (const filePath of params.paths) {
+			const entry = served.get(filePath);
+			if (entry === void 0) {
+				if (!later.has(filePath)) throw new SynsError("handler_error", { log: "exit=0 the CLI's files answer leaves a path out" });
+				deferredByCli.push(filePath);
+				continue;
+			}
+			const error = record(entry.error);
+			if (entry.error !== void 0) {
+				if (error.code === "NOT_FOUND") {
+					entries.push({
+						path: filePath,
+						error: "not_found"
+					});
+					continue;
+				}
+				const words = context.redact(String(error.message ?? "").trim());
+				throw new SynsError("handler_error", {
+					...words ? { message: words.slice(0, 300) } : {},
+					log: `readMany per-file ${String(error.code).slice(0, 64)}`
+				});
+			}
+			if (typeof entry.content !== "string") entries.push({
+				path: filePath,
+				error: "not_text",
+				size: entry.size,
+				blob: entry.sha ?? null
+			});
+			else entries.push({
+				path: filePath,
+				text: entry.content,
+				size: entry.size,
+				blob: entry.sha ?? null
+			});
+		}
+		if (entries.length === 0 && deferredByCli.length > 0) return {
+			version: out.commitSha,
+			files: [{
+				path: deferredByCli[0],
+				error: "too_large"
+			}],
+			deferred: deferredByCli.slice(1)
+		};
 		const files = [];
 		const deferred = [];
 		let used = 0;
@@ -2029,9 +2077,9 @@ const readMany = {
 			used += size;
 		}
 		return {
-			version: at,
+			version: out.commitSha,
 			files,
-			deferred
+			deferred: [...deferred, ...deferredByCli]
 		};
 	}
 };
@@ -2061,7 +2109,7 @@ const repo = {
 			},
 			number: {
 				...nullable("integer"),
-				description: "The head as a number, for display. Present where the CLI reports it: CLI 0.3.6 and later."
+				description: "The head as a number, for display."
 			},
 			role: nullable("string"),
 			visibility: { type: "string" },
@@ -2186,7 +2234,6 @@ const enableChecks = {
 	description: "Turn on, for everyone working in the holder, the checks this placed folder recorded from its template; they run on every push. enabled: [] makes no version. Only from the reader's own press, naming the commands.",
 	effect: "contributed-write",
 	unguarded: true,
-	minCli: "0.3.6",
 	params: object({}),
 	result: {
 		type: "object",
@@ -2258,7 +2305,6 @@ const explore = {
 	name: "syns.explore",
 	description: "Public Syns repositories matching query, every tag in tags (syns-app for app templates) and status, limit at a time from offset; total says how many.",
 	effect: "read",
-	minCli: "0.3.6",
 	params: object({
 		query: {
 			type: "string",
@@ -2311,8 +2357,7 @@ const explore = {
 * command each, in the page's scope folder. The CLI decides whose
 * collaborators they are and which roles it takes; inside a placed folder it
 * answers holder root required, which comes back as bad_scope (HOST_FACTS §17).
-* And `syns users`, to find someone. Nothing here needs more than the plugin's
-* oldest CLI (0.3.3).
+* And `syns users`, to find someone.
 */
 const ROLE = {
 	type: "string",
@@ -2379,7 +2424,7 @@ const collaboratorsResult = {
 };
 const collaborators = {
 	name: "syns.collaborators",
-	description: "Who has access to this scope, and each one's role: a shared placed folder's own people (CLI 0.3.14), or at a root the whole repository's. limit at a time from offset; total says how many.",
+	description: "Who has access to this scope, and each one's role: a shared placed folder's own people, or at a root the whole repository's. limit at a time from offset; total says how many.",
 	effect: "read",
 	params: object({
 		limit,
@@ -2397,7 +2442,7 @@ const collaborators = {
 };
 const collaboratorAdd = {
 	name: "syns.collaboratorAdd",
-	description: "Give a person, by Syns username or e-mail, a role on this scope: a shared placed folder (CLI 0.3.14), or at a root the whole repository. Only from the reader's own press on a control naming the person, role and scope.",
+	description: "Give a person, by Syns username or e-mail, a role on this scope: a shared placed folder, or at a root the whole repository. Only from the reader's own press on a control naming the person, role and scope.",
 	effect: "contributed-write",
 	sharing: true,
 	params: object({
@@ -2507,8 +2552,7 @@ const users = {
 * run in the page's scope folder, its JSON passed on. The folder commands name
 * `.`, the folder the run stands in; at a repository's root the CLI refuses
 * that, and `repo --visibility` is refused inside a placed folder: both come
-* back as bad_scope (HOST_FACTS §17). share and unshare need CLI 0.3.11, the
-* first to take `.` (HOST_FACTS §15); share --visibility came in 0.3.12.
+* back as bad_scope (HOST_FACTS §17).
 */
 /** The repository record the CLI prints for a repository or a folder's identity, as far as a page needs it. */
 const RECORD = group("record", {
@@ -2563,7 +2607,6 @@ const shareInfo = {
 	name: "syns.shareInfo",
 	description: "Whether this placed folder is shared: its identity's record when it is, the name a share would offer when not, and the reader's holderRole. share . --show. At a repository's root: bad_scope.",
 	effect: "read",
-	minCli: "0.3.11",
 	params: object({}),
 	result: shareInfoResult,
 	maxRequestBytes: K64,
@@ -2588,7 +2631,6 @@ const share = {
 	description: "Share this placed folder under an identity of its own, named name or the CLI's offer. Already shared: created false. Reaches people at once: only from the reader's own press on a control saying so.",
 	effect: "contributed-write",
 	sharing: true,
-	minCli: "0.3.11",
 	params: object({ name }),
 	result: shareResult,
 	maxRequestBytes: K64,
@@ -2619,7 +2661,6 @@ const unshare = {
 	description: "Stop sharing this placed folder: all who reached it through the folder lose access; its identity retires unless the folder has a visibility of its own. Only from the reader's own press on a control saying so.",
 	effect: "contributed-write",
 	sharing: true,
-	minCli: "0.3.11",
 	params: object({}),
 	result: unshareResult,
 	maxRequestBytes: K64,
@@ -2644,7 +2685,6 @@ const folderVisibility = {
 	description: "Give this placed folder a visibility of its own. public: anyone, signed in or not, can find and read it. There is no way back to inheriting. Only from the reader's own press on a control saying exactly that.",
 	effect: "contributed-write",
 	sharing: true,
-	minCli: "0.3.12",
 	params: object({
 		visibility,
 		name
@@ -2815,47 +2855,6 @@ const METHODS = [
 	explore,
 	users
 ];
-const parseTriple = (text) => {
-	const match = /(\d+)\.(\d+)\.(\d+)/.exec(text);
-	return match ? [
-		Number(match[1]),
-		Number(match[2]),
-		Number(match[3])
-	] : null;
-};
-const atLeast = (have, need) => {
-	for (let i = 0; i < 3; i += 1) if (have[i] !== need[i]) return have[i] > need[i];
-	return true;
-};
-function createVersions(cli, now = Date.now) {
-	const held = /* @__PURE__ */ new Map();
-	return { async of(where, deadline) {
-		const cached = held.get(where.hostId);
-		if (cached && now() - cached.at < 6e4) return {
-			text: cached.text,
-			triple: cached.triple,
-			spawnError: null
-		};
-		const ran = await cli.run(where, ["--version"], void 0, deadline);
-		if (ran.spawnError !== null) return {
-			text: null,
-			triple: null,
-			spawnError: ran.spawnError
-		};
-		const triple = ran.exitCode === 0 ? parseTriple(ran.stdout) : null;
-		const text = triple ? triple.join(".") : null;
-		held.set(where.hostId, {
-			at: now(),
-			text,
-			triple
-		});
-		return {
-			text,
-			triple,
-			spawnError: null
-		};
-	} };
-}
 /** An absolute path on the session's machine, POSIX or Windows (a drive letter, or a UNC path). */
 const ABSOLUTE = /^(\/|[A-Za-z]:[\\/]|\\\\)/;
 /** Where the CLI runs for the session: the folder the host passed, on its machine. Null when there is none; a malformed one throws. */
@@ -2873,36 +2872,32 @@ function sessionWhere(workspace) {
 * take the session's folder from the host, run the CLI, map the outcome. It knows no method by name.
 * spec S2.1, S2.2, S2.14, S2.18–S2.22
 */
-function createDispatch({ table = METHODS, cli, log, held = createHeld(), versions = createVersions(cli), now = Date.now }) {
+function createDispatch({ table = METHODS, cli, log, held = createHeld(), now = Date.now }) {
 	const byName = new Map(table.map((method) => [method.name, method]));
 	/** Scopes found to belong to their session's repository, each held a minute (D46): the answer is about the folder, not its contents. */
 	const confirmed = /* @__PURE__ */ new Map();
-	/** The repository a folder's `syns repo --json` names: a placed folder's holder, else its own OWNER/NAME. */
-	const repositoryOf = (out) => {
-		const doc = typeof out === "object" && out !== null ? out : {};
-		if (typeof doc.holder === "string") return doc.holder.toLowerCase();
-		return typeof doc.owner === "string" && typeof doc.name === "string" ? `${doc.owner}/${doc.name}`.toLowerCase() : null;
-	};
-	async function sameRepository(session, scoped, scope, deadline) {
+	/**
+	* D46 rule 2, as amended (D83): one run at the scope, `syns repo --within=<session folder> --json`. The CLI
+	* answers `within` from the identity files on disk (roadmap 277). Its run, when one was made, is returned: a
+	* scoped `syns.repo` answers from it (S1.10, S1.14).
+	*/
+	async function sameRepository(session, scoped, scope, deadline, signal) {
 		const key = `${session.hostId}\u0000${session.cwd}\u0000${scope}`;
 		const at = confirmed.get(key);
-		if (at !== void 0 && now() - at < 6e4) return;
-		const never = async () => {
-			throw fail("bad_scope");
-		};
-		let own;
+		if (at !== void 0 && now() - at < 6e4) return void 0;
+		const ran = await cli.run(scoped, buildArgs("repo", { within: session.cwd }), void 0, deadline, void 0, signal);
+		let out;
 		try {
-			const ran = await cli.run(session, ["repo", "--json"], void 0, deadline);
-			own = repositoryOf(await interpret(ran, [], async () => ran, { folder: session.cwd }, () => cli.run(session, ["whoami", "--json"], void 0, deadline)));
+			out = await interpret(ran, [], async () => ran, { folder: session.cwd }, () => cli.run(session, ["whoami", "--json"], void 0, deadline, void 0, signal));
 		} catch (error) {
 			if (error instanceof SynsError && (error.reason === "no_repo" || error.reason === "no_access")) throw fail("bad_scope");
 			throw error;
 		}
-		const theirs = repositoryOf(await interpret(await cli.run(scoped, ["repo", "--json"], void 0, deadline), [], never, { folder: session.cwd }));
-		if (own === null || theirs !== own) throw fail("bad_scope");
+		if (out?.within !== true) throw fail("bad_scope");
 		confirmed.set(key, now());
+		return ran;
 	}
-	async function run(method, params, sessionId, scope, workspace, deadline) {
+	async function run(method, params, sessionId, scope, workspace, deadline, signal) {
 		const problem = validate(method.params, params);
 		if (problem) throw new SynsError("invalid_params", { message: `Invalid parameters for ${method.name} at ${problem}` });
 		method.check?.(params);
@@ -2914,24 +2909,15 @@ function createDispatch({ table = METHODS, cli, log, held = createHeld(), versio
 			cwd: `${session.cwd.replace(/\/+$/, "")}/${scope}`,
 			within: session.cwd
 		};
-		if (where !== session) await sameRepository(session, where, scope, deadline);
-		const minCli = method.minCli ?? method.minCliFor?.(params);
-		if (minCli) {
-			const need = parseTriple(minCli);
-			const found = await versions.of(where, deadline);
-			if (found.spawnError === "cli_not_found") throw fail("cli_missing");
-			if (!found.triple || !atLeast(found.triple, need)) throw fail("cli_too_old", {
-				need: minCli,
-				have: found.text
-			});
-		}
+		const checked = where !== session ? await sameRepository(session, where, scope, deadline, signal) : void 0;
 		const declared = method.reasons ?? [];
-		let repoCheck;
+		let repoCheck = checked && Promise.resolve(checked);
 		let whoamiCheck;
 		const context = {
 			sessionId,
 			limits: cli.limits,
 			held,
+			redact: (text) => redact(text, { folder: session.cwd }),
 			async syns(args, stdin, options) {
 				const mark = provenance(sessionId);
 				const env = options?.provenanceEnv ? {
@@ -2939,9 +2925,10 @@ function createDispatch({ table = METHODS, cli, log, held = createHeld(), versio
 					SYNS_RUN: mark.run,
 					SYNS_TRIGGER: mark.trigger
 				} : void 0;
-				const ran = await cli.run(where, args, stdin, deadline, env);
-				const repoCheckOf = () => repoCheck ??= args.join(" ") === "repo --json" ? Promise.resolve(ran) : cli.run(where, ["repo", "--json"], void 0, deadline);
-				const whoamiCheckOf = () => whoamiCheck ??= cli.run(where, ["whoami", "--json"], void 0, deadline);
+				const isRepo = args.join(" ") === "repo --json" && stdin === void 0 && env === void 0;
+				const ran = isRepo && checked ? checked : await cli.run(where, args, stdin, deadline, env, signal);
+				const repoCheckOf = () => repoCheck ??= isRepo ? Promise.resolve(ran) : cli.run(where, ["repo", "--json"], void 0, deadline, void 0, signal);
+				const whoamiCheckOf = () => whoamiCheck ??= cli.run(where, ["whoami", "--json"], void 0, deadline, void 0, signal);
 				return interpret(ran, declared, repoCheckOf, {
 					folder: session.cwd,
 					...method.notFound ? { notFound: method.notFound } : {}
@@ -2974,13 +2961,17 @@ function createDispatch({ table = METHODS, cli, log, held = createHeld(), versio
 		const scope = typeof rawScope === "string" && rawScope !== "" ? rawScope.startsWith("/") ? rawScope : rawScope.replace(/\/+$/, "") : null;
 		if (scope !== null && validate(path, scope)) return toAnswer(fail("bad_scope"));
 		const params = call.params ?? {};
+		const controller = new AbortController();
 		let timer;
 		const limit = new Promise((_, reject) => {
-			timer = setTimeout(() => reject(fail("timeout")), cli.limits.callMs);
+			timer = setTimeout(() => {
+				controller.abort();
+				reject(fail("timeout"));
+			}, cli.limits.callMs);
 		});
 		let outcome = "ok";
 		try {
-			const work = run(method, params, sessionId, scope, call.caller?.workspace, Date.now() + cli.limits.callMs);
+			const work = run(method, params, sessionId, scope, call.caller?.workspace, Date.now() + cli.limits.callMs, controller.signal);
 			work.catch(() => void 0);
 			return {
 				ok: true,
@@ -2993,6 +2984,7 @@ function createDispatch({ table = METHODS, cli, log, held = createHeld(), versio
 			return toAnswer(error);
 		} finally {
 			clearTimeout(timer);
+			controller.abort();
 			if (method.effect === "contributed-write") log.info(`${method.name} session=${sessionId ?? "none"} paths=${pathCount(method, params)} outcome=${outcome}`);
 		}
 	};
@@ -3044,8 +3036,24 @@ async function findSyns(synsPath, env = process.env, home = homedir()) {
 	}
 	return null;
 }
-/** One process, started directly with an argument array, never through a shell. S2.10 */
-function runSyns(bin, args, cwd, stdin, timeoutMs, signal, provenance) {
+/** What a run answers when its call was aborted before it started (S2.14). */
+const NOT_STARTED = {
+	exitCode: null,
+	stdout: "",
+	stderr: "",
+	timedOut: true,
+	spawnError: null,
+	overflowed: false
+};
+/**
+* One process, started directly with an argument array, never through a shell. S2.10
+*
+* `caller` is the host's name, set as SYNS_CALLER over anything inherited or passed, so every request the CLI sends
+* says which page host made it (S2.24, D83). `signal` aborting stops the process as its time limit does; it is
+* listened to here and not handed to spawn, whose abort would SIGTERM the process and end as a spawn error.
+*/
+function runSyns(bin, args, cwd, stdin, timeoutMs, signal, caller, provenance) {
+	if (signal.aborted) return Promise.resolve(NOT_STARTED);
 	return new Promise((resolve) => {
 		const out = [];
 		const err = [];
@@ -3058,6 +3066,7 @@ function runSyns(bin, args, cwd, stdin, timeoutMs, signal, provenance) {
 			if (settled) return;
 			settled = true;
 			clearTimeout(timer);
+			signal.removeEventListener("abort", abort);
 			resolve({
 				exitCode,
 				stdout: Buffer.concat(out).toString("utf8"),
@@ -3077,9 +3086,9 @@ function runSyns(bin, args, cwd, stdin, timeoutMs, signal, provenance) {
 			env: {
 				...process.env,
 				NO_COLOR: "1",
-				...provenance ?? {}
-			},
-			signal
+				...provenance ?? {},
+				SYNS_CALLER: caller
+			}
 		});
 		const stop = () => {
 			child.kill("SIGKILL");
@@ -3091,6 +3100,11 @@ function runSyns(bin, args, cwd, stdin, timeoutMs, signal, provenance) {
 			timedOut = true;
 			stop();
 		}, timeoutMs);
+		const abort = () => {
+			timedOut = true;
+			stop();
+		};
+		signal.addEventListener("abort", abort, { once: true });
 		child.stdout.on("data", (chunk) => {
 			if (overflowed) return;
 			if (outBytes + chunk.length > 41943040) {
@@ -3114,6 +3128,8 @@ function runSyns(bin, args, cwd, stdin, timeoutMs, signal, provenance) {
 }
 //#endregion
 //#region hosts/claude/runner.ts
+/** The name every request of the CLI's carries in its User-Agent on Claude Code (S2.24, D83; bartsoj/syns D-238). */
+const CALLER = "claude-pages";
 const refused = (spawnError) => ({
 	exitCode: null,
 	stdout: "",
@@ -3128,7 +3144,7 @@ const refused = (spawnError) => ({
 * slices. `hostId` is ignored: there is one machine.
 */
 function createLocalRunner(synsPath) {
-	return { async run({ cwd, within, args, env, stdin, stdinBase64, timeoutMs }) {
+	return { async run({ cwd, within, args, env, stdin, stdinBase64, timeoutMs, signal }) {
 		let folder = cwd;
 		if (within !== void 0) {
 			const resolved = await scopeFolder(cwd, within);
@@ -3138,7 +3154,7 @@ function createLocalRunner(synsPath) {
 		const bin = await findSyns(synsPath);
 		if (!bin) return refused(CLI_NOT_FOUND);
 		const input = stdinBase64 === void 0 ? stdin : Buffer.from(stdinBase64, "base64");
-		return runSyns(bin, args, folder, input, timeoutMs, new AbortController().signal, env);
+		return runSyns(bin, args, folder, input, timeoutMs, signal ?? new AbortController().signal, CALLER, env);
 	} };
 }
 //#endregion
@@ -3217,7 +3233,7 @@ async function serve(options) {
 	const { log } = options;
 	const control = controlOver(options.socket, options.token);
 	const invoke = createDispatch({
-		cli: createCli(createLocalRunner(options.synsPath)),
+		cli: createCli(createLocalRunner(options.synsPath), options.limits ?? LIMITS),
 		log
 	});
 	const declaration = buildDeclaration(METHODS, { agentInstructions: options.agentInstructions });

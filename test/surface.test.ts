@@ -10,7 +10,7 @@ import { SAMPLES, failureOf, harness, resultOf } from "./harness.js";
  * passed on, its refusals the CLI's.
  */
 
-const argsOf = (h: ReturnType<typeof harness>) => h.runner.calls.filter((call) => call.args[0] !== "--version").map((call) => call.args);
+const argsOf = (h: ReturnType<typeof harness>) => h.runner.calls.map((call) => call.args);
 const NEW = ["syns.shareInfo", "syns.share", "syns.unshare", "syns.folderVisibility", "syns.repoVisibility", "syns.collaborators", "syns.collaboratorAdd", "syns.collaboratorRole", "syns.collaboratorRemove", "syns.enableChecks", "syns.explore", "syns.users"];
 /** Every reply a new method could need, by verb; collaborators told apart by subcommand. */
 const ANY = {
@@ -31,19 +31,20 @@ describe("the page surface (S6.1–S6.3, A62, A63)", () => {
       await h.call(method.name, SAMPLES[method.name]);
       for (const call of h.runner.calls) {
         const [verb, sub] = call.args;
-        seen.add(verb === "collaborators" && sub && !sub.startsWith("-") ? `${verb} ${sub}` : verb === "repo" ? `repo ${call.args.filter((arg) => arg.startsWith("--")).map((arg) => arg.split("=")[0]).sort().join(" ")}` : verb!);
+        const flags = `${verb} ${call.args.filter((arg) => arg.startsWith("--")).map((arg) => arg.split("=")[0]).sort().join(" ")}`;
+        seen.add(verb === "collaborators" && sub && !sub.startsWith("-") ? `${verb} ${sub}` : verb === "repo" || (verb === "cat" && call.args.some((arg) => arg.startsWith("--paths-from"))) ? flags : verb!);
       }
     }
-    const allowed = ["--version", "repo --json", "repo --json --visibility", "whoami", "ls", "cat", "read", "glob", "grep", "history", "diff", "write", "edit", "rm", "commit", "revert", "place", "status", "share", "unshare", "collaborators", "collaborators add", "collaborators role", "collaborators remove", "enable-checks", "explore", "users"];
+    const allowed = ["repo --json", "repo --json --visibility", "repo --json --within", "whoami", "ls", "cat", "cat --json --max-bytes --paths-from", "read", "glob", "grep", "history", "diff", "write", "edit", "rm", "commit", "revert", "place", "status", "share", "unshare", "collaborators", "collaborators add", "collaborators role", "collaborators remove", "enable-checks", "explore", "users"];
     for (const one of seen) expect(allowed, one).toContain(one);
     for (const never of ["login", "logout", "upgrade", "delete", "push", "pull", "sync", "resolution", "fork", "repos", "teams", "links", "user", "forks"]) expect(seen.has(never), never).toBe(false);
   });
 
-  it("each new method runs exactly one CLI command, besides the minute-held --version, in the session's folder", async () => {
+  it("each new method runs exactly one CLI command in the session's folder", async () => {
     for (const name of NEW) {
       const h = harness(ANY);
       expect((await h.call(name, SAMPLES[name])).ok, name).toBe(true);
-      const runs = h.runner.calls.filter((call) => call.args[0] !== "--version");
+      const runs = h.runner.calls;
       expect(runs, name).toHaveLength(1);
       expect(runs[0]!.cwd, name).toBe("/work/checkout");
     }
@@ -51,7 +52,7 @@ describe("the page surface (S6.1–S6.3, A62, A63)", () => {
 
   it("runs in the document's scope folder when one is set (S6.3)", async () => {
     const ROOT = { owner: "acme", name: "work", commitSha: "7ca9bc78ba047d9e7798b8d2733c254e24cfc837", version: 5, role: "owner", visibility: "private", fileCount: 40 };
-    const h = harness({ share: rec("share.show.shared.0313"), repo: (request: RunRequest) => ok(request.cwd === "/work/checkout" ? ROOT : { ...ROOT, holder: "acme/work", path: "q3-plan" }) });
+    const h = harness({ share: rec("share.show.shared.0313"), repo: (request: RunRequest) => ok({ ...ROOT, holder: "acme/work", path: "q3-plan", within: request.args.includes("--within=/work/checkout") }) });
     const answer = await h.invoke({ method: "syns.shareInfo", params: {}, caller: { sessionId: "thr_page", scope: "q3-plan" }, requestId: "r" });
     expect(answer.ok).toBe(true);
     expect(h.runner.calls.find((call) => call.args[0] === "share")!.cwd).toBe("/work/checkout/q3-plan");
@@ -102,12 +103,7 @@ describe("sharing a placed folder", () => {
     }
     expect(failureOf(await harness({ "enable-checks": rec("enable-checks.root.0313") }).call("syns.enableChecks"))).toMatchObject({ reason: "bad_scope" });
   });
-  it("cli_too_old below 0.3.11 for sharing, below 0.3.12 for a folder's visibility", async () => {
-    const at = (version: string) => harness({ "--version": { exitCode: 0, stdout: `syns ${version}\n`, stderr: "", timedOut: false, spawnError: null, overflowed: false }, share: rec("share.visibility.0313") });
-    expect(failureOf(await at("0.3.10").call("syns.share"))).toMatchObject({ reason: "cli_too_old", detail: { need: "0.3.11", have: "0.3.10" } });
-    expect(failureOf(await at("0.3.11").call("syns.folderVisibility", { visibility: "public" }))).toMatchObject({ reason: "cli_too_old", detail: { need: "0.3.12", have: "0.3.11" } });
-    expect((await at("0.3.12").call("syns.folderVisibility", { visibility: "public" })).ok).toBe(true);
-  });
+
 });
 
 describe("visibility (A68)", () => {
@@ -196,7 +192,7 @@ describe("fix round 1 (review thr_2sffsq2zs6)", () => {
   const ROOT = { owner: "acme", name: "work", commitSha: "7ca9bc78ba047d9e7798b8d2733c254e24cfc837", version: 5, role: "owner", visibility: "private", fileCount: 40 };
   const scopedReplies = {
     ...ANY,
-    repo: (request: RunRequest) => (request.args.some((arg) => arg.startsWith("--visibility")) ? rec("repo.visibility.0313") : ok(request.cwd === "/work/checkout" ? ROOT : { ...ROOT, holder: "acme/work", path: "q3-plan" })),
+    repo: (request: RunRequest) => (request.args.some((arg) => arg.startsWith("--visibility")) ? rec("repo.visibility.0313") : ok({ ...ROOT, holder: "acme/work", path: "q3-plan", within: request.args.includes("--within=/work/checkout") })),
   };
 
   it("every one of the twelve runs its command in the document's scope folder; none is atRoot (finding 5)", async () => {
@@ -205,7 +201,7 @@ describe("fix round 1 (review thr_2sffsq2zs6)", () => {
       const h = harness(scopedReplies);
       const answer = await h.invoke({ method: name, params: SAMPLES[name], caller: { sessionId: "thr_page", scope: "q3-plan" }, requestId: "r" });
       expect(answer.ok, name).toBe(true);
-      const own = h.runner.calls.filter((call) => call.args[0] !== "--version" && !(call.args[0] === "repo" && call.args.length === 2));
+      const own = h.runner.calls.filter((call) => !(call.args[0] === "repo" && call.args.some((arg) => arg.startsWith("--within="))));
       expect(own.map((call) => call.cwd), name).toEqual(["/work/checkout/q3-plan"]);
     }
   });
@@ -238,13 +234,7 @@ describe("fix round 1 (review thr_2sffsq2zs6)", () => {
     }
   });
 
-  it("enableChecks and explore need CLI 0.3.6 (findings 4, 5)", async () => {
-    for (const name of ["syns.enableChecks", "syns.explore"]) {
-      const h = harness({ ...ANY, "--version": { exitCode: 0, stdout: "syns 0.3.5\n", stderr: "", timedOut: false, spawnError: null, overflowed: false } });
-      expect(failureOf(await h.call(name, SAMPLES[name])), name).toMatchObject({ code: "unavailable", reason: "cli_too_old", detail: { need: "0.3.6", have: "0.3.5" } });
-      expect(argsOf(h), name).toEqual([]);
-    }
-  });
+
 
   it("an id of . or .., or one holding / or \\, is refused before anything runs: the CLI's client would collapse it onto the repository's route (finding 1, D60)", async () => {
     for (const name of ["syns.collaboratorRole", "syns.collaboratorRemove"]) {

@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import http from "node:http";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { createCli } from "../../src/cli.js";
+import { LIMITS, createCli, type Limits } from "../../src/cli.js";
 import { buildDeclaration } from "../../src/declaration.js";
 import { createDispatch, type Call, type Log } from "../../src/dispatch.js";
 import { METHODS } from "../../src/methods/index.js";
@@ -41,6 +41,8 @@ export interface ServeOptions {
   log: Log;
   /** How often the daemon's pid is checked. */
   everyMs?: number;
+  /** The run and call limits: S2.14's unless a test sets shorter ones. */
+  limits?: Limits;
 }
 
 export interface Served {
@@ -93,7 +95,7 @@ export function controlOver(socketPath: string, token?: string): Control {
 export async function serve(options: ServeOptions): Promise<Served> {
   const { log } = options;
   const control = controlOver(options.socket, options.token);
-  const invoke = createDispatch({ cli: createCli(createLocalRunner(options.synsPath)), log });
+  const invoke = createDispatch({ cli: createCli(createLocalRunner(options.synsPath), options.limits ?? LIMITS), log });
   const declaration = buildDeclaration(METHODS, { agentInstructions: options.agentInstructions });
 
   const server = http.createServer((req, res) => {

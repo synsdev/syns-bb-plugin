@@ -22,7 +22,6 @@ export const place: ProcedureMethod = {
   effect: "contributed-write",
   unguarded: true,
   atRoot: true,
-  minCli: "0.3.6",
   params: object({ template, path, version: { type: "integer", minimum: 1 } }, ["template", "path"]),
   result: {
     type: "object",

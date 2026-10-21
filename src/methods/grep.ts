@@ -14,9 +14,6 @@ interface Params {
   version?: string;
 }
 
-/** The first Syns CLI with `grep --offset` and `nextOffset` (issue 260, D-156). */
-export const OFFSET_CLI = "0.3.20";
-
 const record = (value: unknown): Record<string, unknown> => (typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {});
 const rows = (value: unknown): Record<string, unknown>[] | undefined => (Array.isArray(value) ? value.map(record) : undefined);
 const lineAndText = { type: "object", properties: { line: { type: "integer" }, text: { type: "string" } }, required: ["line", "text"] };
@@ -66,8 +63,6 @@ export const grep: SimpleMethod = {
   maxRequestBytes: K64,
   maxResponseBytes: M1,
   reasons: ["bad_pattern"],
-  // Only an offset needs the CLI that pages; without one every CLI serves the call.
-  minCliFor: (params: Params) => ((params.offset ?? 0) > 0 ? OFFSET_CLI : undefined),
   check(params: Params) {
     // A later page is only the same file list at the version the first was read at: a commit between pages would shift it. D-156
     if ((params.offset ?? 0) > 0 && params.version === undefined) throw new SynsError("invalid_params", { message: "Invalid parameters for syns.grep: a later page needs the version of the first" });
@@ -97,7 +92,7 @@ export const grep: SimpleMethod = {
     };
   },
   shape(out) {
-    // A CLI before OFFSET_CLI answers no nextOffset: it does not page, so there is no next window to name.
+    // Where the CLI names no next window there is none: null (S3.7 holds the key present).
     const nextOffset = typeof out.nextOffset === "number" ? out.nextOffset : null;
     const common = { version: out.commitSha, number: out.version, output: out.output, truncated: out.truncated, nextOffset, skipped: rows(out.skipped)?.map((skip) => ({ path: skip.path, reason: skip.reason })) };
     const found =

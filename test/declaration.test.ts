@@ -130,7 +130,7 @@ describe("the declaration", () => {
       "syns.commit": [...common, ...write, "bad_offset", "invalid_change"].sort(),
       "syns.read": common,
       "syns.glob": [...common, "bad_pattern"].sort(),
-      "syns.grep": [...common, "bad_pattern", "cli_too_old"].sort(), // only with an offset above 0 (D-156)
+      "syns.grep": [...common, "bad_pattern"].sort(),
       "syns.diff": common,
       "syns.write": [...common, ...write, "exists"].sort(),
       "syns.edit": [...common, ...write, "many_matches", "no_match"].sort(),
@@ -138,19 +138,19 @@ describe("the declaration", () => {
       "syns.readBinary": common,
       "syns.writeBinary": [...common, ...write, "bad_hash", "bad_offset", "too_large"].sort(),
       "syns.revert": [...common, "folder_write_unsupported"].sort(),
-      "syns.place": [...common, "cli_too_old", "folder_write_unsupported", "occupied", "no_such_template", "stale_head", "checkout_dirty"].sort(), // it cannot answer stale_head or checkout_dirty while the CLI's revert takes no parent and has no guard (D13, D29)
+      "syns.place": [...common, "folder_write_unsupported", "occupied", "no_such_template", "stale_head", "checkout_dirty"].sort(), // it cannot answer stale_head or checkout_dirty while the CLI's revert takes no parent and has no guard (D13, D29)
       // 0.6.0: the CLI's answers, mapped (D59). Sharing writes declare no file-write reason (A61).
-      "syns.shareInfo": [...common, "cli_too_old", "not_permitted"].sort(),
-      "syns.share": [...common, "cli_too_old", "bad_name", "name_taken", "not_permitted"].sort(),
-      "syns.unshare": [...common, "cli_too_old", "not_permitted"].sort(),
-      "syns.folderVisibility": [...common, "cli_too_old", "bad_name", "name_taken", "not_permitted"].sort(),
+      "syns.shareInfo": [...common, "not_permitted"].sort(),
+      "syns.share": [...common, "bad_name", "name_taken", "not_permitted"].sort(),
+      "syns.unshare": [...common, "not_permitted"].sort(),
+      "syns.folderVisibility": [...common, "bad_name", "name_taken", "not_permitted"].sort(),
       "syns.repoVisibility": [...common, "not_permitted"].sort(),
       "syns.collaborators": [...common, "not_permitted"].sort(),
       "syns.collaboratorAdd": [...common, "already_collaborator", "no_such_user", "not_permitted"].sort(),
       "syns.collaboratorRole": [...common, "not_permitted"].sort(),
       "syns.collaboratorRemove": [...common, "not_permitted"].sort(),
-      "syns.enableChecks": [...common, "cli_too_old", "folder_write_unsupported", "stale_head", "checkout_dirty"].sort(),
-      "syns.explore": [...common, "cli_too_old"].sort(),
+      "syns.enableChecks": [...common, "folder_write_unsupported", "stale_head", "checkout_dirty"].sort(),
+      "syns.explore": common,
       "syns.users": common,
     });
     for (const method of declaration.methods) for (const reason of Object.keys(method.reasons)) expect(reason).toMatch(/^[a-z][a-z0-9_]{0,63}$/);

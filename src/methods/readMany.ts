@@ -1,4 +1,4 @@
-import { buildArgs, pool } from "../cli.js";
+import { buildArgs } from "../cli.js";
 import { SynsError } from "../errors.js";
 import { ENVELOPE, K64, M1, bytes, nullable, object, path, version, type Context, type ProcedureMethod } from "../method.js";
 
@@ -8,6 +8,8 @@ interface Params {
 }
 
 type Entry = { path: string; text: string; size: unknown; blob: unknown } | { path: string; error: "not_found" } | { path: string; error: "too_large" | "not_text"; size?: unknown; blob?: unknown };
+
+const record = (value: unknown): Record<string, unknown> => (typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : {});
 
 
 export const readMany: ProcedureMethod = {
@@ -23,7 +25,7 @@ export const readMany: ProcedureMethod = {
         type: "array",
         items: {
           type: "object",
-          description: "Either path, text, size and blob, or path and error; too_large and not_text also carry size and blob.",
+          description: "Either path, text, size and blob, or path and error. not_text carries size and blob; too_large does when known.",
           properties: { path: { type: "string" }, text: { type: "string" }, size: { type: "integer" }, blob: nullable("string"), error: { type: "string", enum: ["not_found", "too_large", "not_text"] } },
           required: ["path"],
         },
@@ -39,30 +41,43 @@ export const readMany: ProcedureMethod = {
   },
 
   async procedure(params: Params, context: Context) {
-    // One consistent snapshot: the head is resolved once, first. S1.13
-    let at = params.version;
-    if (at === undefined) {
-      const head = (await context.syns(buildArgs("repo")) as Record<string, unknown> | null)?.commitSha;
-      if (typeof head !== "string") throw new SynsError("not_found");
-      at = head;
+    // One run: every path at one commit, the given version or the head the CLI resolves in the same run; standard
+    // input holds the paths, and --max-bytes the room left in the answer, so the CLI fetches nothing past it (S1.13,
+    // S1.14, D83). The room is counted as 0.8.7 counted it, with a version of 40 characters.
+    const room = readMany.maxResponseBytes - ENVELOPE - bytes({ version: "0".repeat(40), files: [], deferred: params.paths });
+    const out = record(await context.syns(buildArgs("cat", { version: params.version, "paths-from": "-", "max-bytes": room }), `${params.paths.join("\n")}\n`));
+    const served = new Map(Array.isArray(out.files) ? out.files.map(record).map((entry) => [entry.path, entry] as const) : []);
+    const later = new Set(Array.isArray(out.deferred) ? out.deferred : []);
+
+    // The CLI's answer, in request order. S1.16
+    const entries: Entry[] = [];
+    const deferredByCli: string[] = [];
+    for (const filePath of params.paths) {
+      const entry = served.get(filePath);
+      if (entry === undefined) {
+        if (!later.has(filePath)) throw new SynsError("handler_error", { log: "exit=0 the CLI's files answer leaves a path out" });
+        deferredByCli.push(filePath);
+        continue;
+      }
+      const error = record(entry.error);
+      if (entry.error !== undefined) {
+        if (error.code === "NOT_FOUND") {
+          entries.push({ path: filePath, error: "not_found" });
+          continue;
+        }
+        // Any other per-file error fails the call, in the CLI's words; the log names the class, never the path (Q-0155).
+        const words = context.redact(String(error.message ?? "").trim());
+        throw new SynsError("handler_error", { ...(words ? { message: words.slice(0, 300) } : {}), log: `readMany per-file ${String(error.code).slice(0, 64)}` });
+      }
+      // A file that is not text is named with its size and hash, and no bytes: syns.readBinary reads those (D-088, D29).
+      if (typeof entry.content !== "string") entries.push({ path: filePath, error: "not_text", size: entry.size, blob: entry.sha ?? null });
+      else entries.push({ path: filePath, text: entry.content, size: entry.size, blob: entry.sha ?? null });
     }
 
-    // One process per path, at most perCall at once. One path failing does not fail the call. S1.14, S1.16
-    const entries = await pool(params.paths, context.limits.perCall, async (filePath): Promise<Entry> => {
-      try {
-        const out = (await context.syns(buildArgs("cat", { version: at }, [filePath]))) as Record<string, unknown> | null;
-        // A file that is not text is named with its size and hash, and no bytes: syns.readBinary reads those (D-088, D29).
-        if (typeof out?.content !== "string") return { path: filePath, error: "not_text", size: out?.size, blob: out?.sha ?? null };
-        return { path: filePath, text: out.content, size: out.size, blob: out.sha ?? null };
-      } catch (error) {
-        if (error instanceof SynsError && error.code === "not_found" && error.subject !== "version") return { path: filePath, error: "not_found" };
-        if (error instanceof SynsError && error.code === "response_too_large") return { path: filePath, error: "too_large" };
-        throw error;
-      }
-    });
+    // A first path the CLI deferred passed the room alone: it was never read, so it carries no size or blob (D83).
+    if (entries.length === 0 && deferredByCli.length > 0) return { version: out.commitSha, files: [{ path: deferredByCli[0]!, error: "too_large" }], deferred: deferredByCli.slice(1) };
 
-    // Whole files only, in request order, inside the response bound. S1.15
-    const room = readMany.maxResponseBytes - ENVELOPE - bytes({ version: at, files: [], deferred: params.paths });
+    // Whole files only, in request order, inside the response bound, counted as the text escapes in JSON. S1.15
     const files: Entry[] = [];
     const deferred: string[] = [];
     let used = 0;
@@ -77,6 +92,6 @@ export const readMany: ProcedureMethod = {
       files.push(kept);
       used += size;
     }
-    return { version: at, files, deferred };
+    return { version: out.commitSha, files, deferred: [...deferred, ...deferredByCli] };
   },
 };

@@ -24,8 +24,6 @@ export const explore: SimpleMethod = {
   name: "syns.explore",
   description: "Public Syns repositories matching query, every tag in tags (syns-app for app templates) and status, limit at a time from offset; total says how many.",
   effect: "read",
-  // Up to 0.3.5 the CLI sent query and tags under keys the server ignores: every public repository came back (issue 207).
-  minCli: "0.3.6",
   params: object({
     query: { type: "string", maxLength: 200 },
     tags: { type: "array", items: { type: "string", maxLength: 100 }, maxItems: 8 },

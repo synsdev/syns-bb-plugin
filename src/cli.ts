@@ -17,6 +17,8 @@ export interface RunRequest {
   stdinBase64?: string;
   /** The host half stops the process after this long. S2.14 */
   timeoutMs: number;
+  /** Aborted when the page's call ends or passes its limit: the run is stopped, or never started (S2.14, D83). */
+  signal?: AbortSignal;
 }
 
 export interface RunResult {
@@ -59,11 +61,9 @@ export interface Limits {
   callMs: number;
   /** CLI processes at once on one machine, across every page. S2.15 */
   perMachine: number;
-  /** CLI processes at once for one call. S1.14 */
-  perCall: number;
 }
 
-export const LIMITS: Limits = { processMs: 20_000, callMs: 25_000, perMachine: 16, perCall: 8 };
+export const LIMITS: Limits = { processMs: 20_000, callMs: 25_000, perMachine: 16 };
 
 export type OptionValue = string | number | boolean | readonly string[] | undefined;
 
@@ -87,8 +87,8 @@ export function buildArgs(verb: string | readonly string[], options: Record<stri
 
 export interface Cli {
   readonly limits: Limits;
-  /** One CLI process, inside the limits. `deadline` is when the page's call must have answered. */
-  run(where: Where, args: string[], stdin: string | Buffer | undefined, deadline: number, env?: ProvenanceEnv): Promise<RunResult>;
+  /** One CLI process, inside the limits. `deadline` is when the page's call must have answered; `signal` is the call's. */
+  run(where: Where, args: string[], stdin: string | Buffer | undefined, deadline: number, env?: ProvenanceEnv, signal?: AbortSignal): Promise<RunResult>;
 }
 
 const TIMED_OUT: RunResult = { exitCode: null, stdout: "", stderr: "", timedOut: true, spawnError: null, overflowed: false };
@@ -98,18 +98,35 @@ export function createCli(runner: Runner, limits: Limits = LIMITS): Cli {
 
   return {
     limits,
-    async run(where, args, stdin, deadline, env) {
+    async run(where, args, stdin, deadline, env, signal) {
+      // An aborted call starts nothing (S2.14).
+      if (signal?.aborted) return TIMED_OUT;
       let machine = machines.get(where.hostId);
       if (!machine) machines.set(where.hostId, (machine = { running: 0, waiting: [] }));
       const slots = machine;
-      if (slots.running >= limits.perMachine) await new Promise<void>((resolve) => slots.waiting.push(resolve));
-      else slots.running += 1;
+      if (slots.running >= limits.perMachine) {
+        // A run waiting its turn leaves the queue when its call is aborted: it takes no slot, and skips no one.
+        const turn = await new Promise<boolean>((resolve) => {
+          const take = (): void => {
+            signal?.removeEventListener("abort", leave);
+            resolve(true);
+          };
+          const leave = (): void => {
+            const at = slots.waiting.indexOf(take);
+            if (at !== -1) slots.waiting.splice(at, 1);
+            resolve(false);
+          };
+          slots.waiting.push(take);
+          signal?.addEventListener("abort", leave, { once: true });
+        });
+        if (!turn) return TIMED_OUT;
+      } else slots.running += 1;
       // From here this call holds one slot; a finished call hands its slot to the next in line.
       try {
         const left = deadline - Date.now();
-        if (left <= 0) return TIMED_OUT;
+        if (left <= 0 || signal?.aborted) return TIMED_OUT;
         const input = stdin === undefined ? {} : typeof stdin === "string" ? { stdin } : { stdinBase64: stdin.toString("base64") };
-        return await runner.run({ hostId: where.hostId, cwd: where.cwd, ...(where.within ? { within: where.within } : {}), args, ...(env ? { env } : {}), ...input, timeoutMs: Math.min(limits.processMs, left) });
+        return await runner.run({ hostId: where.hostId, cwd: where.cwd, ...(where.within ? { within: where.within } : {}), args, ...(env ? { env } : {}), ...input, timeoutMs: Math.min(limits.processMs, left), ...(signal ? { signal } : {}) });
       } finally {
         const next = slots.waiting.shift();
         if (next) next();
@@ -117,19 +134,4 @@ export function createCli(runner: Runner, limits: Limits = LIMITS): Cli {
       }
     },
   };
-}
-
-/** `fn` over `items`, at most `size` at once, results in the order of `items`. */
-export async function pool<T, R>(items: readonly T[], size: number, fn: (item: T, index: number) => Promise<R>): Promise<R[]> {
-  const out = new Array<R>(items.length);
-  let next = 0;
-  const worker = async (): Promise<void> => {
-    while (next < items.length) {
-      const index = next;
-      next += 1;
-      out[index] = await fn(items[index] as T, index);
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(size, items.length) }, worker));
-  return out;
 }

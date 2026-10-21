@@ -151,14 +151,12 @@ describe("syns.grep", () => {
   });
 });
 
-/** `syns --version` prints plain text (HOST_FACTS §15). */
-const printed = (text: string) => ({ exitCode: 0, stdout: `${text}\n`, stderr: "", timedOut: false, spawnError: null, overflowed: false });
 const window = (nextOffset: number | null, from: number, count: number) =>
   ok({ commitSha: HEAD, version: 6, pattern: "x", output: "files", truncated: nextOffset !== null, nextOffset, skipped: [], files: Array.from({ length: count }, (_, i) => `f${String(from + i).padStart(4, "0")}.md`) });
 
 describe("syns.grep paging past the 400-file fan-out (issue 260, D-156)", () => {
   it("passes offset as --offset and the CLI's nextOffset on, so following it reaches every file", async () => {
-    const h = harness({ "--version": printed("syns 0.3.20"), grep: (request) => (request.args.includes("--offset=400") ? window(null, 400, 100) : window(400, 0, 400)) });
+    const h = harness({ grep: (request) => (request.args.includes("--offset=400") ? window(null, 400, 100) : window(400, 0, 400)) });
     const first = resultOf<any>(await h.call("syns.grep", { pattern: "x", output: "files", headLimit: 1000 }));
     expect(first).toMatchObject({ truncated: true, nextOffset: 400 });
     const last = resultOf<any>(await h.call("syns.grep", { pattern: "x", output: "files", headLimit: 1000, offset: first.nextOffset, version: first.version }));
@@ -166,11 +164,10 @@ describe("syns.grep paging past the 400-file fan-out (issue 260, D-156)", () => 
     expect([...first.files, ...last.files]).toEqual(Array.from({ length: 500 }, (_, i) => `f${String(i).padStart(4, "0")}.md`));
     expect(h.runner.calls.map((call) => call.args)).toEqual([
       ["grep", "--output=files", "--head-limit=1000", "--json", "--", "x"],
-      ["--version"],
       ["grep", "--output=files", "--head-limit=1000", "--offset=400", `--version=${HEAD}`, "--json", "--", "x"],
     ]);
   });
-  it("offset absent or 0 runs on any CLI, asks no version and passes no --offset; nextOffset is null where the CLI answers none", async () => {
+  it("offset absent or 0 passes no --offset; nextOffset is null where the CLI answers none", async () => {
     const h = harness({ grep: rec("grep.files.ok") });
     for (const params of [{ pattern: "Note", output: "files" }, { pattern: "Note", output: "files", offset: 0 }]) {
       expect(resultOf<any>(await h.call("syns.grep", params)).nextOffset).toBeNull();
@@ -180,13 +177,9 @@ describe("syns.grep paging past the 400-file fan-out (issue 260, D-156)", () => 
       ["grep", "--output=files", "--head-limit=200", "--json", "--", "Note"],
     ]);
   });
-  it("offset above 0 on a CLI without --offset answers unavailable / cli_too_old, running no search", async () => {
-    const h = harness({ "--version": printed("syns 0.3.19"), grep: rec("grep.files.ok") });
-    expect(failureOf(await h.call("syns.grep", { pattern: "Note", offset: 400, version: OLD }))).toMatchObject({ code: "unavailable", reason: "cli_too_old", detail: { need: "0.3.20", have: "0.3.19" } });
-    expect(h.runner.calls.map((call) => call.args)).toEqual([["--version"]]);
-  });
+
   it("refuses an offset above 0 without the version of the first page, before any process, as syns.readBinary does (D-156, verify F1)", async () => {
-    const h = harness({ "--version": printed("syns 0.3.20"), grep: window(null, 400, 100) });
+    const h = harness({ grep: window(null, 400, 100) });
     const error = failureOf(await h.call("syns.grep", { pattern: "x", output: "files", offset: 400 }));
     expect(error.code).toBe("invalid_params");
     expect(error.message).toContain("version");

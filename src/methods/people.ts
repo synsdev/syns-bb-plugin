@@ -6,8 +6,7 @@ import { K64, M1, group, nullable, object, NOT_FOUND, type Schema, type SimpleMe
  * command each, in the page's scope folder. The CLI decides whose
  * collaborators they are and which roles it takes; inside a placed folder it
  * answers holder root required, which comes back as bad_scope (HOST_FACTS §17).
- * And `syns users`, to find someone. Nothing here needs more than the plugin's
- * oldest CLI (0.3.3).
+ * And `syns users`, to find someone.
  */
 
 const ROLE: Schema = { type: "string", enum: ["admin", "write", "read"], maxLength: 5 };
@@ -28,7 +27,7 @@ const COLLABORATOR: Schema = { type: "object", properties: group("collaborator",
 const collaboratorsResult: Schema = { type: "object", properties: { total: { type: "integer" }, limit: { type: "integer" }, offset: { type: "integer" }, data: { type: "array", items: COLLABORATOR } }, required: ["total", "data"] };
 export const collaborators: SimpleMethod = {
   name: "syns.collaborators",
-  description: "Who has access to this scope, and each one's role: a shared placed folder's own people (CLI 0.3.14), or at a root the whole repository's. limit at a time from offset; total says how many.",
+  description: "Who has access to this scope, and each one's role: a shared placed folder's own people, or at a root the whole repository's. limit at a time from offset; total says how many.",
   effect: "read",
   params: object({ limit, offset }),
   result: collaboratorsResult,
@@ -42,7 +41,7 @@ export const collaborators: SimpleMethod = {
 const addResult: Schema = { type: "object", properties: { added: { type: "boolean" }, target: { type: "string" }, role: { type: "string" } }, required: ["added", "target", "role"] };
 export const collaboratorAdd: SimpleMethod = {
   name: "syns.collaboratorAdd",
-  description: "Give a person, by Syns username or e-mail, a role on this scope: a shared placed folder (CLI 0.3.14), or at a root the whole repository. Only from the reader's own press on a control naming the person, role and scope.",
+  description: "Give a person, by Syns username or e-mail, a role on this scope: a shared placed folder, or at a root the whole repository. Only from the reader's own press on a control naming the person, role and scope.",
   effect: "contributed-write",
   sharing: true,
   params: object({ user: { type: "string", maxLength: 320 }, role: ROLE }, ["user", "role"]),

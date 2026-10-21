@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.9.0
+
+One CLI run per page call, on both hosts, on the latest CLI only (Syns roadmap 280; `bartsoj/syns` D-244, Q-0155;
+the plugin's design tree D83). Bb and Claude Code answer every call alike; the plugin stays an adapter of the CLI.
+
+- **Minimum CLI.** One minimum for every method: the Syns CLI, the first release after 0.3.23 or later (it carries
+  Syns roadmaps 277–279). No `syns --version` is run and no method declares a minimum: `cli_too_old` is gone. An
+  older CLI's refusal comes back as `handler_error` in its own words, so `syns.readMany` and every scoped call fail
+  on 0.3.23 and earlier with the CLI's `error: unexpected argument …` line. Upgrade with `syns upgrade`.
+- **`syns.readMany` is one run:** `syns cat --json --paths-from=- --max-bytes=<room left in the 1 MiB answer>`, at
+  the given `version` or the head the CLI resolves in the same run. No `repo` run first, no run per path, and paths
+  that do not fit are not fetched. Same params and result shape.
+  - A first path that alone passes the answer's room is `too_large` with no `size` or `blob`, a picture included
+    (0.8.7 gave `too_large` or `not_text` with both), and the paths after it are deferred. A text the CLI served
+    whose escaped JSON alone passes the room is still `too_large` with both.
+  - Any per-file error but a missing path fails the call as `handler_error` in the CLI's words, as before.
+  - An empty repository, read without `version`, answers `handler_error` with the CLI's words (`server error (422):
+    validation_error`); 0.8.7 answered `not_found`. Read `syns.repo` first: its `version` is `null` there.
+- **A scoped call's check is one run:** `syns repo --json --within=<session folder>` in the scope, still held a
+  minute; `within: false` is `bad_scope`. A scoped `syns.repo` answers from that run: one run.
+- **`syns.ls` takes `format: "lines"`:** each entry one string, `path\tblob\tsize`, a folder's blob and size empty,
+  up to 9,000 a page and inside the 1 MiB answer. Without it the answer is 0.8.7's, byte for byte, and `limit` stays
+  at most 1,500.
+- **The 25 s limit stops the call's run** on both hosts: the host call's signal on bb, the call's signal on Claude
+  Code. A run still waiting for a slot leaves the queue.
+- **`SYNS_CALLER`** names the host in every request's User-Agent: `syns/<v> (bb-plugin)` on bb, `syns/<v>
+  (claude-pages)` on Claude Code.
+- **bb holds its host worker** until 15 minutes after the last run, so the next call finds it warm.
+- A refusal with nothing on standard output and an `error:` line on standard error (the CLI's own argument parser)
+  now reaches the page in those words, redacted, rather than the generic sentence.
+
 ## 0.8.7
 
 - `syns.grep` pages past its 400-file fan-out (Syns issue 260, D-156). It takes `offset`, the count of matching

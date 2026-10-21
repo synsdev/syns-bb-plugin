@@ -6,8 +6,7 @@ import { K64, group, nullable, object, NOT_FOUND, type Schema, type SimpleMethod
  * run in the page's scope folder, its JSON passed on. The folder commands name
  * `.`, the folder the run stands in; at a repository's root the CLI refuses
  * that, and `repo --visibility` is refused inside a placed folder: both come
- * back as bad_scope (HOST_FACTS §17). share and unshare need CLI 0.3.11, the
- * first to take `.` (HOST_FACTS §15); share --visibility came in 0.3.12.
+ * back as bad_scope (HOST_FACTS §17).
  */
 
 /** The repository record the CLI prints for a repository or a folder's identity, as far as a page needs it. */
@@ -34,7 +33,6 @@ export const shareInfo: SimpleMethod = {
   name: "syns.shareInfo",
   description: "Whether this placed folder is shared: its identity's record when it is, the name a share would offer when not, and the reader's holderRole. share . --show. At a repository's root: bad_scope.",
   effect: "read",
-  minCli: "0.3.11",
   params: object({}),
   result: shareInfoResult,
   maxRequestBytes: K64,
@@ -50,7 +48,6 @@ export const share: SimpleMethod = {
   description: "Share this placed folder under an identity of its own, named name or the CLI's offer. Already shared: created false. Reaches people at once: only from the reader's own press on a control saying so.",
   effect: "contributed-write",
   sharing: true,
-  minCli: "0.3.11",
   params: object({ name }),
   result: shareResult,
   maxRequestBytes: K64,
@@ -66,7 +63,6 @@ export const unshare: SimpleMethod = {
   description: "Stop sharing this placed folder: all who reached it through the folder lose access; its identity retires unless the folder has a visibility of its own. Only from the reader's own press on a control saying so.",
   effect: "contributed-write",
   sharing: true,
-  minCli: "0.3.11",
   params: object({}),
   result: unshareResult,
   maxRequestBytes: K64,
@@ -83,7 +79,6 @@ export const folderVisibility: SimpleMethod = {
   description: "Give this placed folder a visibility of its own. public: anyone, signed in or not, can find and read it. There is no way back to inheriting. Only from the reader's own press on a control saying exactly that.",
   effect: "contributed-write",
   sharing: true,
-  minCli: "0.3.12",
   params: object({ visibility, name }, ["visibility"]),
   result: folderVisibilityResult,
   maxRequestBytes: K64,

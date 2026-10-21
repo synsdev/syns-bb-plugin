@@ -50,12 +50,6 @@ export const REASONS = {
     message: "Syns did not answer in time. Try again.",
     meaning: "The CLI did not answer in time. Retry a read; after a write, re-read syns.repo first.",
   },
-  cli_too_old: {
-    code: "unavailable",
-    message: "The Syns command-line tool on this session's machine is too old for this. Run syns upgrade there.",
-    meaning: "The machine's syns is older than detail.need (detail.have): syns upgrade there.",
-    detail: { type: "object", properties: { need: { type: "string" }, have: { type: ["string", "null"] } }, required: ["need", "have"] },
-  },
   folder_out_of_place: {
     code: "unavailable",
     message: "This session's folder is not where its repository records it, so Syns will not use it.",
@@ -164,7 +158,7 @@ export const REASONS = {
 
 export type Reason = keyof typeof REASONS;
 
-/** bad_scope's sentence when the CLI says the placed folder is not shared yet (CLI 0.3.14, D63). */
+/** bad_scope's sentence when the CLI says the placed folder is not shared yet (D63). */
 export const NOT_SHARED_YET = "This folder is not shared yet: share it first, then add people to it. If it was just shared, try again after the next sync.";
 
 /** Sentences for failures that carry a code and no reason. */
@@ -259,6 +253,9 @@ export function redact(text: string, where: Redaction = {}): string {
     .replace(new RegExp(String.raw`(?<![\w.:/<\\])\/${PATH_CHAR}+`, "g"), "<path>");
 }
 
+/** The first line of standard error that starts `error:`, or nothing. */
+const stderrError = (stderr: string): string => stderr.split("\n").find((line) => line.startsWith("error:")) ?? "";
+
 /** Whether `whoami --json` says nobody is logged in on the machine (HOST_FACTS §8). Anything else, a timeout included, is no. */
 async function signedOut(runWhoami: () => Promise<RunResult>): Promise<boolean> {
   const run = await runWhoami();
@@ -305,7 +302,7 @@ export async function interpret(run: RunResult, declared: readonly string[], run
   // Where the CLI does not act in this scope (D59, HOST_FACTS §17): a folder's command at a root, a holder's in a placed folder.
   if (exit === 1 && error.includes("the folder path must name a folder")) throw fail("bad_scope");
   if (exit === 1 && error.includes("holds no folder placed from a template")) throw fail("bad_scope");
-  // CLI 0.3.14 (D-124): in a placed folder not yet shared, the people commands say to share it first.
+  // D-124: in a placed folder not yet shared, the people commands say to share it first.
   if (exit === 2 && error.startsWith("holder root required") && error.includes("acts on a shared folder's own people")) throw new SynsError("invalid_params", { reason: "bad_scope", message: NOT_SHARED_YET });
   if (exit === 2 && error.startsWith("holder root required")) throw fail("bad_scope");
   if (exit === 1 && error.includes("configuration error: a name holds") && declared.includes("bad_name")) throw fail("bad_name");
@@ -331,7 +328,9 @@ export async function interpret(run: RunResult, declared: readonly string[], run
   if (exit === 1 && error.includes("path not found at version")) throw new SynsError("not_found");
   if (exit === 1 && error.includes("version not found")) throw new SynsError("not_found", { subject: "version" });
 
-  // Any other refusal comes back in the CLI's own words (D59); the plugin's sentence only when it gave none.
-  const words = redact(error.trim(), where);
+  // Any other refusal comes back in the CLI's own words (D59): its JSON error, or where it printed none, the first
+  // line of standard error starting `error:`, as the CLI's own parser refuses a flag it does not know (S3.4 row 9,
+  // D83). The plugin's sentence only when it gave neither.
+  const words = redact((error || stderrError(run.stderr)).trim(), where);
   throw new SynsError("handler_error", { ...(words ? { message: words.slice(0, 300) } : {}), log: `exit=${exit} output=${(run.stdout + run.stderr).trim().slice(0, 500)}` });
 }

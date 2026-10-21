@@ -1,5 +1,5 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { createCli } from "./cli.js";
+import { LIMITS, createCli, type Limits } from "./cli.js";
 import { createHostRunner } from "./host-runner.js";
 import { hostContract } from "./contract.js";
 import { buildDeclaration } from "./declaration.js";
@@ -14,7 +14,7 @@ const anything = { "~standard": { version: 1 as const, vendor: "syns", validate:
  * process and opens no file; the Runner it hands the rest is the call to the
  * host half on the session's machine.
  */
-export default function synsPlugin(bb: BbPluginApi): void {
+export default function synsPlugin(bb: BbPluginApi, limits: Limits = LIMITS): void {
   const settings = bb.settings.define({
     synsPath: { type: "string", label: "Syns executable", description: "Absolute path of the syns executable, when it is not on PATH or in ~/.cargo/bin, ~/.local/bin, /usr/local/bin or /opt/homebrew/bin." },
     agentInstructions: { type: "boolean", label: "Tell agents about syns.*", description: "Whether the plugin declares its instruction fragment to Thread Pages. The methods and the guide stay either way.", default: true },
@@ -27,7 +27,7 @@ export default function synsPlugin(bb: BbPluginApi): void {
     async () => (await settings.get()).synsPath?.trim() || undefined,
   );
 
-  const invoke = createDispatch({ cli: createCli(runner), log: bb.log });
+  const invoke = createDispatch({ cli: createCli(runner, limits), log: bb.log });
 
   bb.rpc.register(
     { threadPagesContributions: { input: anything, output: anything }, threadPagesInvoke: { input: anything, output: anything } },

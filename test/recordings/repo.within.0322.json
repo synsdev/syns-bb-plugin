@@ -1,0 +1,1 @@
+{"source": "HOST_FACTS.md, pass 'CLI at syns-cli 2d706e8': an older CLI's refusal, recorded 2026-10-21 with syns 0.3.22 (`syns repo --within=/work/checkout --json`): clap's own refusal, exit 2, nothing on stdout", "exitCode": 2, "stdout": "", "stderr": "error: unexpected argument '--within' found\n\nUsage: syns repo [OPTIONS] [COMMAND]\n\nFor more information, try '--help'.\n"}

@@ -2,6 +2,9 @@ import { CLI_NOT_FOUND, SCOPE_OUTSIDE, type RunRequest, type RunResult, type Run
 import { scopeFolder } from "../../src/scope.js";
 import { findSyns, runSyns } from "../../src/syns-process.js";
 
+/** The name every request of the CLI's carries in its User-Agent on Claude Code (S2.24, D83; bartsoj/syns D-238). */
+export const CALLER = "claude-pages";
+
 const refused = (spawnError: string): RunResult => ({ exitCode: null, stdout: "", stderr: "", timedOut: false, spawnError, overflowed: false });
 
 /**
@@ -11,7 +14,7 @@ const refused = (spawnError: string): RunResult => ({ exitCode: null, stdout: ""
  */
 export function createLocalRunner(synsPath: string | undefined): Runner {
   return {
-    async run({ cwd, within, args, env, stdin, stdinBase64, timeoutMs }: RunRequest): Promise<RunResult> {
+    async run({ cwd, within, args, env, stdin, stdinBase64, timeoutMs, signal }: RunRequest): Promise<RunResult> {
       // A scoped call starts where the scope resolved, so a link swapped in afterwards cannot move it (D46).
       let folder = cwd;
       if (within !== undefined) {
@@ -22,7 +25,8 @@ export function createLocalRunner(synsPath: string | undefined): Runner {
       const bin = await findSyns(synsPath);
       if (!bin) return refused(CLI_NOT_FOUND);
       const input = stdinBase64 === undefined ? stdin : Buffer.from(stdinBase64, "base64");
-      return runSyns(bin, args, folder, input, timeoutMs, new AbortController().signal, env as Record<string, string> | undefined);
+      // The call's signal: the 25 s limit, or the call's end, stops the process (S2.14). No lease: this process lives on.
+      return runSyns(bin, args, folder, input, timeoutMs, signal ?? new AbortController().signal, CALLER, env as Record<string, string> | undefined);
     },
   };
 }

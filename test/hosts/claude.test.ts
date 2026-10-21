@@ -119,7 +119,8 @@ describe("Claude Code: the process against a daemon's control socket (R-X5)", ()
     const log = join(dir, "runs.log");
     const synsPath = join(dir, "syns");
     writeFileSync(join(dir, "repo.json"), JSON.stringify(REPO));
-    writeFileSync(synsPath, `#!/bin/sh\necho "$(pwd -P) $*" >> "${log}"\ncase "$1" in\n  --version) echo "syns 0.3.14" ;;\n  repo) cat "${join(dir, "repo.json")}" ;;\n  *) echo '{"error":"unexpected"}' >&2; exit 2 ;;\nesac\n`);
+    // repo --within: the CLI answers within from disk (roadmap 277); a plain folder never reaches it (the host half refuses it).
+    writeFileSync(synsPath, `#!/bin/sh\necho "$(pwd -P) $*" >> "${log}"\ncase "$1" in\n  repo) if [ "$2" = "--within=${checkout}" ]; then sed 's/}$/,"within":true}/' "${join(dir, "repo.json")}"; else cat "${join(dir, "repo.json")}"; fi ;;\n  *) echo '{"error":"unexpected"}' >&2; exit 2 ;;\nesac\n`);
     chmodSync(synsPath, 0o755);
     const runs = (): string[] => readFileSync(log, "utf8").trim().split("\n");
     return { checkout, synsPath, runs };
@@ -157,8 +158,8 @@ describe("Claude Code: the process against a daemon's control socket (R-X5)", ()
 
     const scoped = await post(served.endpoint, { method: "syns.repo", params: {}, caller: { sessionId: SESSION, scope: "clients/vela/crm", workspace: { id: "ws", path: checkout, machine: null } }, requestId: "r2" });
     expect(scoped).toMatchObject({ status: 200, body: { ok: true } });
-    // the same-repository check at the session's folder and at the scope (D46), then the call itself in the scope
-    expect(runs()).toEqual([`${realpathSync(checkout)} repo --json`, ...Array(2).fill(`${realpathSync(join(checkout, "clients/vela/crm"))} repo --json`)]);
+    // one check at the scope (D46 as amended, D83), whose run is the scoped syns.repo's answer
+    expect(runs()).toEqual([`${realpathSync(join(checkout, "clients/vela/crm"))} repo --within=${checkout} --json`]);
 
     expect(await post(served.endpoint, { method: "syns.repo", params: {}, caller: { sessionId: SESSION, scope: "notes", workspace: { id: "ws", path: checkout, machine: null } }, requestId: "r3" })).toMatchObject({ body: { ok: false, error: { reason: "bad_scope" } } });
     expect(await post(served.endpoint, { method: "syns.repo", params: {}, caller: { sessionId: SESSION, scope: "../elsewhere", workspace: { id: "ws", path: checkout, machine: null } }, requestId: "r4" })).toMatchObject({ body: { ok: false, error: { reason: "bad_scope" } } });

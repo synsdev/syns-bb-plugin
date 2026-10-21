@@ -31,7 +31,7 @@ describe("the server entry", () => {
     });
     const answer = await handlers.threadPagesInvoke!({ method: "syns.repo", params: {}, caller: { sessionId: "thr_1", scope: null, workspace: { id: "proj_1", path: "/work/checkout", machine: "host_9" } }, requestId: "r1" });
     expect(answer).toMatchObject({ ok: true, result: { owner: "acme", version: HEAD } });
-    expect(asked).toEqual([{ method: "run", input: { cwd: "/work/checkout", args: ["repo", "--json"], timeoutMs: 20000, synsPath: "/opt/syns/bin/syns" }, options: { hostId: "host_9", timeoutMs: 25000 } }]);
+    expect(asked).toEqual([{ method: "run", input: { cwd: "/work/checkout", args: ["repo", "--json"], timeoutMs: 20000, synsPath: "/opt/syns/bin/syns" }, options: { hostId: "host_9", timeoutMs: 25000, signal: expect.any(AbortSignal) } }]);
   });
 
   it("sends no synsPath when the setting is unset or empty", async () => {

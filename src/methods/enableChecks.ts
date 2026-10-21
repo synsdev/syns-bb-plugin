@@ -13,7 +13,6 @@ export const enableChecks: SimpleMethod = {
   description: "Turn on, for everyone working in the holder, the checks this placed folder recorded from its template; they run on every push. enabled: [] makes no version. Only from the reader's own press, naming the commands.",
   effect: "contributed-write",
   unguarded: true,
-  minCli: "0.3.6",
   params: object({}),
   result: {
     type: "object",

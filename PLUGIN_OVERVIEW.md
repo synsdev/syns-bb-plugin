@@ -42,9 +42,9 @@ contributors*.
 
 - bb 0.43 or later, with Thread Pages 1.10.0 or later. Earlier Thread Pages
   pass no session folder, so every call answers `no_repo`.
-- The Syns CLI, installed and logged in (`syns login`), on each machine whose
-  sessions should reach a repository. Some methods need a recent CLI:
-  `syns upgrade`. If bb does not find `syns`, set its absolute path with
+- The Syns CLI, the first release after 0.3.23 or later, installed and logged
+  in (`syns login`), on each machine whose sessions should reach a repository
+  (`syns upgrade`). If bb does not find `syns`, set its absolute path with
   `bb plugin config syns set synsPath <path>`.
 - Then install this plugin. New sessions are told about `syns.*`
   automatically; turn that off with

@@ -57,8 +57,24 @@ describe("the recognition table (S3.4, A36)", () => {
     expect(error.message).toContain("the changeset document does not parse");
     expect(error.message.length).toBeLessThanOrEqual(300);
   });
-  it("row 9 without words of the CLI's keeps the plugin's sentence", async () => {
-    expect((await failure(rec("arg-error"))).message).toBe("Syns could not complete this. The plugin's log has the cause.");
+  it("row 9 without words of the CLI's keeps the plugin's sentence: no JSON error, no stderr line starting error: (row 9a)", async () => {
+    for (const stderr of ["", "thread 'main' panicked\n", "  error: indented is not a line starting error:\n"]) {
+      expect((await failure({ exitCode: 101, stdout: "", stderr, timedOut: false, spawnError: null, overflowed: false })).message, stderr).toBe("Syns could not complete this. The plugin's log has the cause.");
+    }
+  });
+  it("row 9a: with no JSON error on stdout, the message is stderr's first line starting error:, trimmed, redacted, at most 300 (0.9)", async () => {
+    expect((await failure(rec("arg-error"))).message).toBe("error: unexpected argument '--nope' found");
+    expect((await failure(rec("cat.paths-from.0322"))).message).toBe("error: unexpected argument '--paths-from' found");
+    expect((await failure(rec("repo.within.0322"))).message).toBe("error: unexpected argument '--within' found");
+    const stderr = `warning: x\nerror: could not read /Users/reader/secret/a.md ${"z".repeat(400)}  \nerror: second\n`;
+    const message = (await failure({ exitCode: 1, stdout: "", stderr, timedOut: false, spawnError: null, overflowed: false })).message;
+    expect(message.startsWith("error: could not read <path> zzz")).toBe(true);
+    expect(message).toHaveLength(300);
+  });
+  it("row 9a: stdout's JSON error wins over stderr, and the log keeps both as before", async () => {
+    const error = await failure({ exitCode: 1, stdout: JSON.stringify({ error: "the CLI's own words" }), stderr: "error: other words\n", timedOut: false, spawnError: null, overflowed: false });
+    expect(error.message).toBe("the CLI's own words");
+    expect(error.log).toContain("other words");
   });
   it("the CLI's refusals that a command does not act in this scope are bad_scope (D59, HOST_FACTS §17)", async () => {
     for (const recording of ["share.root-dot.0313", "enable-checks.root.0313", "repo.visibility.holder-root.0313", "collaborators.holder-root.0313"]) expect(toAnswer(await failure(rec(recording))).error, recording).toMatchObject({ code: "invalid_params", reason: "bad_scope" });

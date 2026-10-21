@@ -32,8 +32,18 @@ export async function findSyns(synsPath: string | undefined, env: { PATH?: strin
   return null;
 }
 
-/** One process, started directly with an argument array, never through a shell. S2.10 */
-export function runSyns(bin: string, args: string[], cwd: string, stdin: string | Buffer | undefined, timeoutMs: number, signal: AbortSignal, provenance?: Record<string, string>): Promise<RunResult> {
+/** What a run answers when its call was aborted before it started (S2.14). */
+const NOT_STARTED: RunResult = { exitCode: null, stdout: "", stderr: "", timedOut: true, spawnError: null, overflowed: false };
+
+/**
+ * One process, started directly with an argument array, never through a shell. S2.10
+ *
+ * `caller` is the host's name, set as SYNS_CALLER over anything inherited or passed, so every request the CLI sends
+ * says which page host made it (S2.24, D83). `signal` aborting stops the process as its time limit does; it is
+ * listened to here and not handed to spawn, whose abort would SIGTERM the process and end as a spawn error.
+ */
+export function runSyns(bin: string, args: string[], cwd: string, stdin: string | Buffer | undefined, timeoutMs: number, signal: AbortSignal, caller: string, provenance?: Record<string, string>): Promise<RunResult> {
+  if (signal.aborted) return Promise.resolve(NOT_STARTED);
   return new Promise((resolve) => {
     const out: Buffer[] = [];
     const err: Buffer[] = [];
@@ -46,9 +56,10 @@ export function runSyns(bin: string, args: string[], cwd: string, stdin: string 
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      signal.removeEventListener("abort", abort);
       resolve({ exitCode, stdout: Buffer.concat(out).toString("utf8"), stderr: Buffer.concat(err).toString("utf8"), timedOut, spawnError, overflowed });
     };
-    const child = spawn(bin, args, { cwd, stdio: ["pipe", "pipe", "pipe"], env: { ...process.env, NO_COLOR: "1", ...(provenance ?? {}) }, signal });
+    const child = spawn(bin, args, { cwd, stdio: ["pipe", "pipe", "pipe"], env: { ...process.env, NO_COLOR: "1", ...(provenance ?? {}), SYNS_CALLER: caller } });
     // Stopping answers at once: a process of its own that still holds the pipes must not hold the call.
     const stop = (): void => {
       child.kill("SIGKILL");
@@ -60,6 +71,11 @@ export function runSyns(bin: string, args: string[], cwd: string, stdin: string 
       timedOut = true;
       stop();
     }, timeoutMs);
+    const abort = (): void => {
+      timedOut = true;
+      stop();
+    };
+    signal.addEventListener("abort", abort, { once: true });
     child.stdout.on("data", (chunk: Buffer) => {
       if (overflowed) return;
       if (outBytes + chunk.length > MAX_OUTPUT) {

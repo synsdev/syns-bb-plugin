@@ -18,14 +18,9 @@ Syns CLI → Syns API      the only thing that touches the repository
 ## Install
 
 On bb: bb 0.43 or later and Thread Pages 1.10.0 or later; on Claude Code: Unife Pages 0.2.0 or later (see *On Claude
-Code* below). Thread Pages 1.9 and earlier pass no session folder, so every call there answers `no_repo`. Both need the Syns CLI —
-installed and logged in (`syns login`) on every machine whose sessions should
-reach a repository. The page methods need 0.3.3 or later, placed folders and
-checks 0.3.6, `syns.explore` 0.3.6 (older ones ignore its filters), the
-tool-first steps 0.3.8 (the first that works inside bb's
-sandbox), sharing a folder 0.3.11, a folder's own visibility 0.3.12, and a placed
-folder's own people 0.3.14
-(`syns upgrade`).
+Code* below). Thread Pages 1.9 and earlier pass no session folder, so every call there answers `no_repo`. Both need
+the Syns CLI, the first release after 0.3.23 or later — installed and logged in (`syns login`) on every machine whose
+sessions should reach a repository (`syns upgrade`). An older CLI's refusal comes back in its own words.
 
 ```sh
 bb plugin install https://github.com/synsdev/syns-bb-plugin
@@ -74,8 +69,8 @@ The full method reference is in `bb pages guide`.
 | --- | --- | --- |
 | `syns.repo` | read | Owner, name and head `version`; in a placed folder also `holder`, `path` and `number`. The call a page polls with `watch` |
 | `syns.whoami` | read | The account logged in on that machine |
-| `syns.ls` | read | Files and folders, each file with a content hash, `blob`. Paged |
-| `syns.readMany` | read | Up to 64 whole files at one version; what did not fit comes back as `deferred` |
+| `syns.ls` | read | Files and folders, each file with a content hash, `blob`. Paged: 1,500 entries, or 9,000 one-string lines with `format: "lines"` |
+| `syns.readMany` | read | Up to 64 whole files at one version, in one CLI run; what did not fit comes back as `deferred` |
 | `syns.read` | read | A window of one file's lines |
 | `syns.glob` · `syns.grep` | read | Find files by path pattern · search their texts |
 | `syns.diff` | read | The paths, and optionally the patches, between two versions |
@@ -88,7 +83,7 @@ The full method reference is in `bb pages guide`.
 | `syns.place` | write | A template placed as a new folder of the session's repository |
 | `syns.shareInfo` · `syns.share` · `syns.unshare` | read · write · write | A placed folder's sharing: shown, shared under an identity of its own, stopped |
 | `syns.folderVisibility` · `syns.repoVisibility` | write | A placed folder's own visibility · the repository's, from its root |
-| `syns.collaborators` · `syns.collaboratorAdd` · `syns.collaboratorRole` · `syns.collaboratorRemove` | read · write | The scope's people and their roles: a shared placed folder's own (CLI 0.3.14), or at a root the whole repository's |
+| `syns.collaborators` · `syns.collaboratorAdd` · `syns.collaboratorRole` · `syns.collaboratorRemove` | read · write | The scope's people and their roles: a shared placed folder's own, or at a root the whole repository's |
 | `syns.enableChecks` | write | Turn on the checks a placed folder recorded from its template |
 | `syns.explore` · `syns.users` | read | Public repositories, templates among them · people, to share with |
 
@@ -96,6 +91,11 @@ Each of the last twelve is one CLI command run in the page's scope, its answer
 and its refusals the CLI's own: the plugin is a thin adapter. The sharing and
 visibility methods reach other people at once; a page offers them only on a
 control the reader presses, saying who gets what.
+
+Each page call is one CLI run, on bb and on Claude Code alike; a scoped call's first in a minute also runs the
+scope check, `syns repo --json --within=<session folder>`. A call is answered within 25 seconds, and at that limit
+its run is stopped. Every request the CLI sends names the host in its User-Agent: `SYNS_CALLER` is `bb-plugin` on
+bb and `claude-pages` on Claude Code. On bb the host worker is held until 15 minutes after the last run.
 
 `version` is a commit SHA and opaque. Every write but `syns.revert` requires
 `base`, the version the page last read; a moved head refuses it as `conflict`
@@ -129,12 +129,11 @@ Page authors get the full reference, generated from the code, with
   names a `holder` and a `path`, every path is counted from the folder, and
   `syns.repo` reports the holder's head, which moves with any change to the
   holder. This needs a Syns CLI with folders (roadmap 239–241).
-- **A placed folder's people need CLI 0.3.14 and a shared folder.** From a
-  placed folder's page the collaborator methods act on the folder's own
-  people. Until the folder is shared they answer `bad_scope`, saying to share
-  it first; an older CLI answers `bad_scope` there too. At a repository's
-  root they act on the whole repository: adding someone there grants every
-  folder.
+- **A placed folder's people need a shared folder.** From a placed folder's
+  page the collaborator methods act on the folder's own people. Until the
+  folder is shared they answer `bad_scope`, saying to share it first. At a
+  repository's root they act on the whole repository: adding someone there
+  grants every folder.
 - Thread Pages refuses any result over 10,000 JSON values, which is why `syns.ls`
   and `syns.glob` are paged and `syns.grep` lowers its row limit as context grows.
 - Proven on one machine. A session on a second enrolled host, a worktree

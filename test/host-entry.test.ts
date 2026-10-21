@@ -96,13 +96,13 @@ describe("the host half, run against a stand-in executable", () => {
 
   it("hands the provenance it is given to the process's environment, over what it inherited (D44)", async () => {
     const bin = script("env", 'printf "%s|%s|%s" "$SYNS_INTEGRATION" "$SYNS_RUN" "$SYNS_TRIGGER"');
-    const result = await runSyns(bin, [], dir, undefined, 5000, signal, { SYNS_INTEGRATION: "syns-pages", SYNS_RUN: "thr_1", SYNS_TRIGGER: "page" });
+    const result = await runSyns(bin, [], dir, undefined, 5000, signal, "bb-plugin", { SYNS_INTEGRATION: "syns-pages", SYNS_RUN: "thr_1", SYNS_TRIGGER: "page" });
     expect(result.stdout).toBe("syns-pages|thr_1|page");
   });
 
   it("passes arguments as they are, standard input, and the folder; returns exit code and output", async () => {
     const bin = script("echo", 'printf "%s|" "$@"; printf "cwd=%s|" "$(pwd -P)"; cat; echo oops >&2; exit 3');
-    const result = await runSyns(bin, ["a b", "$(id)", "; rm -rf x", "--", "-n"], dir, "from stdin", 5000, signal);
+    const result = await runSyns(bin, ["a b", "$(id)", "; rm -rf x", "--", "-n"], dir, "from stdin", 5000, signal, "bb-plugin");
     expect(result.exitCode).toBe(3);
     expect(result.stdout).toContain("a b|$(id)|; rm -rf x|--|-n|");
     expect(result.stdout).toContain("from stdin");
@@ -114,7 +114,7 @@ describe("the host half, run against a stand-in executable", () => {
   it("stops a process that outlives its limit (S2.14, A38)", async () => {
     const bin = script("slow", "sleep 10");
     const started = Date.now();
-    const result = await runSyns(bin, [], dir, undefined, 150, signal);
+    const result = await runSyns(bin, [], dir, undefined, 150, signal, "bb-plugin");
     expect(result.timedOut).toBe(true);
     expect(Date.now() - started).toBeLessThan(3000);
   });
@@ -122,7 +122,7 @@ describe("the host half, run against a stand-in executable", () => {
   it("stops a process that prints more than MAX_OUTPUT, 40 MiB, and says so (S2.16, D27)", async () => {
     const bin = script("loud", `head -c ${MAX_OUTPUT + 2_000_000} /dev/zero | tr '\\0' 'x'; sleep 10`);
     const started = Date.now();
-    const result = await runSyns(bin, [], dir, undefined, 8000, signal);
+    const result = await runSyns(bin, [], dir, undefined, 8000, signal, "bb-plugin");
     expect(result.overflowed).toBe(true);
     expect(result.stdout.length).toBeLessThanOrEqual(MAX_OUTPUT);
     expect(Date.now() - started).toBeLessThan(5000);
@@ -131,13 +131,13 @@ describe("the host half, run against a stand-in executable", () => {
   it("hands bytes on standard input to the process exactly (D25)", async () => {
     const bin = script("bytes", "od -An -tx1 | tr -d ' \\n'");
     const bytes = Buffer.from([0xff, 0xd8, 0x00, 0x0a, 0x0d, 0x80, 0xff, 0xd9]);
-    const result = await runSyns(bin, [], dir, bytes, 5000, signal);
+    const result = await runSyns(bin, [], dir, bytes, 5000, signal, "bb-plugin");
     expect(result.stdout).toBe("ffd8000a0d80ffd9");
   });
 
   it("reports a process that could not be started, in words that are not CLI_NOT_FOUND", async () => {
     const bin = script("fine", "exit 0");
-    const result = await runSyns(bin, [], join(dir, "no-such-folder"), undefined, 1000, signal);
+    const result = await runSyns(bin, [], join(dir, "no-such-folder"), undefined, 1000, signal, "bb-plugin");
     expect(result.spawnError).toBeTruthy();
     expect(result.spawnError).not.toBe(CLI_NOT_FOUND);
   });

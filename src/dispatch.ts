@@ -1,10 +1,9 @@
 import type { Cli, RunResult } from "./cli.js";
-import { SynsError, fail, interpret, toAnswer, type FailureAnswer } from "./errors.js";
+import { SynsError, fail, interpret, redact, toAnswer, type FailureAnswer } from "./errors.js";
 import { path as pathSchema, pick, provenance, validate, type Context, type Method } from "./method.js";
 import { METHODS } from "./methods/index.js";
 import { createHeld, type Held } from "./held.js";
-import { CLI_NOT_FOUND, type Where } from "./cli.js";
-import { atLeast, createVersions, parseTriple, type Versions } from "./version.js";
+import { buildArgs, type Where } from "./cli.js";
 
 /** The session's folder as the host passes it (unife-pages 07 R5.84b, U44): an absolute path on `machine`, null where the host has one. */
 export interface Workspace {
@@ -50,7 +49,6 @@ export interface DispatchDeps {
   cli: Cli;
   log: Log;
   held?: Held;
-  versions?: Versions;
   now?: () => number;
 }
 
@@ -62,40 +60,37 @@ export const SCOPE_TTL_MS = 60_000;
  * take the session's folder from the host, run the CLI, map the outcome. It knows no method by name.
  * spec S2.1, S2.2, S2.14, S2.18–S2.22
  */
-export function createDispatch({ table = METHODS, cli, log, held = createHeld(), versions = createVersions(cli), now = Date.now }: DispatchDeps): (call: Call) => Promise<Answer> {
+export function createDispatch({ table = METHODS, cli, log, held = createHeld(), now = Date.now }: DispatchDeps): (call: Call) => Promise<Answer> {
   const byName = new Map(table.map((method) => [method.name, method]));
 
   /** Scopes found to belong to their session's repository, each held a minute (D46): the answer is about the folder, not its contents. */
   const confirmed = new Map<string, number>();
 
-  /** The repository a folder's `syns repo --json` names: a placed folder's holder, else its own OWNER/NAME. */
-  const repositoryOf = (out: unknown): string | null => {
-    const doc = (typeof out === "object" && out !== null ? out : {}) as Record<string, unknown>;
-    if (typeof doc.holder === "string") return doc.holder.toLowerCase();
-    return typeof doc.owner === "string" && typeof doc.name === "string" ? `${doc.owner}/${doc.name}`.toLowerCase() : null;
-  };
-
-  async function sameRepository(session: Where, scoped: Where, scope: string, deadline: number): Promise<void> {
+  /**
+   * D46 rule 2, as amended (D83): one run at the scope, `syns repo --within=<session folder> --json`. The CLI
+   * answers `within` from the identity files on disk (roadmap 277). Its run, when one was made, is returned: a
+   * scoped `syns.repo` answers from it (S1.10, S1.14).
+   */
+  async function sameRepository(session: Where, scoped: Where, scope: string, deadline: number, signal: AbortSignal): Promise<RunResult | undefined> {
     const key = `${session.hostId}\u0000${session.cwd}\u0000${scope}`;
     const at = confirmed.get(key);
-    if (at !== undefined && now() - at < SCOPE_TTL_MS) return;
-    const never = async () => { throw fail("bad_scope"); };
-    let own: string | null;
+    if (at !== undefined && now() - at < SCOPE_TTL_MS) return undefined;
+    const ran = await cli.run(scoped, buildArgs("repo", { within: session.cwd }), undefined, deadline, undefined, signal);
+    let out: unknown;
     try {
-      // The run is its own repo check; a 404 there asks whoami, so a signed-out machine says so (B-0011).
-      const ran = await cli.run(session, ["repo", "--json"], undefined, deadline);
-      own = repositoryOf(await interpret(ran, [], async () => ran, { folder: session.cwd }, () => cli.run(session, ["whoami", "--json"], undefined, deadline)));
+      // The run is its own repo check; a 404 there asks whoami at the session's folder, so a signed-out machine says so (D82, B-0011).
+      out = await interpret(ran, [], async () => ran, { folder: session.cwd }, () => cli.run(session, ["whoami", "--json"], undefined, deadline, undefined, signal));
     } catch (error) {
-      // A session whose folder is no Syns repository has no folder of a repository to scope to.
+      // No repository, or one out of reach: no folder of the session's repository to scope to.
       if (error instanceof SynsError && (error.reason === "no_repo" || error.reason === "no_access")) throw fail("bad_scope");
       throw error;
     }
-    const theirs = repositoryOf(await interpret(await cli.run(scoped, ["repo", "--json"], undefined, deadline), [], never, { folder: session.cwd }));
-    if (own === null || theirs !== own) throw fail("bad_scope");
+    if ((out as Record<string, unknown> | null)?.within !== true) throw fail("bad_scope");
     confirmed.set(key, now());
+    return ran;
   }
 
-  async function run(method: Method, params: Record<string, unknown>, sessionId: string | null, scope: string | null, workspace: unknown, deadline: number): Promise<unknown> {
+  async function run(method: Method, params: Record<string, unknown>, sessionId: string | null, scope: string | null, workspace: unknown, deadline: number, signal: AbortSignal): Promise<unknown> {
     const problem = validate(method.params, params);
     if (problem) throw new SynsError("invalid_params", { message: `Invalid parameters for ${method.name} at ${problem}` });
     method.check?.(params);
@@ -110,31 +105,25 @@ export function createDispatch({ table = METHODS, cli, log, held = createHeld(),
     const where = scope === null || method.atRoot ? session : { hostId: session.hostId, cwd: `${session.cwd.replace(/\/+$/, "")}/${scope}`, within: session.cwd };
 
     // A scope must be a folder of the session's own repository: the placed folder's holder, or the session's own identity (D46).
-    if (where !== session) await sameRepository(session, where, scope!, deadline);
-
-    // A method that needs a newer CLI, or these params of it, asks the machine's version first, once a minute at most.
-    const minCli = method.minCli ?? method.minCliFor?.(params);
-    if (minCli) {
-      const need = parseTriple(minCli)!;
-      const found = await versions.of(where, deadline);
-      if (found.spawnError === CLI_NOT_FOUND) throw fail("cli_missing");
-      if (!found.triple || !atLeast(found.triple, need)) throw fail("cli_too_old", { need: minCli, have: found.text });
-    }
+    // Where the check ran in this call, its run is the scope's `repo --json`: the method's own, and the 404 rule's (S3.5).
+    const checked = where !== session ? await sameRepository(session, where, scope!, deadline, signal) : undefined;
 
     const declared = method.reasons ?? [];
-    let repoCheck: Promise<RunResult> | undefined;
+    let repoCheck: Promise<RunResult> | undefined = checked && Promise.resolve(checked);
     let whoamiCheck: Promise<RunResult> | undefined;
     const context: Context = {
       sessionId,
       limits: cli.limits,
       held,
+      redact: (text) => redact(text, { folder: session.cwd }),
       async syns(args, stdin, options) {
         const mark = provenance(sessionId);
         const env = options?.provenanceEnv ? { SYNS_INTEGRATION: mark.integration!, SYNS_RUN: mark.run!, SYNS_TRIGGER: mark.trigger! } : undefined;
-        const ran = await cli.run(where, args, stdin, deadline, env);
+        const isRepo = args.join(" ") === "repo --json" && stdin === undefined && env === undefined;
+        const ran = isRepo && checked ? checked : await cli.run(where, args, stdin, deadline, env, signal);
         // The 404 rule's `repo` runs at most once per call, and not again after `repo` itself; then `whoami` once. S3.5, B-0011
-        const repoCheckOf = () => (repoCheck ??= args.join(" ") === "repo --json" ? Promise.resolve(ran) : cli.run(where, ["repo", "--json"], undefined, deadline));
-        const whoamiCheckOf = () => (whoamiCheck ??= cli.run(where, ["whoami", "--json"], undefined, deadline));
+        const repoCheckOf = () => (repoCheck ??= isRepo ? Promise.resolve(ran) : cli.run(where, ["repo", "--json"], undefined, deadline, undefined, signal));
+        const whoamiCheckOf = () => (whoamiCheck ??= cli.run(where, ["whoami", "--json"], undefined, deadline, undefined, signal));
         return interpret(ran, declared, repoCheckOf, { folder: session.cwd, ...(method.notFound ? { notFound: method.notFound } : {}) }, whoamiCheckOf);
       },
     };
@@ -172,13 +161,18 @@ export function createDispatch({ table = METHODS, cli, log, held = createHeld(),
     if (scope !== null && validate(pathSchema, scope)) return toAnswer(fail("bad_scope"));
     const params = (call.params ?? {}) as Record<string, unknown>;
 
+    // One controller per call: the limit aborts it, and so does the call's end, for anything still running (S2.14, D83).
+    const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     const limit = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(fail("timeout")), cli.limits.callMs);
+      timer = setTimeout(() => {
+        controller.abort();
+        reject(fail("timeout"));
+      }, cli.limits.callMs);
     });
     let outcome = "ok";
     try {
-      const work = run(method, params, sessionId, scope, call.caller?.workspace, Date.now() + cli.limits.callMs);
+      const work = run(method, params, sessionId, scope, call.caller?.workspace, Date.now() + cli.limits.callMs, controller.signal);
       work.catch(() => undefined); // it may lose the race; its failure is then nobody's
       return { ok: true, result: await Promise.race([work, limit]) };
     } catch (caught) {
@@ -188,6 +182,7 @@ export function createDispatch({ table = METHODS, cli, log, held = createHeld(),
       return toAnswer(error);
     } finally {
       clearTimeout(timer);
+      controller.abort();
       // The plugin's own record of a write: never the text, never the message. S2.19, S2.20
       if (method.effect === "contributed-write") {
         log.info(`${method.name} session=${sessionId ?? "none"} paths=${pathCount(method, params)} outcome=${outcome}`);

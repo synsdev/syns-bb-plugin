@@ -70,13 +70,14 @@ describe("syns.read trims a window too large for one answer, when asked with fit
 describe("syns.readMany says how large a file it could not serve is (D29)", () => {
   it("too_large carries size and blob", async () => {
     const big = '"'.repeat(600_000);
-    const h = harness({ cat: (request) => ok({ commitSha: HEAD, version: 6, path: pathOf(request), content: big, size: 600_000, sha: "c".repeat(40) }) });
+    // 0.9: the CLI's files answer of one run (roadmap 280); the text fits its raw bytes, not the room once escaped.
+    const h = harness({ cat: () => ok({ commitSha: HEAD, version: 6, deferred: [], files: [{ path: "board.json", content: big, size: 600_000, sha: "c".repeat(40) }] }) });
     const result = resultOf<{ files: unknown[] }>(await h.call("syns.readMany", { paths: ["board.json"], version: HEAD }));
     expect(result.files).toEqual([{ path: "board.json", error: "too_large", size: 600_000, blob: "c".repeat(40) }]);
   });
 
   it("not_text carries size and blob, and no bytes (D-088)", async () => {
-    const h = harness({ cat: (request) => ok({ commitSha: HEAD, version: 6, path: pathOf(request), contentBase64: "iVBORw0KGgo=", mediaType: "image/png", size: 8, sha: "d".repeat(40) }) });
+    const h = harness({ cat: () => ok({ commitSha: HEAD, version: 6, deferred: [], files: [{ path: "images/a.png", contentBase64: "iVBORw0KGgo=", size: 8, sha: "d".repeat(40) }] }) });
     const result = resultOf<{ files: unknown[] }>(await h.call("syns.readMany", { paths: ["images/a.png"], version: HEAD }));
     expect(result.files).toEqual([{ path: "images/a.png", error: "not_text", size: 8, blob: "d".repeat(40) }]);
   });

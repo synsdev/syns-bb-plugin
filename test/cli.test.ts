@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildArgs, createCli, pool, type RunRequest, type RunResult } from "../src/cli.js";
+import { buildArgs, createCli, type RunRequest, type RunResult } from "../src/cli.js";
 import { fakeRunner, rec } from "./fake-runner.js";
 
 const where = { hostId: "host_1", cwd: "/work" };
-const limits = { processMs: 20, callMs: 60, perMachine: 2, perCall: 8 };
+const limits = { processMs: 20, callMs: 60, perMachine: 2 };
 
 describe("buildArgs (S2.11, S2.13)", () => {
   it("passes every option as --option=value, always adds --json, and puts positionals after --", () => {
@@ -81,18 +81,10 @@ describe("createCli limits (S2.14, S2.15)", () => {
   });
 });
 
-describe("pool", () => {
-  it("keeps order and never runs more than its size at once", async () => {
-    let running = 0;
-    let peak = 0;
-    const out = await pool([1, 2, 3, 4, 5, 6, 7], 3, async (n) => {
-      running += 1;
-      peak = Math.max(peak, running);
-      await new Promise((resolve) => setTimeout(resolve, 3));
-      running -= 1;
-      return n * 2;
-    });
-    expect(out).toEqual([2, 4, 6, 8, 10, 12, 14]);
-    expect(peak).toBe(3);
+describe("0.9: no pool, no perCall (rows 12, 27)", () => {
+  it("cli.ts exports no pool and Limits has no perCall", async () => {
+    const cli = await import("../src/cli.js");
+    expect(cli).not.toHaveProperty("pool");
+    expect(cli.LIMITS).toEqual({ processMs: 20_000, callMs: 25_000, perMachine: 16 });
   });
 });

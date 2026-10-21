@@ -31,6 +31,8 @@ export interface Context {
   syns(args: string[], stdin?: string | Buffer, options?: RunOptions): Promise<unknown>;
   /** What the plugin holds between calls (D27). */
   readonly held: Held;
+  /** The CLI's words with the machine's paths taken out, as a refusal reaches a page (D60, D61). */
+  redact(text: string): string;
 }
 
 export interface RunOptions {
@@ -68,10 +70,6 @@ interface Common {
   sharing?: true;
   /** The sentence a not_found answer carries, where the plugin's default (a path or version) would mislead. */
   notFound?: string;
-  /** The oldest Syns CLI that can serve it, as "X.Y.Z". Older answers unavailable / cli_too_old before anything runs. */
-  minCli?: string;
-  /** The same, where only some params need a newer CLI: the version these params need, or undefined for any CLI. Runs after the params' check. */
-  minCliFor?(params: any): string | undefined;
   /** How many paths a write names, for the plugin's log. Defaults to one when there is a `path`. S2.19 */
   pathCount?(params: any): number;
 }
@@ -96,7 +94,7 @@ export const EVERY_CHANGE: readonly Reason[] = ["folder_write_unsupported"];
 export const EVERY_WRITE: readonly Reason[] = ["stale_head", "checkout_dirty"];
 
 /** Every reason a method can answer with: the common ones, a write's, and its own. S3.2 */
-export const reasonsOf = (method: Method): Reason[] => [...EVERY_METHOD, ...(method.minCli || method.minCliFor ? (["cli_too_old"] as Reason[]) : []), ...(fileWrite(method) ? EVERY_CHANGE : []), ...(fileWrite(method) && !method.unguarded ? EVERY_WRITE : []), ...(method.reasons ?? [])];
+export const reasonsOf = (method: Method): Reason[] => [...EVERY_METHOD, ...(fileWrite(method) ? EVERY_CHANGE : []), ...(fileWrite(method) && !method.unguarded ? EVERY_WRITE : []), ...(method.reasons ?? [])];
 
 /** A write of a repository's files, as opposed to a sharing change (D41). */
 export const fileWrite = (method: Method): boolean => method.effect === "contributed-write" && !method.sharing;
