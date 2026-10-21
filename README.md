@@ -19,7 +19,7 @@ Syns CLI → Syns API      the only thing that touches the repository
 
 On bb: bb 0.43 or later and Thread Pages 1.10.0 or later; on Claude Code: Unife Pages 0.2.0 or later (see *On Claude
 Code* below). Thread Pages 1.9 and earlier pass no session folder, so every call there answers `no_repo`. Both need
-the Syns CLI, the first release after 0.3.23 or later — installed and logged in (`syns login`) on every machine whose
+the Syns CLI, 0.3.24 or later — installed and logged in (`syns login`) on every machine whose
 sessions should reach a repository (`syns upgrade`). An older CLI's refusal comes back in its own words.
 
 ```sh

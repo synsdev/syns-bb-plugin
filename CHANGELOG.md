@@ -5,7 +5,7 @@
 One CLI run per page call, on both hosts, on the latest CLI only (Syns roadmap 280; `bartsoj/syns` D-244, Q-0155;
 the plugin's design tree D83). Bb and Claude Code answer every call alike; the plugin stays an adapter of the CLI.
 
-- **Minimum CLI.** One minimum for every method: the Syns CLI, the first release after 0.3.23 or later (it carries
+- **Minimum CLI.** One minimum for every method: the Syns CLI, 0.3.24 or later (it carries
   Syns roadmaps 277–279). No `syns --version` is run and no method declares a minimum: `cli_too_old` is gone. An
   older CLI's refusal comes back as `handler_error` in its own words, so `syns.readMany` and every scoped call fail
   on 0.3.23 and earlier with the CLI's `error: unexpected argument …` line. Upgrade with `syns upgrade`.
