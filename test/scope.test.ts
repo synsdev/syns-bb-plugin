@@ -46,7 +46,8 @@ describe("a document's scope: one check run (D46 as amended, D83; rows 13–19)"
     for (const verdict of [false, undefined]) {
       const h = harness({ repo: repoBy({ [SCOPE]: PLACED }, { [SCOPE]: verdict }), ls: rec("ls.ok") });
       expect(failureOf(await scoped(h, "clients/vela/q3-board", "syns.ls", {})), String(verdict)).toMatchObject({ code: "invalid_params", reason: "bad_scope" });
-      expect(h.runner.calls.map((call) => call.args[0]), String(verdict)).toEqual(["repo"]);
+      // The one check ran at the scope with --within, and its answer, not a missing session record, refused it.
+      expect(h.runner.calls.map((call) => [call.cwd, call.args.join(" ")]), String(verdict)).toEqual([[SCOPE, "repo --within=/work/checkout --json"]]);
     }
   });
   it("the recorded answers: within true in a placed folder holds; within false is bad_scope (row 14)", async () => {
@@ -120,7 +121,8 @@ describe("a document's scope: one check run (D46 as amended, D83; rows 13–19)"
     const FOREIGN = { ...ROOT, owner: "other", name: "elsewhere" };
     const h = harness({ repo: repoBy({ "/work/checkout/vendor/other": FOREIGN }, { "/work/checkout/vendor/other": false }) });
     expect(failureOf(await scoped(h, "vendor/other"))).toMatchObject({ code: "invalid_params", reason: "bad_scope" });
-    expect(h.runner.calls).toHaveLength(1); // the check, and nothing else
+    // The check, and nothing else: at the scope, with --within naming the session's folder.
+    expect(h.runner.calls.map((call) => [call.cwd, call.within, call.args.join(" ")])).toEqual([["/work/checkout/vendor/other", "/work/checkout", "repo --within=/work/checkout --json"]]);
   });
   it("with no scope, an empty one or null, runs in the session's folder as before, with no check", async () => {
     for (const scope of [undefined, null, ""]) {

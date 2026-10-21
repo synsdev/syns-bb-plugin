@@ -175,10 +175,23 @@ describe("runSyns and the hosts' runners on abort (rows 31, 32)", () => {
     expect(syns.runs()).toEqual([]);
   });
 
-  it("the signal is not handed to spawn: no SIGTERM ending as spawnError (row 32)", async () => {
-    const text = (await import("node:fs")).readFileSync(new URL("../src/syns-process.ts", import.meta.url), "utf8");
-    const spawnCall = /spawn\(([^)]*)\)/.exec(text)![1]!;
-    expect(spawnCall).not.toMatch(/signal/);
+  it("the signal is not handed to spawn: the process gets runSyns's SIGKILL, never spawn's SIGTERM, and no spawnError (row 32)", async () => {
+    // A stand-in that notes a SIGTERM and carries on: spawn's own abort would send exactly that, then end as spawnError.
+    const { chmodSync, existsSync, writeFileSync } = await import("node:fs");
+    const bin = join(dir, "trap-syns");
+    const marker = join(dir, "sigterm-seen");
+    const started = join(dir, "trap-started");
+    writeFileSync(bin, `#!${process.execPath}\nconst fs = require("node:fs");\nprocess.on("SIGTERM", () => fs.writeFileSync(${JSON.stringify(marker)}, "1"));\nfs.writeFileSync(${JSON.stringify(started)}, String(process.pid));\nsetTimeout(() => undefined, 30000);\n`);
+    chmodSync(bin, 0o755);
+    const controller = new AbortController();
+    const pending = runSyns(bin, ["repo", "--json"], dir, undefined, 20_000, controller.signal, "bb-plugin");
+    await vi.waitFor(() => expect(existsSync(started)).toBe(true), { timeout: 5000 });
+    controller.abort();
+    const result = await pending;
+    expect(result).toMatchObject({ timedOut: true, spawnError: null });
+    const pid = Number((await import("node:fs")).readFileSync(started, "utf8"));
+    await vi.waitFor(() => expect(alive(pid)).toBe(false), { timeout: 2000 });
+    expect(existsSync(marker)).toBe(false);
   });
 
   it("Claude Code: createLocalRunner passes the request's signal to runSyns (row 31)", async () => {
