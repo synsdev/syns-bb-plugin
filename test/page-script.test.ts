@@ -36,7 +36,19 @@ describe("the page script's text (S2.28)", () => {
     expect(capture).not.toContain("remove()" + ";\n    Array.from(document.body.attributes)");
     expect(capture).not.toContain('say("Loading…")');
     const load = PAGEHOST.slice(PAGEHOST.indexOf("async function load()"));
-    expect(load.indexOf("if (!app.version) clear();")).toBeGreaterThan(load.indexOf("if (!index || index.text === undefined)"));
+    expect(load.indexOf("if (!app.version) { clear(); listen(); }")).toBeGreaterThan(load.indexOf("if (!index || index.text === undefined)"));
+  });
+
+  it("once the workspace is shown, takes a saved page through threadPage.onPageUpdate where the host offers it: SynsPages.page and only its frames change, no new boot (S2.30)", () => {
+    const load = PAGEHOST.slice(PAGEHOST.indexOf("async function load()"));
+    expect(load).toContain("if (!app.version) { clear(); listen(); }");
+    expect(load.indexOf("listen();")).toBeGreaterThan(load.indexOf("return showWritten();"));
+    const listen = PAGEHOST.slice(PAGEHOST.indexOf("function listen()"), PAGEHOST.indexOf("function clear()"));
+    expect(listen).toContain('if (typeof window.threadPage.onPageUpdate !== "function") return;');
+    expect(listen).toContain("P.showPage(describe(doc.documentElement, u.documentPath, doc.title));");
+    expect(PAGEHOST).toContain('if (f.src.kind === "page" && f.src.html !== undefined && f.src.path === page.path) { f.src.html = page.html || "<html></html>"; f.reload(); }');
+    expect(PAGEHOST).toContain("live.add(this);");
+    expect(PAGEHOST).toContain("live.delete(this);");
   });
 });
 

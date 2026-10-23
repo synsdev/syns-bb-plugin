@@ -3,7 +3,7 @@
 ## 0.10.0
 
 The page opens inside the repository's workspace, with nothing for the agent to add (`bartsoj/syns`
-products/syns-plugins B-0063, B-0064, B-0066; the design tree's D84). Needs Thread Pages 1.11.0 or Unife Pages 0.3.0.
+products/syns-plugins B-0063, B-0064, B-0066, B-0065; the design tree's D84). Needs Thread Pages 1.11.0 or Unife Pages 0.3.0.
 
 - **A page script.** The declaration says `pageScript: true`, and the plugin answers each served page
   (`threadPagesPageScript` on bb, `kind: "pageScript"` on Claude Code): the page host, at the plugin's version, when
@@ -15,6 +15,10 @@ products/syns-plugins B-0063, B-0064, B-0066; the design tree's D84). Needs Thre
   that is no repository yet, the bootstrap puts the page back and runs its scripts, where it said "no app to load".
   It leaves the kernel's and every contributor's page script alone, and strips them from a page it shows in a frame.
   The `data-app` attribute is gone: the workspace is always `.page/index.html`.
+- **Saving the page no longer reboots the workspace** (B-0065). Once the workspace is shown, the bootstrap takes a
+  saved page through `threadPage.onPageUpdate` where the host offers it (Thread Pages 1.11.0, Unife Pages 0.3.0):
+  `SynsPages.page` becomes the new page and only the frames showing it reload, typed text and scroll kept; the
+  workspace, its tree and an open app stay. `SynsPages.showPage(page)` does the same for any app around the page.
 - **The fragment** is the Syns workspace text: when the page opens in the workspace, the two commands before a first
   page, and that an app is a folder holding an `index.html`. The *Tool first* line and its `bartsoj/syns-templates`
   pointer are gone, and so are the folder, pushed-state, `base`, loading and sharing rules and the setup pointer: the

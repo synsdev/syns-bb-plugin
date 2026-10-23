@@ -2993,7 +2993,7 @@ function pathCount(method, params) {
 //#endregion
 //#region src/pagehost.ts
 /**
-* The page script (spec 02 §The page script, S2.27–S2.29): the Syns page host and its bootstrap, which Thread Pages puts first in
+* The page script (spec 02 §The page script, S2.27–S2.30): the Syns page host and its bootstrap, which Thread Pages puts first in
 * every page of a session whose folder is a Syns repository. Kept as text, since it runs in the reader's browser and
 * not here; its tests check it parses and holds nothing the host refuses (unife-pages 07 R5.90).
 */
@@ -3016,6 +3016,7 @@ const PAGEHOST = String.raw`/*
  *     f.reload()   f.changed(paths)   f.destroy()   f.frame (the iframe)   f.title()
  *
  *   SynsPages.page            the Thread Page this document is, taken before the app loaded (the bootstrap, at the end of this file)
+ *   SynsPages.showPage(page)  a new version of SynsPages.page: the frames showing it take it (drafts and scroll kept)
  *   SynsPages.tools(paths)    the folders among the repository's paths that open as pages
  *   SynsPages.pageUrl(sessionId, path, fragment)   the host's address of a document of the page
  *   SynsPages.goTo(fromPath, path)                  this document goes to another document of the page
@@ -3165,6 +3166,7 @@ const PAGEHOST = String.raw`/*
     return out.join("/");
   };
 
+  const live = new Set();
   class PageFrame {
     constructor(container, src, options) {
       this.src = Object.assign({}, src);
@@ -3180,6 +3182,7 @@ const PAGEHOST = String.raw`/*
       this.frame.setAttribute("sandbox", "allow-scripts allow-forms allow-downloads allow-popups");
       Object.assign(this.frame.style, { flex: "1", width: "100%", height: "100%", border: "0", display: "none", background: "transparent" });
       container.appendChild(this.frame);
+      live.add(this);
       this.onMessage = (e) => this.answer(e);
       window.addEventListener("message", this.onMessage);
       if (src.kind === "page" && !src.html) this.poll = setInterval(() => this.checkPage(), 4000);
@@ -3187,7 +3190,7 @@ const PAGEHOST = String.raw`/*
     }
     title() { return this.src.title || (this.src.kind === "repo" ? baseOf(this.folder) : baseOf(this.src.path).replace(/\.html?$/i, "")); }
     entry() { return this.src.kind === "repo" ? this.folder + "/" + (this.src.doc || "index.html") : this.src.path; }
-    destroy() { this.dead = true; clearInterval(this.poll); window.removeEventListener("message", this.onMessage); this.frame.remove(); }
+    destroy() { this.dead = true; live.delete(this); clearInterval(this.poll); window.removeEventListener("message", this.onMessage); this.frame.remove(); }
     reload() { this.dirty = false; return this.load(); }
     /** Repository paths that changed: a tool reloads when one is in its folder. */
     changed(paths) { if (this.src.kind === "repo" && !this.dead && (paths || []).some((p) => String(p).startsWith(this.folder + "/"))) this.load(); }
@@ -3350,6 +3353,11 @@ const PAGEHOST = String.raw`/*
   }
 
   P.frame = function (container, src, options) { return new PageFrame(container, src, options); };
+  /** A new version of the page this document is: SynsPages.page becomes it, and only the frames showing it reload. */
+  P.showPage = function (page) {
+    P.page = page;
+    live.forEach(function (f) { if (f.src.kind === "page" && f.src.html !== undefined && f.src.path === page.path) { f.src.html = page.html || "<html></html>"; f.reload(); } });
+  };
   /** The folders that open as pages: one holding an index.html (not under a dot folder, not inside another), or a placed template (.syns.yaml, its app in .page/). */
   P.tools = function (paths) {
     const placed = paths.filter((p) => /(^|\/)\.syns\.yaml$/.test(p) && p !== ".syns.yaml").map((p) => p.slice(0, -".syns.yaml".length));
@@ -3377,7 +3385,9 @@ const PAGEHOST = String.raw`/*
  * The bootstrap. It keeps the page as the host served it (window.SynsPages.page), holds back the page's own scripts
  * (they run in the workspace's frame instead) and reads the repository's workspace (.page/index.html); only once it
  * is there does it clear the document and load the workspace into it. With no workspace to read (no such file, no
- * repository yet, or no syns.* here, as in an embed) the page stays as written and its scripts run.
+ * repository yet, or no syns.* here, as in an embed) the page stays as written and its scripts run. Once the workspace
+ * is shown, a saved page is taken through threadPage.onPageUpdate where the host offers it: only the agent's page
+ * (SynsPages.page and its frame) changes, with no new boot; without it the host loads the saved page as before.
  *   SynsPages.app   { version, reload(), onStop(fn) }   an in-page reload: stop the app, read it again, start it.
  */
 (function () {
@@ -3406,13 +3416,25 @@ const PAGEHOST = String.raw`/*
       if (served(s)) cs[i].remove();
       else if (held.has(s)) { if (held.get(s) === null) cs[i].removeAttribute("type"); else cs[i].setAttribute("type", held.get(s)); }
     });
-    clone.querySelectorAll("base").forEach(function (el) { el.remove(); });
-    const body = clone.querySelector("body");
+    P.page = describe(clone, docPath, document.title);
+  }
+  // The page as SynsPages.page has it: from its <html> element, with no <base>.
+  function describe(root, path, title) {
+    root.querySelectorAll("base").forEach(function (el) { el.remove(); });
+    const body = root.querySelector("body");
     const hasPage = !!body && (Array.from(body.children).some(function (el) { return el.tagName !== "SCRIPT"; }) || body.textContent.trim() !== "");
-    P.page = Object.freeze({
-      path: docPath, hasPage: hasPage,
-      title: document.title || docPath.replace(/^.*\//, "").replace(/\.html?$/i, ""),
-      html: hasPage ? "<!doctype html>\n" + clone.outerHTML : null,
+    return Object.freeze({
+      path: path, hasPage: hasPage,
+      title: title || path.replace(/^.*\//, "").replace(/\.html?$/i, ""),
+      html: hasPage ? "<!doctype html>\n" + root.outerHTML : null,
+    });
+  }
+  // A saved page, handed over by the host (without its kernel, page scripts and base) instead of a new boot.
+  function listen() {
+    if (typeof window.threadPage.onPageUpdate !== "function") return;
+    window.threadPage.onPageUpdate(function (u) {
+      const doc = new DOMParser().parseFromString(u.html, "text/html");
+      P.showPage(describe(doc.documentElement, u.documentPath, doc.title));
     });
   }
   // The workspace is there: the document is cleared for it.
@@ -3479,7 +3501,7 @@ const PAGEHOST = String.raw`/*
     catch (e) { if (app.version) throw e; return showWritten(); }
     const index = first.files[entry];
     if (!index || index.text === undefined) { if (app.version) throw new Error(entry + " is no longer in the repository"); return showWritten(); }
-    if (!app.version) clear();
+    if (!app.version) { clear(); listen(); }
     app.version = first.version;
     const doc = new DOMParser().parseFromString(index.text, "text/html");
     const styles = Array.from(doc.head.querySelectorAll('link[rel="stylesheet"][href], style'));
