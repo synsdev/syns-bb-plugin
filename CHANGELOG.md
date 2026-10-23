@@ -2,9 +2,10 @@
 
 ## 0.10.0
 
-The page opens inside the repository's workspace, with nothing for the agent to add (`bartsoj/syns`
-products/syns-plugins B-0063, B-0064, B-0066, B-0065, B-0067, B-0068, B-0062, B-0069, B-0070, B-0071; the design tree's D84, D85, D86, D87, D88, D89). Needs Thread Pages 1.11.0 or Unife Pages 0.3.0,
-and the Syns CLI 0.3.25.
+The page opens inside the repository's workspace, with nothing for the agent to add; an app's folder is a hard
+boundary; files and folders move and copy as one version; `syns.diff`, `syns.history` and `syns.revert` follow the
+Syns CLI 0.3.25 (the design tree's D84 to D89). Needs Thread Pages 1.11.0 or Unife Pages 0.3.0, and the Syns CLI
+0.3.25.
 
 - **A page script.** The declaration says `pageScript: true`, and the plugin answers each served page
   (`threadPagesPageScript` on bb, `kind: "pageScript"` on Claude Code): the page host, at the plugin's version, when
