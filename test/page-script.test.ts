@@ -25,8 +25,8 @@ describe("the page script's text (S2.28)", () => {
   });
 
   it("with no workspace to read, leaves the page as written and runs its scripts once: any failure of the first read, or no .page/index.html (S2.29)", () => {
-    expect(PAGEHOST).toContain("catch (e) { return showWritten(); }");
-    expect(PAGEHOST).toContain("if (!index || index.text === undefined) return showWritten();");
+    expect(PAGEHOST).toContain("catch (e) { if (app.version) throw e; return showWritten(); }");
+    expect(PAGEHOST).toContain('if (app.version) throw new Error(entry + " is no longer in the repository"); return showWritten();');
     expect(PAGEHOST).toContain("if (shown) return;");
     expect(PAGEHOST).not.toContain("so there is no app to load");
   });
@@ -36,7 +36,7 @@ describe("the page script's text (S2.28)", () => {
     expect(capture).not.toContain("remove()" + ";\n    Array.from(document.body.attributes)");
     expect(capture).not.toContain('say("Loading…")');
     const load = PAGEHOST.slice(PAGEHOST.indexOf("async function load()"));
-    expect(load.indexOf("clear();")).toBeGreaterThan(load.indexOf("if (!index || index.text === undefined) return showWritten();"));
+    expect(load.indexOf("if (!app.version) clear();")).toBeGreaterThan(load.indexOf("if (!index || index.text === undefined)"));
   });
 });
 

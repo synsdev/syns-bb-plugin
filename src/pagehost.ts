@@ -480,10 +480,11 @@ export const PAGEHOST = String.raw`/*
   async function load() {
     if (!window.threadPage) return showWritten();
     let first;
+    // Once the workspace has been shown, a reload that cannot read it is a failure, with Try again.
     try { first = await read([entry]); }
-    catch (e) { return showWritten(); }
+    catch (e) { if (app.version) throw e; return showWritten(); }
     const index = first.files[entry];
-    if (!index || index.text === undefined) return showWritten();
+    if (!index || index.text === undefined) { if (app.version) throw new Error(entry + " is no longer in the repository"); return showWritten(); }
     if (!app.version) clear();
     app.version = first.version;
     const doc = new DOMParser().parseFromString(index.text, "text/html");
