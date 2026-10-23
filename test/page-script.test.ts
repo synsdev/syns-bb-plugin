@@ -24,10 +24,19 @@ describe("the page script's text (S2.28)", () => {
     expect(PAGEHOST).not.toContain("data-app");
   });
 
-  it("with no workspace to load, puts the page back as written: on no_repo and on a missing .page/index.html (S2.29)", () => {
-    expect(PAGEHOST).toContain('if (e.reason === "no_repo") return showWritten();');
+  it("with no workspace to read, leaves the page as written and runs its scripts once: any failure of the first read, or no .page/index.html (S2.29)", () => {
+    expect(PAGEHOST).toContain("catch (e) { return showWritten(); }");
     expect(PAGEHOST).toContain("if (!index || index.text === undefined) return showWritten();");
+    expect(PAGEHOST).toContain("if (shown) return;");
     expect(PAGEHOST).not.toContain("so there is no app to load");
+  });
+
+  it("clears the document only once the workspace is there, so the host's restore of drafts and scroll finds the page (S2.29)", () => {
+    const capture = PAGEHOST.slice(PAGEHOST.indexOf("function capture()"), PAGEHOST.indexOf("function clear()"));
+    expect(capture).not.toContain("remove()" + ";\n    Array.from(document.body.attributes)");
+    expect(capture).not.toContain('say("Loading…")');
+    const load = PAGEHOST.slice(PAGEHOST.indexOf("async function load()"));
+    expect(load.indexOf("clear();")).toBeGreaterThan(load.indexOf("if (!index || index.text === undefined) return showWritten();"));
   });
 });
 

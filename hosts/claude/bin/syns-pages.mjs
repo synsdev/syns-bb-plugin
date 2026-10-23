@@ -3375,9 +3375,9 @@ const PAGEHOST = String.raw`/*
 
 /*
  * The bootstrap. It keeps the page as the host served it (window.SynsPages.page), holds back the page's own scripts
- * (they run in the workspace's frame instead), clears the document and loads the repository's workspace
- * (.page/index.html) into it, in one read. With no workspace to load (the repository has no .page/index.html, or
- * the folder is not a repository yet), it puts the page back as written and runs its scripts.
+ * (they run in the workspace's frame instead) and reads the repository's workspace (.page/index.html); only once it
+ * is there does it clear the document and load the workspace into it. With no workspace to read (no such file, no
+ * repository yet, or no syns.* here, as in an embed) the page stays as written and its scripts run.
  *   SynsPages.app   { version, reload(), onStop(fn) }   an in-page reload: stop the app, read it again, start it.
  */
 (function () {
@@ -3396,7 +3396,6 @@ const PAGEHOST = String.raw`/*
   observer.observe(document.documentElement, { childList: true, subtree: true });
 
   // ---- the page this script is in
-  let written = null;
   function capture() {
     const kernel = document.querySelector("script[data-thread-page-kernel]");
     let docPath = "index.html";
@@ -3415,8 +3414,10 @@ const PAGEHOST = String.raw`/*
       title: document.title || docPath.replace(/^.*\//, "").replace(/\.html?$/i, ""),
       html: hasPage ? "<!doctype html>\n" + clone.outerHTML : null,
     });
-    // The page's own nodes, kept to put back when there is no workspace.
-    written = { head: Array.from(document.head.childNodes), body: Array.from(document.body.childNodes), attributes: Array.from(document.body.attributes).map(function (a) { return [a.name, a.value]; }) };
+  }
+  // The workspace is there: the document is cleared for it.
+  function clear() {
+    const kernel = document.querySelector("script[data-thread-page-kernel]");
     Array.from(document.head.children).forEach(function (el) { if (el !== kernel && el.tagName !== "META") el.remove(); });
     Array.from(document.body.attributes).forEach(function (a) { document.body.removeAttribute(a.name); });
     const style = document.createElement("style");
@@ -3429,12 +3430,11 @@ const PAGEHOST = String.raw`/*
     if (retry) { const b = document.createElement("button"); b.type = "button"; b.textContent = "Try again"; b.onclick = retry; m.append(" ", b); }
     document.body.replaceChildren(m);
   }
-  // No workspace: the page as written, its held scripts run in order, then the load events they missed.
+  // No workspace: the page stays as written; its held scripts run once, in order, then the load events they missed.
+  let shown = false;
   async function showWritten() {
-    document.head.replaceChildren.apply(document.head, written.head);
-    Array.from(document.body.attributes).forEach(function (a) { document.body.removeAttribute(a.name); });
-    written.attributes.forEach(function (a) { document.body.setAttribute(a[0], a[1]); });
-    document.body.replaceChildren.apply(document.body, written.body);
+    if (shown) return;
+    shown = true;
     for (const [s, type] of held) {
       if (!s.isConnected) continue;
       const node = document.createElement("script");
@@ -3455,7 +3455,7 @@ const PAGEHOST = String.raw`/*
   const resolve = function (ref) { const out = []; (dir + ref.split(/[?#]/)[0]).split("/").forEach(function (s) { if (s === "..") out.pop(); else if (s && s !== ".") out.push(s); }); return out.join("/"); };
   const stops = [];
   let added = [];
-  const app = P.app = { version: null, onStop: function (fn) { stops.push(fn); }, reload: function () { stop(); say("Loading…"); return load().catch(fail); } };
+  const app = P.app = { version: null, onStop: function (fn) { stops.push(fn); }, reload: function () { if (shown) return Promise.resolve(); stop(); say("Loading…"); return load().catch(fail); } };
   function stop() { stops.splice(0).forEach(function (fn) { try { fn(); } catch (e) { console.error(e); } }); added.forEach(function (n) { n.remove(); }); added = []; }
   async function read(paths, version) {
     const out = {};
@@ -3475,12 +3475,10 @@ const PAGEHOST = String.raw`/*
     if (!window.threadPage) return showWritten();
     let first;
     try { first = await read([entry]); }
-    catch (e) {
-      if (e.reason === "no_repo") return showWritten();
-      throw e;
-    }
+    catch (e) { return showWritten(); }
     const index = first.files[entry];
     if (!index || index.text === undefined) return showWritten();
+    if (!app.version) clear();
     app.version = first.version;
     const doc = new DOMParser().parseFromString(index.text, "text/html");
     const styles = Array.from(doc.head.querySelectorAll('link[rel="stylesheet"][href], style'));
