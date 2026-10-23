@@ -1,0 +1,1 @@
+{"source": "CLI 0.3.25, measured 2026-10-24 on a throwaway repository (kit/scratch.py), Syns B-0070: four pushes adding n1.md to n4.md (five versions), then `syns history --limit=2 --offset=50 --json`", "exitCode": 0, "json": {"data": [], "limit": 2, "offset": 50, "total": 5}}

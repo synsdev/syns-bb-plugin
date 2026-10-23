@@ -3,7 +3,7 @@
 ## 0.10.0
 
 The page opens inside the repository's workspace, with nothing for the agent to add (`bartsoj/syns`
-products/syns-plugins B-0063, B-0064, B-0066, B-0065, B-0067, B-0068, B-0062, B-0069; the design tree's D84, D85, D86, D87). Needs Thread Pages 1.11.0 or Unife Pages 0.3.0,
+products/syns-plugins B-0063, B-0064, B-0066, B-0065, B-0067, B-0068, B-0062, B-0069, B-0070; the design tree's D84, D85, D86, D87, D88). Needs Thread Pages 1.11.0 or Unife Pages 0.3.0,
 and the Syns CLI 0.3.25.
 
 - **A page script.** The declaration says `pageScript: true`, and the plugin answers each served page
@@ -42,6 +42,9 @@ and the Syns CLI 0.3.25.
 - **`syns.diff` names a move's old path** (B-0069, the design tree's D87): a `renamed` entry carries `oldPath`, as
   CLI 0.3.25 answers a recorded move. Under a `scope`, a move across the folder's edge reads as an addition (moved in)
   or a deletion at the old path (moved out), with no patch.
+- **`syns.history` pages** (B-0070, the design tree's D88): `offset` skips that many versions, newest first, as
+  CLI 0.3.25's `syns history --offset`; the next page is `offset + limit`. Under a `scope` it counts the repository's
+  versions, as `total` does.
 
 ## 0.9.1
 

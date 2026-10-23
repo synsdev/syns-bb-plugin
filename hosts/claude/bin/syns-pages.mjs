@@ -1573,7 +1573,7 @@ const MAX_PATHS = 200;
 const record$2 = (value) => typeof value === "object" && value !== null ? value : {};
 const history = {
 	name: "syns.history",
-	description: "Newest versions first: who or what made each, and the paths it changed. A page's commit has by.integration syns-pages and by.trigger page. No paging past limit (default 20); total says how many.",
+	description: "Newest versions first: who or what made each, and the paths it changed. A page's commit has by.integration syns-pages and by.trigger page. limit (default 20) from offset; total says how many. Next page: offset + limit.",
 	effect: "read",
 	params: object({
 		path,
@@ -1581,6 +1581,11 @@ const history = {
 			type: "integer",
 			minimum: 1,
 			maximum: 100
+		},
+		offset: {
+			type: "integer",
+			minimum: 0,
+			maximum: 4294967295
 		}
 	}),
 	result: {
@@ -1641,7 +1646,8 @@ const history = {
 	maxResponseBytes: M1,
 	command: (params) => ({ args: buildArgs("history", {
 		file: params.path,
-		limit: params.limit ?? 20
+		limit: params.limit ?? 20,
+		offset: params.offset
 	}) }),
 	shape: (out, params) => ({
 		total: out.total,

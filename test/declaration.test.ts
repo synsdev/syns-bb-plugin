@@ -270,6 +270,8 @@ describe("what agents are told", () => {
     const history = declaration.methods.find((method) => method.name === "syns.history")!;
     expect(history.description).toContain("by.integration syns-pages and by.trigger page");
     expect(history.description).not.toContain("by.run is the bb session");
+    expect(history.description).toContain("from offset"); // pages since B-0070 (S1.27)
+    expect(history.description).not.toContain("No paging");
   });
 
   it("the guide says plainly what syns.revert lacks today, and its recipes use the full set (D13, spec 04)", () => {

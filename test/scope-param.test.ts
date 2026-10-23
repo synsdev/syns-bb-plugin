@@ -68,6 +68,12 @@ describe("the scope parameter in the server half (S1.25, D85)", () => {
     expect((await h.call("syns.history", { path: "n29.md", scope: "notes" })).ok).toBe(true);
     expect(args(h)).toEqual(["history --file=notes/n29.md --limit=20 --json"]);
   });
+  it("syns.history's offset counts the repository's versions, as total does: passed on unchanged under a scope (S1.27)", async () => {
+    const h = harness({ history: rec("history.ok") });
+    const result = resultOf(await h.call("syns.history", { scope: "notes", limit: 5, offset: 5 }));
+    expect(args(h)).toEqual(["history --limit=5 --offset=5 --json"]);
+    expect(result.total).toBe(6);
+  });
   it("syns.diff counts a move inside the folder from it; one across its edge is an addition or a deletion, with no patch (A90, S1.26)", async () => {
     const files = [
       { path: `${APP}/c.md`, oldPath: `${APP}/a.md`, status: "renamed", diff: "rename" },

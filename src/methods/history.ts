@@ -6,9 +6,14 @@ const record = (value: unknown): Record<string, unknown> => (typeof value === "o
 
 export const history: SimpleMethod = {
   name: "syns.history",
-  description: "Newest versions first: who or what made each, and the paths it changed. A page's commit has by.integration syns-pages and by.trigger page. No paging past limit (default 20); total says how many.",
+  description: "Newest versions first: who or what made each, and the paths it changed. A page's commit has by.integration syns-pages and by.trigger page. limit (default 20) from offset; total says how many. Next page: offset + limit.",
   effect: "read",
-  params: object({ path, limit: { type: "integer", minimum: 1, maximum: 100 } }),
+  params: object({
+    path,
+    limit: { type: "integer", minimum: 1, maximum: 100 },
+    // The CLI's --offset is a u32, as grep's: a larger value is refused here, not by its parser.
+    offset: { type: "integer", minimum: 0, maximum: 4294967295 },
+  }),
   result: {
     type: "object",
     properties: {
@@ -40,7 +45,7 @@ export const history: SimpleMethod = {
   },
   maxRequestBytes: K64,
   maxResponseBytes: M1,
-  command: (params) => ({ args: buildArgs("history", { file: params.path, limit: params.limit ?? 20 }) }),
+  command: (params) => ({ args: buildArgs("history", { file: params.path, limit: params.limit ?? 20, offset: params.offset }) }),
   shape: (out, params) => ({
     total: out.total,
     entries: Array.isArray(out.data)

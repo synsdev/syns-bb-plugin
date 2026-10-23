@@ -201,4 +201,25 @@ describe("syns.history", () => {
     expect(entry.paths).toHaveLength(200);
     expect(entry.pathsTruncated).toBe(true);
   });
+  it("pages past limit with offset, as CLI 0.3.25's --offset: limit versions after the first offset, total unchanged (A91, S1.27)", async () => {
+    const h = harness({ history: rec("history.offset.0325") });
+    const result = resultOf<{ total: number; entries: { number: number; message: string }[] }>(await h.call("syns.history", { limit: 2, offset: 2 }));
+    expect(h.runner.calls[0]!.args).toEqual(["history", "--limit=2", "--offset=2", "--json"]);
+    expect(result.total).toBe(5);
+    expect(result.entries.map((entry) => [entry.number, entry.message])).toEqual([[3, "add n2"], [2, "add n1"]]);
+  });
+  it("answers an offset past the last version with no entries, not an error (A91)", async () => {
+    const h = harness({ history: rec("history.offset-past.0325") });
+    expect(resultOf(await h.call("syns.history", { limit: 2, offset: 50 }))).toEqual({ total: 5, entries: [] });
+  });
+  it("passes offset beside --file for one file's history", async () => {
+    const h = harness({ history: rec("history.file.ok") });
+    await h.call("syns.history", { path: "notes/n01.md", limit: 1, offset: 1 });
+    expect(h.runner.calls[0]!.args).toEqual(["history", "--file=notes/n01.md", "--limit=1", "--offset=1", "--json"]);
+  });
+  it("refuses an offset that is not an integer from 0 to the CLI's u32 maximum, before any process (A91)", async () => {
+    const h = harness();
+    for (const offset of [-1, 1.5, "2", 4294967296]) expect(failureOf(await h.call("syns.history", { offset })).code).toBe("invalid_params");
+    expect(h.runner.calls).toEqual([]);
+  });
 });
