@@ -165,8 +165,8 @@ texts on standard input. A page's path, pattern or text is never read as a flag.
 
 The specification, every decision with its reasoning, the measured facts about
 bb, Thread Pages and the CLI that the code rests on, the build plan, and the live
-verification fixture and its log live in the Syns repository
-`bartsoj/syns-bb-plugin`.
+verification fixture and its log live in the Syns repository `bartsoj/syns`,
+under `products/syns-plugins/pages/`.
 
 ## Licence
 

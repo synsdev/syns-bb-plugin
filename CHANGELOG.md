@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.1
+
+The plugin's design moved: its specification, decisions, host facts and live verification now live in the Syns
+repository `bartsoj/syns`, under `products/syns-plugins/pages/`, and the plugin is released from there (Syns roadmap
+294). The README's Design section says so. No method, result, reason, fragment or guide text changed: a page or a
+session sees what 0.9.0 gave it.
+
 ## 0.9.0
 
 One CLI run per page call, on both hosts, on the latest CLI only (Syns roadmap 280; `bartsoj/syns` D-244, Q-0155;
