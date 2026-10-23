@@ -6,6 +6,7 @@ import { LIMITS, createCli, type Limits } from "../../src/cli.js";
 import { buildDeclaration } from "../../src/declaration.js";
 import { createDispatch, type Call, type Log } from "../../src/dispatch.js";
 import { METHODS } from "../../src/methods/index.js";
+import { answerPageScript, type PageScriptAsk } from "../../src/page-script.js";
 import { createLocalRunner } from "./runner.js";
 
 /**
@@ -16,7 +17,8 @@ import { createLocalRunner } from "./runner.js";
  *
  *   POST   /v1/contributors            { kind: "process", namespace: "syns", declaration, endpoint } → 201
  *   DELETE /v1/contributors/syns       on stop
- *   the daemon POSTs { namespace, method, params, caller, requestId } to the endpoint and reads the answer
+ *   the daemon POSTs { namespace, method, params, caller, requestId } to the endpoint and reads the answer,
+ *   and { namespace, kind: "pageScript", caller, documentPath, have } for the page script (07 §A page script, S2.27)
  *
  * The endpoint is a Unix socket in a folder only this user can open, so no browser and no other user reaches it.
  * Started by the daemon from this plugin's unife-pages.json (U45), it registers with the token it was given and lives
@@ -95,7 +97,8 @@ export function controlOver(socketPath: string, token?: string): Control {
 export async function serve(options: ServeOptions): Promise<Served> {
   const { log } = options;
   const control = controlOver(options.socket, options.token);
-  const invoke = createDispatch({ cli: createCli(createLocalRunner(options.synsPath), options.limits ?? LIMITS), log });
+  const cli = createCli(createLocalRunner(options.synsPath), options.limits ?? LIMITS);
+  const invoke = createDispatch({ cli, log });
   const declaration = buildDeclaration(METHODS, { agentInstructions: options.agentInstructions });
 
   const server = http.createServer((req, res) => {
@@ -111,16 +114,16 @@ export async function serve(options: ServeOptions): Promise<Served> {
       else chunks.push(chunk);
     });
     req.on("end", () => {
-      let call: Call;
+      let call: Call & { kind?: string };
       try {
-        // The daemon adds the namespace; the call is the rest (07 §The call).
-        const { namespace: _namespace, ...rest } = JSON.parse(Buffer.concat(chunks).toString("utf8")) as Call & { namespace?: string };
+        // The daemon adds the namespace; the call is the rest (07 §The call). A page-script ask is marked by its kind.
+        const { namespace: _namespace, ...rest } = JSON.parse(Buffer.concat(chunks).toString("utf8")) as Call & { namespace?: string; kind?: string };
         call = rest;
       } catch {
         res.writeHead(400).end();
         return;
       }
-      void invoke(call).then((answer) => {
+      void (call.kind === "pageScript" ? answerPageScript(cli, call as unknown as PageScriptAsk) : invoke(call)).then((answer) => {
         const text = JSON.stringify(answer);
         res.writeHead(200, { "content-type": "application/json", "content-length": Buffer.byteLength(text) }).end(text);
       });

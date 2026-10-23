@@ -4,7 +4,7 @@ import { FRAGMENT } from "./text/fragment.js";
 import { buildGuide } from "./text/guide.js";
 
 /** The plugin's version, as declared to the host. A test holds it equal to package.json's. */
-export const VERSION = "0.9.1";
+export const VERSION = "0.10.0";
 
 export interface DeclaredMethod {
   name: string;
@@ -19,15 +19,18 @@ export interface DeclaredMethod {
 
 export interface Declaration {
   version: string;
+  /** The plugin answers threadPagesPageScript (S2.27). */
+  pageScript: true;
   methods: DeclaredMethod[];
   instruction?: string;
   guide: string;
 }
 
-/** threadPagesContributions, generated from the table. With `agentInstructions` off no fragment is declared (S4.5). */
+/** threadPagesContributions, generated from the table. With `agentInstructions` off no fragment is declared (S4.5); the page script is declared either way (S2.27). */
 export function buildDeclaration(table: readonly Method[], settings: { agentInstructions: boolean }): Declaration {
   return {
     version: VERSION,
+    pageScript: true,
     methods: table.map((method) => ({
       name: method.name,
       description: method.description,

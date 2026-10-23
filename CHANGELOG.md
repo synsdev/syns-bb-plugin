@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.10.0
+
+The page opens inside the repository's workspace, with nothing for the agent to add (`bartsoj/syns`
+products/syns-plugins B-0063, B-0064, B-0066; the design tree's D84). Needs Thread Pages 1.11.0 or Unife Pages 0.3.0.
+
+- **A page script.** The declaration says `pageScript: true`, and the plugin answers each served page
+  (`threadPagesPageScript` on bb, `kind: "pageScript"` on Claude Code): the page host, at the plugin's version, when
+  one `syns repo --json` in the session's folder succeeds (a repository, or a folder placed in one); none otherwise, or
+  when the check takes over 1.5 s. The host gets only the version when it already holds that script. The page host is
+  `bartsoj/syns-workspace-light-template`'s `.page/pagehost.js` (version 3), now the plugin's, without the two strings
+  an inline script cannot carry.
+- **The page as written when there is no workspace.** In a Syns repository with no `.page/index.html`, or a folder
+  that is no repository yet, the bootstrap puts the page back and runs its scripts, where it said "no app to load".
+  It leaves the kernel's and every contributor's page script alone, and strips them from a page it shows in a frame.
+  The `data-app` attribute is gone: the workspace is always `.page/index.html`.
+- **The fragment** is the Syns workspace text: when the page opens in the workspace, the two commands before a first
+  page, and that an app is a folder holding an `index.html`. The *Tool first* line and its `bartsoj/syns-templates`
+  pointer are gone, and so are the folder, pushed-state, `base`, loading and sharing rules and the setup pointer: the
+  guide holds the rules.
+
 ## 0.9.1
 
 The plugin's design moved: its specification, decisions, host facts and live verification now live in the Syns

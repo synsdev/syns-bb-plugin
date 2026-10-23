@@ -28,7 +28,7 @@ export const LOCAL = "local";
 const ABSOLUTE = /^(\/|[A-Za-z]:[\\/]|\\\\)/;
 
 /** Where the CLI runs for the session: the folder the host passed, on its machine. Null when there is none; a malformed one throws. */
-function sessionWhere(workspace: unknown): Where | null {
+export function sessionWhere(workspace: unknown): Where | null {
   if (workspace === null || workspace === undefined) return null;
   const w = workspace as Partial<Workspace>;
   if (typeof w.path !== "string" || !ABSOLUTE.test(w.path) || (w.machine !== null && typeof w.machine !== "string")) {

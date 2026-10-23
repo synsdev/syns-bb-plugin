@@ -4,7 +4,8 @@ import http from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { buildDeclaration } from "../../src/declaration.js";
+import { VERSION, buildDeclaration } from "../../src/declaration.js";
+import { PAGEHOST } from "../../src/pagehost.js";
 import { METHODS } from "../../src/methods/index.js";
 import { controlOver, serve, type Served } from "../../hosts/claude/process.js";
 import { fakeBb } from "../fake-bb.js";
@@ -165,6 +166,21 @@ describe("Claude Code: the process against a daemon's control socket (R-X5)", ()
     expect(await post(served.endpoint, { method: "syns.repo", params: {}, caller: { sessionId: SESSION, scope: "../elsewhere", workspace: { id: "ws", path: checkout, machine: null } }, requestId: "r4" })).toMatchObject({ body: { ok: false, error: { reason: "bad_scope" } } });
     expect(await post(served.endpoint, { method: "syns.repo", params: {}, caller: { sessionId: "bbbbbbbb-0000-0000-0000-000000000000", scope: null, workspace: null }, requestId: "r5" })).toMatchObject({ body: { ok: false, error: { reason: "no_repo" } } });
     expect(await post(served.endpoint, { method: "syns.repo", params: {}, caller: { sessionId: null, scope: null, workspace: null }, requestId: "r6" })).toMatchObject({ body: { ok: false, error: { reason: "no_repo" } } });
+  });
+
+  it("answers a page-script ask on the same endpoint: the script for a session whose folder is a Syns repository, none without a folder (S2.27)", async () => {
+    const { checkout, synsPath, runs } = machine();
+    daemon = fakeDaemon(join(dir, "control.sock"));
+    await daemon.listen();
+    served = await serve({ socket: join(dir, "control.sock"), synsPath, agentInstructions: true, log: { info: () => undefined, warn: () => undefined }, everyMs: 50 });
+    await vi.waitFor(() => expect(daemon!.seen.registrations).toHaveLength(1));
+    expect(daemon.seen.registrations[0]).toMatchObject({ declaration: { pageScript: true } });
+
+    const caller = { sessionId: SESSION, workspace: { id: "ws", path: checkout, machine: null } };
+    expect(await post(served.endpoint, { kind: "pageScript", caller, documentPath: "index.html", have: null })).toEqual({ status: 200, body: { version: VERSION, script: PAGEHOST } });
+    expect(await post(served.endpoint, { kind: "pageScript", caller, documentPath: "index.html", have: VERSION })).toEqual({ status: 200, body: { version: VERSION } });
+    expect(runs()).toEqual([`${realpathSync(checkout)} repo --json`, `${realpathSync(checkout)} repo --json`]);
+    expect(await post(served.endpoint, { kind: "pageScript", caller: { sessionId: null, workspace: null }, documentPath: "index.html", have: null })).toEqual({ status: 200, body: null });
   });
 
   it("no syns executable is cli_missing; anything but POST /invoke is 404", async () => {

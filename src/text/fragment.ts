@@ -1,22 +1,14 @@
 /**
- * The instruction fragment (spec 04): read by every eligible session, every
- * time, on any host. It leads with the one line that matters most, a tool
- * first (D35, D45), says in words when the rest applies (S4.2), names only
- * methods this version registers (S4.4), and is declared to the host with the
- * method list and injected nowhere else (S4.1). The declaration is the same on
- * every host (07 R-X1), so the text names no host's command: the host's own
- * instruction names its guide command under *More*. On bb the fragment
- * reaches the agent before that instruction, so the text says where, not "above".
- * The protocol allows 2,048 bytes.
+ * The instruction fragment (spec 04): read by every eligible session, every time, on any host. It leads with the
+ * workspace line (S4.6): when it applies, in words (S4.2), and that the page opens inside the repository's workspace
+ * with nothing to add, since the plugin's page script brings it (S2.27). Then the two steps an agent takes before its
+ * first page, and where apps go. It is declared to the host with the method list and injected nowhere else (S4.1).
+ * The declaration is the same on every host (07 R-X1), so the text names no host's command. The owner's text
+ * (IN-0056 §4), verbatim; the protocol allows 2,048 bytes.
  */
-export const FRAGMENT = `**Tool first.** Asked to open a Syns template, or for a piece of work the person will keep working in? Follow \`syns cat TOOLS.md --repo bartsoj/syns-templates\` (find a template with \`syns explore -t syns-app -q <words>\`).
+export const FRAGMENT = `**Syns workspace.** When this session's folder is empty or a Syns repository, your page opens inside the repository's workspace, beside its files and apps; nothing to add to your page. Before your first page in a session:
+- No \`.page/index.html\`: \`mkdir -p .page && syns cat .page/index.html --repo bartsoj/syns-workspace-light-template > .page/index.html\`
+- No \`.syns.yaml\`: \`syns push -n <a short name for this work> --visibility private\`
 
-**Syns repository.** When this session's folder is a Syns repository, or a folder placed in one, the page reads and writes it through \`syns.*\`. Not in \`context.get\`, or \`unavailable\` / \`no_repo\`: say so and keep the rest working; never show invented data.
-
-- **The page names no repository:** it sees the one, or the placed folder, its session's folder belongs to; paths count from there.
-- **Pages show pushed state:** your edits reach the page after your turn is pushed.
-- **Every write needs \`base\`,** the \`version\` last read: \`syns.repo\`, \`syns.ls\` and \`syns.readMany\` each answer one, a write the next. On \`stale_head\`, re-read and let the reader retry; on \`checkout_dirty\` an agent is mid-turn: retry when \`version\` moves.
-- **Load with \`syns.ls\` and \`syns.readMany\`;** poll only \`syns.repo\` with \`watch\`. Writes and shares act at once: only from a control saying what changes, for whom.
-
-Every method: the page guide (its command is in your page instruction's *More*), section *Capabilities from contributors*. Installing or diagnosing the plugin: \`syns cat SETUP.md --repo bartsoj/syns-bb-plugin-setup\`.
+Make what the person will keep using an app: a folder holding an \`index.html\`; the workspace runs it with \`syns.*\` counted from that folder (the guide's *syns* section). The workspace itself is the repository's \`.page/index.html\`: change it as the person asks.
 `;

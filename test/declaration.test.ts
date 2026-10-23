@@ -24,7 +24,7 @@ function walk(schema: Schema, visit: (node: Schema, at: string) => void, at = "$
   if (schema.items) walk(schema.items as Schema, visit, `${at}[]`);
 }
 const typesOf = (node: Schema): string[] => (Array.isArray(node.type) ? (node.type as string[]) : [node.type as string]);
-const namesIn = (text: string): string[] => [...new Set(text.match(/syns\.[a-z][A-Za-z0-9]*/g) ?? [])].sort();
+const namesIn = (text: string): string[] => [...new Set(text.match(/(?<![.\w])syns\.[a-z][A-Za-z0-9]*/g) ?? [])].sort();
 
 const declaration = buildDeclaration(METHODS, { agentInstructions: true });
 
@@ -37,7 +37,7 @@ describe("the table", () => {
 
 describe("the declaration", () => {
   it("carries only the keys the host accepts, the package's version, and stays under the host's 256 KiB", () => {
-    expect(Object.keys(declaration).sort()).toEqual(["guide", "instruction", "methods", "version"]);
+    expect(Object.keys(declaration).sort()).toEqual(["guide", "instruction", "methods", "pageScript", "version"]);
     expect(declaration.version).toBe(VERSION);
     expect(VERSION).toBe((JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string }).version);
     expect(Buffer.byteLength(JSON.stringify(declaration))).toBeLessThan(256 * 1024);
@@ -210,33 +210,28 @@ describe("what agents are told", () => {
     expect(room, `room ${room}, one more method ${Math.ceil(method + errorRow)}`).toBeGreaterThanOrEqual(method + errorRow);
   });
 
-  it("the fragment leads with one tool-first line naming the two commands, and points at the setup doc (A56, D45)", () => {
+  it("the fragment leads with the workspace line, then the two steps before a first page and where apps go; no template flow (A56, S4.6, D84)", () => {
     const text = declaration.instruction!;
-    expect(text.startsWith("**Tool first.** Asked to open a Syns template, or for a piece of work the person will keep working in?")).toBe(true);
-    expect(text.split("\n")[0]).toContain("`syns explore -t syns-app -q <words>`");
-    expect(text.split("\n")[0]).toContain("`syns cat TOOLS.md --repo bartsoj/syns-templates`");
-    expect(text).toContain("`syns cat SETUP.md --repo bartsoj/syns-bb-plugin-setup`");
-    expect(text).not.toContain("syns-tools");
+    expect(text.startsWith("**Syns workspace.** When this session's folder is empty or a Syns repository, your page opens inside the repository's workspace, beside its files and apps; nothing to add to your page.")).toBe(true);
+    expect(text).toContain("- No `.page/index.html`: `mkdir -p .page && syns cat .page/index.html --repo bartsoj/syns-workspace-light-template > .page/index.html`");
+    expect(text).toContain("- No `.syns.yaml`: `syns push -n <a short name for this work> --visibility private`");
+    expect(text).toContain("Make what the person will keep using an app: a folder holding an `index.html`");
+    for (const gone of ["Tool first", "bartsoj/syns-templates", "TOOLS.md", "syns explore", "syns-tools", "pagehost.js"]) expect(text, gone).not.toContain(gone);
   });
 
-  it("the fragment and the guide say the folder rule: a placed folder is what the page sees, paths counted from it (A57, D36)", () => {
-    expect(declaration.instruction).toMatch(/or a folder placed in one/);
-    expect(declaration.instruction).toContain("it sees the one, or the placed folder, its session's folder belongs to; paths count from there.");
-    expect(declaration.instruction).not.toMatch(/never names a repository\.\*\* It is the one/);
+  it("the fragment is the owner's text, verbatim (IN-0056 §4)", () => {
+    expect(declaration.instruction).toBe(readFileSync(new URL("./fixtures/fragment-0.10.0.md", import.meta.url), "utf8").trim());
+  });
+
+  it("the guide says the folder rule: a placed folder is what the page sees, paths counted from it (A57, S4.7, D36)", () => {
     expect(declaration.guide).toContain("## A placed folder");
     for (const word of ["`holder`", "counted from it", "the holder's", "Once the CLI checks writes against the folder only, a write is `stale_head` only when the folder changed after `base`"]) expect(declaration.guide, word).toContain(word);
     expect(declaration.guide).not.toContain("repository-relative");
     expect(declaration.guide).not.toContain("Choose a repository: it is the session's.");
   });
 
-  it("the fragment and the guide say one rule on base: the version of the last read, from any read; each read's result carries it (A73, S4.8, D81)", () => {
-    const line = (declaration.instruction ?? "").split("\n").find((l) => l.includes("**Every write needs `base`"));
-    expect(line).toBeDefined();
-    expect(line).not.toMatch(/last read from `syns\.repo`/);
-    for (const read of ["syns.repo", "syns.ls", "syns.readMany"]) {
-      expect(line, read).toContain(`\`${read}\``);
-      expect(METHODS.find((m) => m.name === read)!.result.required, read).toContain("version");
-    }
+  it("the guide says one rule on base: the version of the last read, from any read; each read's result carries it (A73, S4.8, D81)", () => {
+    for (const read of ["syns.repo", "syns.ls", "syns.readMany"]) expect(METHODS.find((m) => m.name === read)!.result.required, read).toContain("version");
     expect(declaration.guide).toContain("carries `base`, the `version` last read; the returned `version` is the next `base`");
   });
 
@@ -261,9 +256,9 @@ describe("what agents are told", () => {
     expect(declaration.guide).toContain("create: true");
   });
 
-  it("the fragment says in words that it applies only in a Syns repository, and where the rest is (S4.2)", () => {
-    expect(declaration.instruction).toMatch(/When this session's folder is a Syns repository/);
-    expect(declaration.instruction).toContain("Every method: the page guide (its command is in your page instruction's *More*), section *Capabilities from contributors*.");
+  it("the fragment says in words that it applies only when the session's folder is empty or a Syns repository, and where the rest is (S4.2)", () => {
+    expect(declaration.instruction).toMatch(/When this session's folder is empty or a Syns repository/);
+    expect(declaration.instruction).toContain("(the guide's *syns* section)");
   });
 
   it("the fragment and the guide name no host: the declaration is the same on every host (07 R-X1)", () => {
@@ -272,8 +267,7 @@ describe("what agents are told", () => {
     }
   });
 
-  it("the fragment and the guide say shares act at once, from an explicit control only, and label public apart (D51, S6.30–S6.32, A72)", () => {
-    expect(declaration.instruction).toContain("Writes and shares act at once: only from a control saying what changes, for whom.");
+  it("the guide says shares act at once, from an explicit control only, and labels public apart (D51, S6.30–S6.32, A72)", () => {
     for (const words of ["Only from a control the reader presses for that action", "never on load, from a timer or `watch`", "The control shows who gets what", "Public is labelled apart", "anyone, signed in or not, can find and read this", "Never a default"]) expect(declaration.guide, words).toContain(words);
     for (const name of SHARING_WRITES) expect(declaration.methods.find((entry) => entry.name === name)!.description, name).toMatch(/[Oo]nly from the reader's own press/);
     for (const name of ["syns.folderVisibility", "syns.repoVisibility"]) expect(declaration.methods.find((entry) => entry.name === name)!.description, name).toContain("public: anyone, signed in or not, can find and read");

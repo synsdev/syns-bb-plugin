@@ -5,12 +5,13 @@ import { hostContract } from "./contract.js";
 import { buildDeclaration } from "./declaration.js";
 import { createDispatch, type Call } from "./dispatch.js";
 import { METHODS } from "./methods/index.js";
+import { answerPageScript, type PageScriptAsk } from "./page-script.js";
 
 /** Thread Pages has validated a call before it arrives; the dispatch checks it again against the table. */
 const anything = { "~standard": { version: 1 as const, vendor: "syns", validate: (value: unknown) => ({ value }) } };
 
 /**
- * The server half (S2.5): answers the host's two RPC methods. It runs no
+ * The server half (S2.5): answers the host's three RPC methods. It runs no
  * process and opens no file; the Runner it hands the rest is the call to the
  * host half on the session's machine.
  */
@@ -27,13 +28,15 @@ export default function synsPlugin(bb: BbPluginApi, limits: Limits = LIMITS): vo
     async () => (await settings.get()).synsPath?.trim() || undefined,
   );
 
-  const invoke = createDispatch({ cli: createCli(runner, limits), log: bb.log });
+  const cli = createCli(runner, limits);
+  const invoke = createDispatch({ cli, log: bb.log });
 
   bb.rpc.register(
-    { threadPagesContributions: { input: anything, output: anything }, threadPagesInvoke: { input: anything, output: anything } },
+    { threadPagesContributions: { input: anything, output: anything }, threadPagesInvoke: { input: anything, output: anything }, threadPagesPageScript: { input: anything, output: anything } },
     {
       threadPagesContributions: async () => buildDeclaration(METHODS, { agentInstructions: (await settings.get()).agentInstructions !== false }),
       threadPagesInvoke: (input: unknown) => invoke(input as Call),
+      threadPagesPageScript: (input: unknown) => answerPageScript(cli, input as PageScriptAsk),
     },
   );
 }

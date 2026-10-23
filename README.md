@@ -17,8 +17,8 @@ Syns CLI → Syns API      the only thing that touches the repository
 
 ## Install
 
-On bb: bb 0.43 or later and Thread Pages 1.10.0 or later; on Claude Code: Unife Pages 0.2.0 or later (see *On Claude
-Code* below). Thread Pages 1.9 and earlier pass no session folder, so every call there answers `no_repo`. Both need
+On bb: bb 0.43 or later and Thread Pages 1.11.0 or later; on Claude Code: Unife Pages 0.3.0 or later (see *On Claude
+Code* below): the first that take a contributor's page script. Both need
 the Syns CLI, 0.3.24 or later — installed and logged in (`syns login`) on every machine whose
 sessions should reach a repository (`syns upgrade`). An older CLI's refusal comes back in its own words.
 
@@ -51,15 +51,25 @@ beside Unife Pages. The CLI runs on this machine, in the folder the
 daemon names for the calling session. Settings are the environment: `SYNS_PATH` (the executable) and
 `SYNS_PAGES_INSTRUCTION=0` (declare no fragment). `node hosts/claude/bin/syns-pages.mjs` also runs by hand.
 
+## The workspace
+
+The plugin also gives the host a page script: the Syns page host (`src/pagehost.ts`, `window.SynsPages`) and its
+bootstrap. The host puts it first in every page of a session whose folder is a Syns repository, or a folder placed in
+one, right after its kernel; for any other page the plugin answers none and the page is served as written. One
+`syns repo --json` in the session's folder decides, at each page load. The script is versioned as the plugin.
+
+In the page, the bootstrap keeps the page as served (`SynsPages.page`), holds its scripts back and loads the
+repository's workspace, `.page/index.html`, around it, in one read; the page's scripts then run in the workspace's
+frame. When the repository has no `.page/index.html`, or the folder is not a repository yet, the page is put back as
+written and its scripts run.
+
 ## What agents are told
 
 The plugin ships no skills. Its instruction fragment, which the host places after
-its own instruction, holds the `syns.*` essentials and two pointers:
-- one line telling agents to look for a template first, following the
-  templates' public `TOOLS.md`
-  (`syns cat TOOLS.md --repo bartsoj/syns-templates`);
-- the setup and diagnosis doc,
-  `syns cat SETUP.md --repo bartsoj/syns-bb-plugin-setup`.
+its own instruction, says when the page opens inside the repository's workspace,
+the two commands an agent runs before its first page (copy the workspace from
+`bartsoj/syns-workspace-light-template`, make the folder a repository), and that
+what the person keeps using is an app: a folder holding an `index.html`.
 
 The full method reference is in `bb pages guide`.
 

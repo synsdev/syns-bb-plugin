@@ -11,8 +11,8 @@ describe("the server entry", () => {
     expect(Object.keys(described).sort()).toEqual(["agentInstructions", "synsPath"]);
   });
 
-  it("answers the host's two RPC methods and nothing else (S2.5)", () => {
-    expect(Object.keys(fakeBb({}, async () => rec("repo.ok")).handlers).sort()).toEqual(["threadPagesContributions", "threadPagesInvoke"]);
+  it("answers the host's three RPC methods and nothing else (S2.5, S2.27)", () => {
+    expect(Object.keys(fakeBb({}, async () => rec("repo.ok")).handlers).sort()).toEqual(["threadPagesContributions", "threadPagesInvoke", "threadPagesPageScript"]);
   });
 
   it("declares the fragment unless agentInstructions is off (S4.5)", async () => {
