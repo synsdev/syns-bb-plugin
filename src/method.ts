@@ -62,7 +62,7 @@ interface Common {
   reasons?: readonly Reason[];
   /** What a schema cannot say. Throws a SynsError; runs before any process. */
   check?(params: any): void;
-  /** A write whose CLI command takes no parent and has no guard (`syns.revert`, D13): it cannot answer stale_head or checkout_dirty, so it does not declare them (D29). */
+  /** A write that takes no base: stale_head and checkout_dirty are declared only where it lists them itself (D29). */
   unguarded?: true;
   /** Runs at the session's folder even when the calling document set a scope (D43): it acts on the repository as a whole. */
   atRoot?: true;
@@ -95,7 +95,7 @@ export interface ProcedureMethod extends Common {
 export type Method = SimpleMethod | ProcedureMethod;
 
 export const EVERY_METHOD: readonly Reason[] = ["no_repo", "no_access", "not_logged_in", "cli_missing", "timeout", "folder_out_of_place", "bad_scope"];
-/** Every write, syns.revert included: a placed folder's write against a server without folder writes (D38). */
+/** Every write: a placed folder's write against a server without folder writes (D38). */
 export const EVERY_CHANGE: readonly Reason[] = ["folder_write_unsupported"];
 export const EVERY_WRITE: readonly Reason[] = ["stale_head", "checkout_dirty"];
 

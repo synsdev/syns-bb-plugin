@@ -144,8 +144,8 @@ describe("the declaration", () => {
       "syns.copy": [...common, ...write, "exists"].sort(),
       "syns.readBinary": common,
       "syns.writeBinary": [...common, ...write, "bad_hash", "bad_offset", "too_large"].sort(),
-      "syns.revert": [...common, "folder_write_unsupported"].sort(),
-      "syns.place": [...common, "folder_write_unsupported", "occupied", "no_such_template", "stale_head", "checkout_dirty"].sort(), // it cannot answer stale_head or checkout_dirty while the CLI's revert takes no parent and has no guard (D13, D29)
+      "syns.revert": [...common, "folder_write_unsupported", "stale_head", "checkout_dirty"].sort(),
+      "syns.place": [...common, "folder_write_unsupported", "occupied", "no_such_template", "stale_head", "checkout_dirty"].sort(),
       // 0.6.0: the CLI's answers, mapped (D59). Sharing writes declare no file-write reason (A61).
       "syns.shareInfo": [...common, "not_permitted"].sort(),
       "syns.share": [...common, "bad_name", "name_taken", "not_permitted"].sort(),
@@ -175,10 +175,9 @@ describe("the declaration", () => {
     }
   });
 
-  it("every write requires base, but syns.revert, whose CLI command takes no parent (A30, S1.4, D13)", () => {
+  it("every write requires base, syns.revert included since CLI 0.3.25 (A30, S1.4, D89)", () => {
     for (const method of declaration.methods.filter((entry) => entry.effect === "contributed-write" && !["syns.place", "syns.enableChecks", ...SHARING_WRITES].includes(entry.name))) {
-      if (method.name === "syns.revert") expect(Object.keys(method.params.properties as object), method.name).not.toContain("base");
-      else expect(method.params.required, method.name).toContain("base");
+      expect(method.params.required, method.name).toContain("base");
     }
   });
 
@@ -274,8 +273,8 @@ describe("what agents are told", () => {
     expect(history.description).not.toContain("No paging");
   });
 
-  it("the guide says plainly what syns.revert lacks today, and its recipes use the full set (D13, spec 04)", () => {
-    expect(declaration.guide).toMatch(/syns\.revert[^\n]*no stale check[^\n]*no provenance/);
+  it("the guide makes no exception of syns.revert, and its recipes use the full set (D89, spec 04)", () => {
+    expect(declaration.guide).not.toMatch(/but (for )?`syns\.revert`|syns\.revert` (records none|has no)/);
     expect(declaration.guide).toContain("syns.diff { from }");
     expect(declaration.guide).toContain("create: true");
   });

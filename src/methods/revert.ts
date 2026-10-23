@@ -1,17 +1,16 @@
 import { buildArgs } from "../cli.js";
-import { K64, message, object, path, version, type SimpleMethod } from "../method.js";
+import { K64, base, message, object, path, provenance, version, type SimpleMethod } from "../method.js";
 
 export const revert: SimpleMethod = {
   name: "syns.revert",
-  description: "Put one file back to its text at the earlier version to, as a new version. Today the CLI checks no base, so the head is not checked, and records no provenance: syns.history shows this commit with by all null.",
+  description: "Put one file, text or picture, back to what it held at the earlier version to, as a new version made against base. No content is sent. Published at once, with no confirmation.",
   effect: "contributed-write",
-  unguarded: true,
-  params: object({ path, to: version, message }, ["path", "to"]),
+  params: object({ path, to: version, base, message }, ["path", "to", "base"]),
   result: { type: "object", properties: { version, number: { type: "integer" } }, required: ["version", "number"] },
   maxRequestBytes: K64,
   maxResponseBytes: K64,
-  // The CLI's revert as it is (D13): it takes no --parent and no provenance flags, so none is passed.
-  // Its own default message stands when the page gives none.
-  command: (params) => ({ args: buildArgs("revert", { to: params.to, message: params.message || undefined }, [params.path]) }),
+  // CLI 0.3.25's revert takes a parent and provenance like every write (D89). Its own default message names the
+  // operation and the path (`Revert PATH to SHORT`), so it stands when the page gives none.
+  command: (params, sessionId) => ({ args: buildArgs("revert", { to: params.to, parent: params.base, message: params.message || undefined, ...provenance(sessionId) }, [params.path]) }),
   shape: (out) => ({ version: out.commitSha, number: out.version }),
 };

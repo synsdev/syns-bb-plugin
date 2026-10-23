@@ -128,41 +128,60 @@ describe("syns.rm", () => {
 });
 
 describe("syns.revert", () => {
-  it("calls the CLI's revert as it is: --to, the path after --, no parent and no provenance (A28, D13)", async () => {
-    const h = harness({ revert: rec("write.one.ok") });
-    expect(resultOf(await h.call("syns.revert", { path: "notes/a.md", to: OLD }, "thr_abc"))).toEqual({ version: NEW, number: 7 });
-    expect(h.runner.calls.map((call) => call.args)).toEqual([["revert", `--to=${OLD}`, "--json", "--", "notes/a.md"]]);
+  const RESTORED = "0926f54284429d523fd811f14d89caa67ee8cf96";
+  it("is one CLI process against base: --to, the parent, the provenance of D6, the path after --, no content sent (A28, S1.4, S1.5, D89)", async () => {
+    const h = harness({ revert: rec("revert.text.0325") });
+    expect(resultOf(await h.call("syns.revert", { path: "notes/a.md", to: OLD, base: HEAD }, "thr_abc"))).toEqual({ version: RESTORED, number: 6 });
+    expect(h.runner.calls.map((call) => call.args)).toEqual([["revert", `--to=${OLD}`, `--parent=${HEAD}`, ...PROVENANCE, "--run=thr_abc", "--json", "--", "notes/a.md"]]);
+    expect(h.runner.calls[0]!.stdin ?? "").toBe("");
   });
-  it("passes a message when the page gives one", async () => {
-    const h = harness({ revert: rec("write.one.ok") });
-    await h.call("syns.revert", { path: "a.md", to: OLD, message: "--parent=1" });
-    expect(h.runner.calls[0]!.args).toEqual(["revert", `--to=${OLD}`, "--message=--parent=1", "--json", "--", "a.md"]);
+  it("restores a picture the same way: one run, no bytes on the wire (A28, D89)", async () => {
+    const h = harness({ revert: rec("revert.binary.0325") });
+    expect(resultOf(await h.call("syns.revert", { path: "pic.png", to: OLD, base: HEAD }, "thr_abc"))).toEqual({ version: "acffad7f1afa419edf8f1e4f3d68423a5f65c4b0", number: 7 });
+    expect(h.runner.calls).toHaveLength(1);
+    expect(h.runner.calls[0]!.stdin ?? "").toBe("");
   });
-  it("takes no base, and no provenance (D13, S1.5)", async () => {
+  it("passes a message when the page gives one, and leaves the CLI's own default when it gives none (S1.6)", async () => {
+    const h = harness({ revert: rec("revert.text.0325") });
+    await h.call("syns.revert", { path: "a.md", to: OLD, base: HEAD, message: "--parent=1" }, "thr_abc");
+    await h.call("syns.revert", { path: "a.md", to: OLD, base: HEAD }, "thr_abc");
+    expect(h.runner.calls[0]!.args).toEqual(["revert", `--to=${OLD}`, `--parent=${HEAD}`, "--message=--parent=1", ...PROVENANCE, "--run=thr_abc", "--json", "--", "a.md"]);
+    expect(h.runner.calls[1]!.args.some((arg) => arg.startsWith("--message"))).toBe(false);
+  });
+  it("text already as it was at to makes no version: the unchanged head", async () => {
+    expect(resultOf(await harness({ revert: rec("revert.unchanged.0325") }).call("syns.revert", { path: "a.md", to: OLD, base: HEAD }))).toEqual({ version: "acffad7f1afa419edf8f1e4f3d68423a5f65c4b0", number: 7 });
+  });
+  it("a base that is not the head is stale_head, as every write (S1.4, D89)", async () => {
+    expect(failureOf(await harness({ revert: rec("revert.stale.0325") }).call("syns.revert", { path: "a.md", to: OLD, base: OLD }))).toMatchObject({ code: "conflict", reason: "stale_head", detail: { current: "acffad7f1afa419edf8f1e4f3d68423a5f65c4b0" } });
+  });
+  it("requires base, and takes no provenance from the page (A30, S1.5)", async () => {
     const h = harness();
-    for (const key of ["base", "integration", "trigger", "run"]) expect(failureOf(await h.call("syns.revert", { path: "a.md", to: OLD, [key]: HEAD })).code, key).toBe("invalid_params");
-    expect(failureOf(await h.call("syns.revert", { path: "a.md" })).code).toBe("invalid_params");
-    expect(failureOf(await h.call("syns.revert", { path: "a.md", to: "4" })).code).toBe("invalid_params");
+    expect(failureOf(await h.call("syns.revert", { path: "a.md", to: OLD })).code).toBe("invalid_params");
+    expect(failureOf(await h.call("syns.revert", { path: "a.md", to: OLD, base: "6" })).code).toBe("invalid_params");
+    for (const key of ["integration", "trigger", "run"]) expect(failureOf(await h.call("syns.revert", { path: "a.md", to: OLD, base: HEAD, [key]: "x" })).code, key).toBe("invalid_params");
+    expect(failureOf(await h.call("syns.revert", { path: "a.md", base: HEAD })).code).toBe("invalid_params");
+    expect(failureOf(await h.call("syns.revert", { path: "a.md", to: "4", base: HEAD })).code).toBe("invalid_params");
     expect(h.runner.calls).toHaveLength(0);
   });
-  it("a path or a version that is not there is not_found", async () => {
-    expect(failureOf(await harness({ revert: rec("not-found-404"), repo: rec("repo.ok") }).call("syns.revert", { path: "nope.md", to: OLD })).code).toBe("not_found");
-    expect(failureOf(await harness({ revert: rec("version-not-found") }).call("syns.revert", { path: "a.md", to: OLD })).code).toBe("not_found");
+  it("a path not there at to, or a version that is not there, is not_found", async () => {
+    expect(failureOf(await harness({ revert: rec("revert.not-at-to.0325") }).call("syns.revert", { path: "a.md", to: OLD, base: HEAD })).code).toBe("not_found");
+    expect(failureOf(await harness({ revert: rec("version-not-found") }).call("syns.revert", { path: "a.md", to: OLD, base: HEAD })).code).toBe("not_found");
   });
-  it("a dirty checkout is checkout_dirty, and the write is logged", async () => {
-    const h = harness({ revert: rec("checkout-dirty") });
-    expect(failureOf(await h.call("syns.revert", { path: "a.md", to: OLD }))).toMatchObject({ code: "conflict", reason: "checkout_dirty" });
+  it("an unpublished edit in the folder is checkout_dirty, and the write is logged (A29)", async () => {
+    const h = harness({ revert: rec("revert.dirty.0325") });
+    expect(failureOf(await h.call("syns.revert", { path: "a.md", to: OLD, base: HEAD }))).toMatchObject({ code: "conflict", reason: "checkout_dirty" });
     expect(h.log[0]).toContain("syns.revert session=thr_page paths=1 outcome=checkout_dirty");
   });
 });
 
-describe("no write but syns.revert is accepted without base (A30)", () => {
+describe("no write is accepted without base (A30)", () => {
   const calls: [string, Record<string, unknown>][] = [
     ["syns.write", { path: "a.md", text: "x" }],
     ["syns.write", { path: "a.md", text: "x", base: "6" }],
     ["syns.edit", { path: "a.md", old: "x", new: "y" }],
     ["syns.rm", { path: "a.md" }],
     ["syns.rm", { path: "a.md", base: "--parent=1" }],
+    ["syns.revert", { path: "a.md", to: OLD }],
   ];
   for (const [method, params] of calls) {
     it(`${method} ${JSON.stringify(params)}`, async () => {
@@ -178,6 +197,7 @@ describe("a page can set none of a write's provenance (S1.5)", () => {
     ["syns.write", { path: "a.md", text: "x", base: HEAD }],
     ["syns.edit", { path: "a.md", old: "x", new: "y", base: HEAD }],
     ["syns.rm", { path: "a.md", base: HEAD }],
+    ["syns.revert", { path: "a.md", to: OLD, base: HEAD }],
   ];
   for (const [method, params] of calls) {
     it(method, async () => {

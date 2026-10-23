@@ -95,12 +95,11 @@ describe("syns.history asks for at most 100 (D28)", () => {
   });
 });
 
-describe("syns.revert declares only what it can answer (D29, D13)", () => {
-  it("declares neither stale_head nor checkout_dirty", () => {
+describe("syns.revert declares what every write answers, since CLI 0.3.25 guards it (D29, D89)", () => {
+  it("declares stale_head and checkout_dirty, as syns.write does", () => {
     const declaration = buildDeclaration(METHODS, { agentInstructions: true }) as { methods: { name: string; reasons: Record<string, unknown> }[] };
     const revert = declaration.methods.find((method) => method.name === "syns.revert")!;
-    expect(Object.keys(revert.reasons)).not.toContain("stale_head");
-    expect(Object.keys(revert.reasons)).not.toContain("checkout_dirty");
+    expect(Object.keys(revert.reasons)).toEqual(expect.arrayContaining(["stale_head", "checkout_dirty"]));
     const write = declaration.methods.find((method) => method.name === "syns.write")!;
     expect(Object.keys(write.reasons)).toEqual(expect.arrayContaining(["stale_head", "checkout_dirty"]));
   });

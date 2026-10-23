@@ -1,0 +1,1 @@
+{"source": "CLI 0.3.25, measured 2026-10-24 on a throwaway repository (kit/scratch.py), Syns B-0071: `syns revert --to=<a version without the path> --parent=<head> --json -- a.md`", "exitCode": 1, "json": {"code": "not_found", "error": "path not found at version 506dd541e87b0271bcf59c7131607325e8edda35: a.md"}}

@@ -47,7 +47,7 @@ export const SAMPLES: Record<string, Record<string, unknown>> = {
   "syns.rm": { path: "notes/a.md", base: HEAD },
   "syns.move": { from: "notes/a.md", to: "notes/b.md", base: HEAD },
   "syns.copy": { from: "notes/a.md", to: "notes/b.md", base: HEAD },
-  "syns.revert": { path: "notes/a.md", to: OLD },
+  "syns.revert": { path: "notes/a.md", to: OLD, base: HEAD },
   "syns.readBinary": { path: "images/a.png" },
   "syns.writeBinary": { path: "images/a.png", base64: "iVBORw0KGgo=", base: HEAD },
   "syns.place": { template: "acme/whiteboard-template", path: "clients/vela/q3-board" },

@@ -41,11 +41,11 @@ An app is a folder holding an \`index.html\`, its CSS and JS beside it, named re
 
 Poll only \`syns.repo\`, with the host's \`watch\`. When its \`version\` differs from the one held, \`syns.diff { from }\` lists each changed path and \`status\` up to \`to.version\`; re-read those at \`to.version\`. There is no push.
 
-\`syns.history\` says who changed what. A page's write has \`by.integration\` \`syns-pages\` and \`by.trigger\` \`page\`; then \`by.run\` is the session whose page made it. Others set \`by.run\` too: never read it alone as a page's. \`syns.revert\` records none.
+\`syns.history\` says who changed what. A page's write has \`by.integration\` \`syns-pages\` and \`by.trigger\` \`page\`; then \`by.run\` is the session whose page made it. Others set \`by.run\` too: never read it alone as a page's.
 
 ## Writing
 
-Every file write but \`syns.revert\` carries \`base\`, the \`version\` last read; the returned \`version\` is the next \`base\`. A new file: \`syns.write\` with \`create: true\`, which refuses rather than overwrite. \`changed: 0\`: nothing differed, or the path was gone; no version made. A request past a method's bound comes back from the bridge as \`invalid_response\`: split it. \`syns.revert\` has no stale check and no provenance: call \`syns.repo\` just before offering it, and say what it overwrites. A picture larger than 720 KiB goes in ordered pieces; \`bad_offset\`: send from \`detail.expected\`. Beside texts in one version: \`hold: true\`, then its \`upload\` in \`syns.commit\`.
+Every file write carries \`base\`, the \`version\` last read; the returned \`version\` is the next \`base\`. A new file: \`syns.write\` with \`create: true\`, which refuses rather than overwrite. \`changed: 0\`: nothing differed, or the path was gone; no version made. A request past a method's bound comes back from the bridge as \`invalid_response\`: split it. A picture larger than 720 KiB goes in ordered pieces; \`bad_offset\`: send from \`detail.expected\`. Beside texts in one version: \`hold: true\`, then its \`upload\` in \`syns.commit\`.
 `;
 
 const SHARING = `## Sharing and people
@@ -64,7 +64,7 @@ Poll none of these with \`watch\`. Errors come back from the CLI: a refusal with
 
 const CANNOT = `## What a page cannot do here
 
-Choose a repository, or reach outside its scope. Read unpublished edits. Write a file without a \`base\`, but for \`syns.revert\`. Set a commit's provenance. Run any CLI command but the ones behind these methods: no login, upgrade, push, pull, sync, delete or fork.
+Choose a repository, or reach outside its scope. Read unpublished edits. Write a file without a \`base\`. Set a commit's provenance. Run any CLI command but the ones behind these methods: no login, upgrade, push, pull, sync, delete or fork.
 `;
 
 

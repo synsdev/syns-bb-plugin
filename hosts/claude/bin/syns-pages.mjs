@@ -403,7 +403,7 @@ const EVERY_METHOD = [
 	"folder_out_of_place",
 	"bad_scope"
 ];
-/** Every write, syns.revert included: a placed folder's write against a server without folder writes (D38). */
+/** Every write: a placed folder's write against a server without folder writes (D38). */
 const EVERY_CHANGE = ["folder_write_unsupported"];
 const EVERY_WRITE = ["stale_head", "checkout_dirty"];
 /** Every reason a method can answer with: the common ones, a write's, and its own. S3.2 */
@@ -611,11 +611,11 @@ An app is a folder holding an \`index.html\`, its CSS and JS beside it, named re
 
 Poll only \`syns.repo\`, with the host's \`watch\`. When its \`version\` differs from the one held, \`syns.diff { from }\` lists each changed path and \`status\` up to \`to.version\`; re-read those at \`to.version\`. There is no push.
 
-\`syns.history\` says who changed what. A page's write has \`by.integration\` \`syns-pages\` and \`by.trigger\` \`page\`; then \`by.run\` is the session whose page made it. Others set \`by.run\` too: never read it alone as a page's. \`syns.revert\` records none.
+\`syns.history\` says who changed what. A page's write has \`by.integration\` \`syns-pages\` and \`by.trigger\` \`page\`; then \`by.run\` is the session whose page made it. Others set \`by.run\` too: never read it alone as a page's.
 
 ## Writing
 
-Every file write but \`syns.revert\` carries \`base\`, the \`version\` last read; the returned \`version\` is the next \`base\`. A new file: \`syns.write\` with \`create: true\`, which refuses rather than overwrite. \`changed: 0\`: nothing differed, or the path was gone; no version made. A request past a method's bound comes back from the bridge as \`invalid_response\`: split it. \`syns.revert\` has no stale check and no provenance: call \`syns.repo\` just before offering it, and say what it overwrites. A picture larger than 720 KiB goes in ordered pieces; \`bad_offset\`: send from \`detail.expected\`. Beside texts in one version: \`hold: true\`, then its \`upload\` in \`syns.commit\`.
+Every file write carries \`base\`, the \`version\` last read; the returned \`version\` is the next \`base\`. A new file: \`syns.write\` with \`create: true\`, which refuses rather than overwrite. \`changed: 0\`: nothing differed, or the path was gone; no version made. A request past a method's bound comes back from the bridge as \`invalid_response\`: split it. A picture larger than 720 KiB goes in ordered pieces; \`bad_offset\`: send from \`detail.expected\`. Beside texts in one version: \`hold: true\`, then its \`upload\` in \`syns.commit\`.
 `;
 const SHARING = `## Sharing and people
 
@@ -632,7 +632,7 @@ Poll none of these with \`watch\`. Errors come back from the CLI: a refusal with
 `;
 const CANNOT = `## What a page cannot do here
 
-Choose a repository, or reach outside its scope. Read unpublished edits. Write a file without a \`base\`, but for \`syns.revert\`. Set a commit's provenance. Run any CLI command but the ones behind these methods: no login, upgrade, push, pull, sync, delete or fork.
+Choose a repository, or reach outside its scope. Read unpublished edits. Write a file without a \`base\`. Set a commit's provenance. Run any CLI command but the ones behind these methods: no login, upgrade, push, pull, sync, delete or fork.
 `;
 /** The guide's short names for JSON types, said once in the method section's opening. */
 const SHORT = {
@@ -2202,14 +2202,18 @@ const repo = {
 //#region src/methods/revert.ts
 const revert = {
 	name: "syns.revert",
-	description: "Put one file back to its text at the earlier version to, as a new version. Today the CLI checks no base, so the head is not checked, and records no provenance: syns.history shows this commit with by all null.",
+	description: "Put one file, text or picture, back to what it held at the earlier version to, as a new version made against base. No content is sent. Published at once, with no confirmation.",
 	effect: "contributed-write",
-	unguarded: true,
 	params: object({
 		path,
 		to: version,
+		base,
 		message
-	}, ["path", "to"]),
+	}, [
+		"path",
+		"to",
+		"base"
+	]),
 	result: {
 		type: "object",
 		properties: {
@@ -2220,9 +2224,11 @@ const revert = {
 	},
 	maxRequestBytes: K64,
 	maxResponseBytes: K64,
-	command: (params) => ({ args: buildArgs("revert", {
+	command: (params, sessionId) => ({ args: buildArgs("revert", {
 		to: params.to,
-		message: params.message || void 0
+		parent: params.base,
+		message: params.message || void 0,
+		...provenance(sessionId)
 	}, [params.path]) }),
 	shape: (out) => ({
 		version: out.commitSha,

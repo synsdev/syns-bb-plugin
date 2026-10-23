@@ -3,7 +3,7 @@
 ## 0.10.0
 
 The page opens inside the repository's workspace, with nothing for the agent to add (`bartsoj/syns`
-products/syns-plugins B-0063, B-0064, B-0066, B-0065, B-0067, B-0068, B-0062, B-0069, B-0070; the design tree's D84, D85, D86, D87, D88). Needs Thread Pages 1.11.0 or Unife Pages 0.3.0,
+products/syns-plugins B-0063, B-0064, B-0066, B-0065, B-0067, B-0068, B-0062, B-0069, B-0070, B-0071; the design tree's D84, D85, D86, D87, D88, D89). Needs Thread Pages 1.11.0 or Unife Pages 0.3.0,
 and the Syns CLI 0.3.25.
 
 - **A page script.** The declaration says `pageScript: true`, and the plugin answers each served page
@@ -45,6 +45,10 @@ and the Syns CLI 0.3.25.
 - **`syns.history` pages** (B-0070, the design tree's D88): `offset` skips that many versions, newest first, as
   CLI 0.3.25's `syns history --offset`; the next page is `offset + limit`. Under a `scope` it counts the repository's
   versions, as `total` does.
+- **`syns.revert` is a write like the others** (B-0071, the design tree's D89): it takes `base`, passed as
+  CLI 0.3.25's `syns revert --parent`, and publishes under the plugin's provenance, so `syns.history` names the page.
+  It refuses with `stale_head` and `checkout_dirty`, restores a picture as well as a text, and sends no content. The
+  guide's exceptions for it are gone.
 
 ## 0.9.1
 

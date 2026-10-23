@@ -88,7 +88,7 @@ The full method reference is in `bb pages guide`.
 | `syns.commit` | write | Several files and deletions as one version, all or nothing |
 | `syns.write` · `syns.edit` · `syns.rm` | write | One file's text (optionally only if new) · a replacement in it · its removal |
 | `syns.move` · `syns.copy` | write | A file or folder moved, its history kept, or copied, as one version, no content sent |
-| `syns.revert` | write | One file back to its text at an earlier version |
+| `syns.revert` | write | One file, text or picture, back to an earlier version |
 | `syns.readBinary` | read | A file's bytes, such as a picture, as base64 in pieces of up to 720 KiB |
 | `syns.writeBinary` | write | A file's bytes: whole up to 720 KiB, or larger in ordered pieces, published after the last; up to 25 MiB |
 | `syns.place` | write | A template placed as a new folder of the session's repository |
@@ -108,7 +108,7 @@ scope check, `syns repo --json --within=<session folder>`. A call is answered wi
 its run is stopped. Every request the CLI sends names the host in its User-Agent: `SYNS_CALLER` is `bb-plugin` on
 bb and `claude-pages` on Claude Code. On bb the host worker is held until 15 minutes after the last run.
 
-`version` is a commit SHA and opaque. Every write but `syns.revert` requires
+`version` is a commit SHA and opaque. Every file write requires
 `base`, the version the page last read; a moved head refuses it as `conflict`
 with reason `stale_head` and the current version. While an agent is mid-turn in
 the folder with unpublished edits, writes are refused as `checkout_dirty`.
@@ -123,10 +123,6 @@ Page authors get the full reference, generated from the code, with
 
 ## Known limits
 
-- **`syns.revert` is not checked.** The CLI's `revert` takes no parent, records
-  no provenance and is not covered by the unpublished-changes guard, so a revert
-  goes through whatever moved since the page read, and `syns.history` cannot show
-  that a page made it. The plugin calls it as it is; the fix belongs in the CLI.
 - **`syns.rm` of a path that is not there succeeds** with `changed: 0`, as the
   CLI does.
 - **Pictures cross in pieces.** A page call carries at most 1 MiB, so bytes
