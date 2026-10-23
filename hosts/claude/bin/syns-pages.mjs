@@ -1144,7 +1144,7 @@ const end = {
 };
 const diff = {
 	name: "syns.diff",
-	description: "The net change between two versions: each changed path with its status (added, modified, deleted). to defaults to the head. patch: true adds each file's patch text. After the head moves, diff { from } says which files to re-read.",
+	description: "The net change between two versions: each changed path with its status (added, modified, deleted, renamed with oldPath). to defaults to the head. patch: true adds each file's patch. After the head moves, diff { from } says what to re-read.",
 	effect: "read",
 	params: object({
 		from: version,
@@ -1163,6 +1163,7 @@ const diff = {
 					properties: {
 						path: repoPath,
 						status: { type: "string" },
+						oldPath: repoPath,
 						patch: { type: "string" }
 					},
 					required: ["path", "status"]
@@ -1198,8 +1199,26 @@ const diff = {
 			files: Array.isArray(out.files) ? out.files.map(record$6).map((file) => ({
 				path: file.path,
 				status: file.status,
+				...file.status === "renamed" && typeof file.oldPath === "string" ? { oldPath: file.oldPath } : {},
 				...params.patch === true && typeof file.diff === "string" ? { patch: file.diff } : {}
 			})) : void 0
+		};
+	},
+	scoped(result, inside) {
+		if (!Array.isArray(result.files)) return result;
+		const files = result.files.map((file) => {
+			if (typeof file.oldPath !== "string" || inside(file.path) === inside(file.oldPath)) return file;
+			return inside(file.path) ? {
+				path: file.path,
+				status: "added"
+			} : {
+				path: file.oldPath,
+				status: "deleted"
+			};
+		});
+		return {
+			...result,
+			files
 		};
 	}
 };
@@ -3112,7 +3131,10 @@ function createDispatch({ table = METHODS, cli, log, held = createHeld(), now = 
 				if (dropped.length > 0) log.warn(`${method.name} session=${sessionId} dropped from the CLI's output: ${dropped.join(", ").slice(0, 500)}`);
 			}
 		}
-		if (folder !== null) result = scopeResult(method, result, folder);
+		if (folder !== null) {
+			if (method.scoped) result = method.scoped(result, (path) => typeof path === "string" && path.startsWith(`${folder}/`));
+			result = scopeResult(method, result, folder);
+		}
 		const hole = validate(method.result, result);
 		if (hole) throw new SynsError("handler_error", { log: `exit=0 the result lacks what the specification requires at ${hole}` });
 		return result;

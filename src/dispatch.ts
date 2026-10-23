@@ -148,7 +148,10 @@ export function createDispatch({ table = METHODS, cli, log, held = createHeld(),
         if (dropped.length > 0) log.warn(`${method.name} session=${sessionId} dropped from the CLI's output: ${dropped.join(", ").slice(0, 500)}`);
       }
     }
-    if (folder !== null) result = scopeResult(method, result, folder);
+    if (folder !== null) {
+      if (method.scoped) result = method.scoped(result, (path) => typeof path === "string" && path.startsWith(`${folder}/`));
+      result = scopeResult(method, result, folder);
+    }
     // Never a result with a hole in it. S3.7
     const hole = validate(method.result, result);
     if (hole) throw new SynsError("handler_error", { log: `exit=0 the result lacks what the specification requires at ${hole}` });

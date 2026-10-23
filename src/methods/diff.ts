@@ -13,7 +13,7 @@ const end = { type: "object", properties: { version, number: { type: "integer" }
 
 export const diff: ProcedureMethod = {
   name: "syns.diff",
-  description: "The net change between two versions: each changed path with its status (added, modified, deleted). to defaults to the head. patch: true adds each file's patch text. After the head moves, diff { from } says which files to re-read.",
+  description: "The net change between two versions: each changed path with its status (added, modified, deleted, renamed with oldPath). to defaults to the head. patch: true adds each file's patch. After the head moves, diff { from } says what to re-read.",
   effect: "read",
   params: object({ from: version, to: version, patch: { type: "boolean" } }, ["from"]),
   result: {
@@ -21,7 +21,7 @@ export const diff: ProcedureMethod = {
     properties: {
       from: end,
       to: end,
-      files: { type: "array", items: { type: "object", properties: { path: repoPath, status: { type: "string" }, patch: { type: "string" } }, required: ["path", "status"] } },
+      files: { type: "array", items: { type: "object", properties: { path: repoPath, status: { type: "string" }, oldPath: repoPath, patch: { type: "string" } }, required: ["path", "status"] } },
     },
     required: ["from", "to", "files"],
   },
@@ -42,8 +42,24 @@ export const diff: ProcedureMethod = {
       from: ends[0],
       to: ends[1],
       files: Array.isArray(out.files)
-        ? out.files.map(record).map((file) => ({ path: file.path, status: file.status, ...(params.patch === true && typeof file.diff === "string" ? { patch: file.diff } : {}) }))
+        ? out.files.map(record).map((file) => ({
+            path: file.path,
+            status: file.status,
+            ...(file.status === "renamed" && typeof file.oldPath === "string" ? { oldPath: file.oldPath } : {}),
+            ...(params.patch === true && typeof file.diff === "string" ? { patch: file.diff } : {}),
+          }))
         : undefined,
     };
+  },
+
+  // A move across the scope's edge reads as the CLI's mask reads it (roadmap/228): the old side outside, an addition;
+  // the new side outside, a deletion at the old path. Its patch names the outside path, so it goes. S1.26, D87
+  scoped(result: { files?: Record<string, unknown>[] }, inside: (path: unknown) => boolean) {
+    if (!Array.isArray(result.files)) return result;
+    const files = result.files.map((file) => {
+      if (typeof file.oldPath !== "string" || inside(file.path) === inside(file.oldPath)) return file;
+      return inside(file.path) ? { path: file.path, status: "added" } : { path: file.oldPath, status: "deleted" };
+    });
+    return { ...result, files };
   },
 };

@@ -68,6 +68,20 @@ describe("the scope parameter in the server half (S1.25, D85)", () => {
     expect((await h.call("syns.history", { path: "n29.md", scope: "notes" })).ok).toBe(true);
     expect(args(h)).toEqual(["history --file=notes/n29.md --limit=20 --json"]);
   });
+  it("syns.diff counts a move inside the folder from it; one across its edge is an addition or a deletion, with no patch (A90, S1.26)", async () => {
+    const files = [
+      { path: `${APP}/c.md`, oldPath: `${APP}/a.md`, status: "renamed", diff: "rename" },
+      { path: "b.md", oldPath: `${APP}/b.md`, status: "renamed", diff: "rename" },
+      { path: `${APP}/o.md`, oldPath: "o.md", status: "renamed", diff: "rename" },
+      { path: "x.md", oldPath: "y.md", status: "renamed", diff: "rename" },
+    ];
+    const h = harness({ diff: ok({ from: { sha: OLD, version: 4 }, to: { sha: HEAD, version: 6 }, files }) });
+    expect(resultOf(await h.call("syns.diff", { from: OLD, to: HEAD, patch: true, scope: APP })).files).toEqual([
+      { path: "c.md", oldPath: "a.md", status: "renamed", patch: "rename" },
+      { path: "b.md", status: "deleted" },
+      { path: "o.md", status: "added" },
+    ]);
+  });
   it("syns.diff drops the files outside the folder", async () => {
     const h = harness({ diff: ok({ from: { sha: OLD, version: 4 }, to: { sha: HEAD, version: 6 }, files: [{ path: `${APP}/a.md`, status: "modified" }, { path: "README.md", status: "modified" }] }) });
     expect(resultOf(await h.call("syns.diff", { from: OLD, to: HEAD, scope: APP })).files).toEqual([{ path: "a.md", status: "modified" }]);

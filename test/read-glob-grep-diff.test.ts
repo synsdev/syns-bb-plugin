@@ -274,8 +274,31 @@ describe("syns.diff", () => {
     expect(Object.keys(result.files[2]!).sort()).toEqual(["patch", "path", "status"]);
   });
   it("passes a status it has not seen on as a string", async () => {
-    const h = harness({ diff: ok({ from: { sha: OLD, version: 4 }, to: { sha: HEAD, version: 6 }, files: [{ path: "a.md", status: "renamed", diff: "" }] }) });
-    expect(resultOf<{ files: unknown[] }>(await h.call("syns.diff", { from: OLD, to: HEAD })).files).toEqual([{ path: "a.md", status: "renamed" }]);
+    const h = harness({ diff: ok({ from: { sha: OLD, version: 4 }, to: { sha: HEAD, version: 6 }, files: [{ path: "a.md", status: "typechange", diff: "" }] }) });
+    expect(resultOf<{ files: unknown[] }>(await h.call("syns.diff", { from: OLD, to: HEAD })).files).toEqual([{ path: "a.md", status: "typechange" }]);
+  });
+  it("a move is one renamed entry naming the path it left, oldPath, as CLI 0.3.25 answers it (A90, S1.26)", async () => {
+    const h = harness({ diff: rec("diff.renamed.0325") });
+    expect(resultOf<{ files: unknown[] }>(await h.call("syns.diff", { from: OLD, to: HEAD })).files).toEqual([
+      { path: "app/c.md", status: "renamed", oldPath: "app/a.md" },
+      { path: "b.md", status: "renamed", oldPath: "app/b.md" },
+      { path: "app/o.md", status: "renamed", oldPath: "o.md" },
+    ]);
+    const patched = resultOf<{ files: { patch?: string }[] }>(await harness({ diff: rec("diff.renamed.0325") }).call("syns.diff", { from: OLD, to: HEAD, patch: true }));
+    expect(patched.files[0]!.patch).toContain("rename from app/a.md\nrename to app/c.md");
+  });
+  it("passes oldPath only on a renamed entry, and only as the CLI gave it", async () => {
+    const files = [
+      { path: "a.md", status: "modified", oldPath: "z.md" },
+      { path: "b.md", status: "renamed" },
+      { path: "c.md", status: "renamed", oldPath: 7 },
+    ];
+    const h = harness({ diff: ok({ from: { sha: OLD, version: 4 }, to: { sha: HEAD, version: 6 }, files }) });
+    expect(resultOf<{ files: unknown[] }>(await h.call("syns.diff", { from: OLD, to: HEAD })).files).toEqual([
+      { path: "a.md", status: "modified" },
+      { path: "b.md", status: "renamed" },
+      { path: "c.md", status: "renamed" },
+    ]);
   });
   it("a version that does not exist is not_found: the CLI answers the 404, and repo then succeeds (A22)", async () => {
     const h = harness({ diff: rec("not-found-404"), repo: rec("repo.ok") });

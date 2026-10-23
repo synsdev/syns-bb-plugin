@@ -74,6 +74,8 @@ interface Common {
   rootPath?: true;
   /** Acts on the repository, its people or Syns as a whole, never on paths: a call with a scope is `bad_scope` and runs nothing (S1.25). */
   unscoped?: true;
+  /** Under a call's scope, what the result becomes before its paths are cut back to the folder (S1.26). */
+  scoped?(result: any, inside: (path: unknown) => boolean): unknown;
   /** How many paths a write names, for the plugin's log. Defaults to one when there is a `path`. S2.19 */
   pathCount?(params: any): number;
 }
