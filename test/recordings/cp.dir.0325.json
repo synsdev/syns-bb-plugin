@@ -1,0 +1,1 @@
+{"source": "CLI 0.3.25, measured 2026-10-23 on a throwaway repository (kit/scratch.py), Syns B-0062: `syns cp q3-review q3-copy --parent <head> --json`", "exitCode": 0, "json": {"commitSha": "8de074b37f3cfd27470a0bce411378b3eb964c1d", "copies": [{"files": 3, "from": "q3-review", "to": "q3-copy", "type": "dir"}], "created": false, "filesChanged": 1, "version": 4}}

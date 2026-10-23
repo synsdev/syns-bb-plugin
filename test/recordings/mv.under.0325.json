@@ -1,0 +1,1 @@
+{"source": "CLI 0.3.25, measured 2026-10-23 on a throwaway repository (kit/scratch.py), Syns B-0062: `syns mv q3-review q3-review/x --parent <head> --json`", "exitCode": 1, "json": {"code": "config_error", "error": "configuration error: cannot move q3-review to q3-review/x: q3-review/x lies under q3-review"}}

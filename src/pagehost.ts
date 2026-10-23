@@ -40,7 +40,7 @@ export const PAGEHOST = String.raw`/*
   const baseOf = function (p) { return String(p).replace(/\/+$/, "").replace(/^.*\//, ""); };
 
   const SYNS = ["syns.repo", "syns.whoami", "syns.ls", "syns.glob", "syns.grep", "syns.read", "syns.readMany", "syns.readBinary",
-    "syns.history", "syns.diff", "syns.write", "syns.writeBinary", "syns.edit", "syns.rm", "syns.move", "syns.commit", "syns.revert"];
+    "syns.history", "syns.diff", "syns.write", "syns.writeBinary", "syns.edit", "syns.rm", "syns.move", "syns.copy", "syns.commit", "syns.revert"];
   const PASS = ["context.get", "session.reply", "session.activity", "session.messages", "sessions.snapshot", "sessions.start",
     "sessions.openHost", "pages.open", "pages.read", "navigation.openExternal", "providers.list", "workspaces.list"];
   const CACHED = { "syns.repo": 4000, "syns.whoami": 60000, "context.get": 10000 };
@@ -305,7 +305,7 @@ export const PAGEHOST = String.raw`/*
       // A tool's calls carry its folder as scope: the plugin counts its paths from there and answers nothing outside it.
       const p = repo ? Object.assign({}, params, { scope: this.folder }) : params;
       // Reads that fail transiently (many at once, the CLI busy) are asked again, twice at most.
-      const write = /^syns\.(write|writeBinary|edit|rm|move|commit|revert)$/.test(method);
+      const write = /^syns\.(write|writeBinary|edit|rm|move|copy|commit|revert)$/.test(method);
       for (let n = 0; ; n++) {
         try { return await this.invoke(method, p); }
         catch (x) { if (write || n >= 2 || !/^(handler_error|timeout|rate_limited)$/.test(x.code || "")) throw x; await new Promise((ok) => setTimeout(ok, 600 * (n + 1))); }

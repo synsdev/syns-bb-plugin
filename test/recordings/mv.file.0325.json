@@ -1,0 +1,1 @@
+{"source": "CLI 0.3.25, measured 2026-10-23 on a throwaway repository (kit/scratch.py), Syns B-0062: `syns mv a.md c.md --parent <head> --json`", "exitCode": 0, "json": {"commitSha": "89ac9e8a0c68969b4419f7fcad6a3c5c3fd6cc88", "created": false, "filesChanged": 1, "moves": [{"files": 1, "from": "a.md", "to": "c.md", "type": "file"}], "version": 3}}

@@ -15,7 +15,9 @@ const SURFACE = ["syns.collaboratorAdd", "syns.collaboratorRemove", "syns.collab
 /** The writes that change who reaches a repository or folder, not its files: no base, no message (A61). */
 const SHARING_WRITES = ["syns.collaboratorAdd", "syns.collaboratorRemove", "syns.collaboratorRole", "syns.folderVisibility", "syns.repoVisibility", "syns.share", "syns.unshare"];
 const SIXTEEN = ["syns.commit", "syns.diff", "syns.edit", "syns.glob", "syns.grep", "syns.history", "syns.ls", "syns.read", "syns.readBinary", "syns.readMany", "syns.repo", "syns.revert", "syns.rm", "syns.whoami", "syns.write", "syns.writeBinary"];
-const ALL = [...SIXTEEN, "syns.place", ...SURFACE].sort();
+/** Syns roadmap/228, B-0062: syns mv and syns cp. */
+const PATH_WRITES = ["syns.copy", "syns.move"];
+const ALL = [...SIXTEEN, "syns.place", ...SURFACE, ...PATH_WRITES].sort();
 /** The keywords Thread Pages compiles; any other refuses the method (its contributed.ts). */
 const SUBSET = new Set(["type", "description", "properties", "required", "additionalProperties", "enum", "const", "minimum", "maximum", "minLength", "maxLength", "pattern", "items", "minItems", "maxItems"]);
 
@@ -30,9 +32,9 @@ const namesIn = (text: string): string[] => [...new Set(text.match(/(?<![.\w])sy
 const declaration = buildDeclaration(METHODS, { agentInstructions: true });
 
 describe("the table", () => {
-  it("holds the twenty-nine methods: the sixteen of spec 01, syns.place, and the twelve of spec 06 (D23, D43, D59)", () => {
+  it("holds the thirty-one methods: the sixteen of spec 01, syns.place, the twelve of spec 06 and syns.move and syns.copy (D23, D43, D59, B-0062)", () => {
     expect(METHODS.map((method) => method.name).sort()).toEqual(ALL);
-    expect(METHODS.filter((method) => method.effect === "contributed-write").map((method) => method.name).sort()).toEqual(["syns.commit", "syns.edit", "syns.enableChecks", "syns.place", "syns.revert", "syns.rm", "syns.write", "syns.writeBinary", ...SHARING_WRITES].sort());
+    expect(METHODS.filter((method) => method.effect === "contributed-write").map((method) => method.name).sort()).toEqual(["syns.commit", "syns.edit", "syns.enableChecks", "syns.place", "syns.revert", "syns.rm", "syns.write", "syns.writeBinary", ...SHARING_WRITES, ...PATH_WRITES].sort());
   });
 });
 
@@ -75,6 +77,8 @@ describe("the declaration", () => {
       "syns.write": "1024/64",
       "syns.edit": "128/64",
       "syns.rm": "64/64",
+      "syns.move": "64/64",
+      "syns.copy": "64/64",
       "syns.revert": "64/64",
       "syns.readBinary": "64/1024",
       "syns.writeBinary": "1024/64",
@@ -136,6 +140,8 @@ describe("the declaration", () => {
       "syns.write": [...common, ...write, "exists"].sort(),
       "syns.edit": [...common, ...write, "many_matches", "no_match"].sort(),
       "syns.rm": [...common, ...write].sort(),
+      "syns.move": [...common, ...write, "exists"].sort(),
+      "syns.copy": [...common, ...write, "exists"].sort(),
       "syns.readBinary": common,
       "syns.writeBinary": [...common, ...write, "bad_hash", "bad_offset", "too_large"].sort(),
       "syns.revert": [...common, "folder_write_unsupported"].sort(),

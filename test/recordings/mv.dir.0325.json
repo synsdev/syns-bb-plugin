@@ -1,0 +1,1 @@
+{"source": "CLI 0.3.25, measured 2026-10-23 on a throwaway repository (kit/scratch.py), Syns B-0062: `syns mv q3-plan q3-review --parent <head> --json`", "exitCode": 0, "json": {"commitSha": "772c50d851f908c31d61547fc59f7e7c2e59c6df", "created": false, "filesChanged": 1, "moves": [{"files": 3, "from": "q3-plan", "to": "q3-review", "type": "dir"}], "version": 2}}

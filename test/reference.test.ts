@@ -34,7 +34,7 @@ describe("the frozen declaration", () => {
 });
 
 describe.skipIf(!present)(`the reference host code (${present ? MONO : `no Unife monorepo at ${MONO}; set UNIFE_MONO`})`, () => {
-  it("parseContributor accepts the whole declaration, with and without the fragment: 29 methods, no problem", async () => {
+  it("parseContributor accepts the whole declaration, with and without the fragment: 31 methods, no problem", async () => {
     const { parseContributor } = await import(/* @vite-ignore */ VALIDATOR);
     for (const agentInstructions of [true, false]) {
       const declaration = buildDeclaration(METHODS, { agentInstructions });

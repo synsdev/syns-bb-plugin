@@ -1,0 +1,1 @@
+{"source": "CLI 0.3.25, measured 2026-10-23 on a throwaway repository (kit/scratch.py), Syns B-0062: `syns mv b.md c.md --parent <head> --json, c.md there`", "exitCode": 1, "json": {"code": "path_exists", "error": "c.md already exists at version 8de074b37f3cfd27470a0bce411378b3eb964c1d; remove it first in the same commit"}}

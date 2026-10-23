@@ -19,7 +19,7 @@ Syns CLI → Syns API      the only thing that touches the repository
 
 On bb: bb 0.43 or later and Thread Pages 1.11.0 or later; on Claude Code: Unife Pages 0.3.0 or later (see *On Claude
 Code* below): the first that take a contributor's page script. Both need
-the Syns CLI, 0.3.24 or later — installed and logged in (`syns login`) on every machine whose
+the Syns CLI, 0.3.25 or later — installed and logged in (`syns login`) on every machine whose
 sessions should reach a repository (`syns upgrade`). An older CLI's refusal comes back in its own words.
 
 ```sh
@@ -87,6 +87,7 @@ The full method reference is in `bb pages guide`.
 | `syns.history` | read | Versions, their paths, and who or what made each |
 | `syns.commit` | write | Several files and deletions as one version, all or nothing |
 | `syns.write` · `syns.edit` · `syns.rm` | write | One file's text (optionally only if new) · a replacement in it · its removal |
+| `syns.move` · `syns.copy` | write | A file or folder moved, its history kept, or copied, as one version, no content sent |
 | `syns.revert` | write | One file back to its text at an earlier version |
 | `syns.readBinary` | read | A file's bytes, such as a picture, as base64 in pieces of up to 720 KiB |
 | `syns.writeBinary` | write | A file's bytes: whole up to 720 KiB, or larger in ordered pieces, published after the last; up to 25 MiB |

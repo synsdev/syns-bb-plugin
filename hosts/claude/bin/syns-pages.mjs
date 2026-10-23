@@ -147,7 +147,7 @@ const REASONS = {
 	bad_scope: {
 		code: "invalid_params",
 		message: "This page asked for something its folder cannot do here: it is outside its session's folder, or not a placed folder of its repository, or this action needs another kind of folder.",
-		meaning: "The scope is outside the session's folder, or not a placed folder of its repository where one is needed, or the method does not act there: a folder action at a root, a holder action in a placed folder, a folder's people before it is shared, a `scope` key on a whole-repository method."
+		meaning: "The scope is outside the session's folder, not a placed folder of its repository where one is needed, or not where the method acts: a folder action at a root, a holder action in a placed folder, a folder's people before it is shared, `scope` on a whole-repository method."
 	},
 	stale_head: {
 		code: "conflict",
@@ -167,7 +167,7 @@ const REASONS = {
 	exists: {
 		code: "conflict",
 		message: "A file is already there. Nothing was written.",
-		meaning: "create was set and the path exists at base."
+		meaning: "create's path, or a move's or copy's to, exists at base."
 	},
 	no_match: {
 		code: "invalid_params",
@@ -353,6 +353,7 @@ async function interpret(run, declared, runRepo, where = {}, runWhoami) {
 	if (exit === 1 && error.includes("holds unpublished local changes")) throw fail("checkout_dirty");
 	if (exit === 1 && error.includes("authentication required")) throw fail("not_logged_in");
 	if (exit === 1 && error.includes("--old matched no content")) throw fail("no_match");
+	if (exit === 1 && error.includes(" already exists at version ") && declared.includes("exists")) throw fail("exists");
 	if (exit === 1 && error.startsWith("configuration error") && error.includes(" already holds ")) throw fail("occupied");
 	if (exit === 1 && error.startsWith("not_found:") && error.includes("is no repository you can read")) throw fail("no_such_template");
 	if (exit === 1 && error.includes("the folder path must name a folder")) throw fail("bad_scope");
@@ -641,6 +642,7 @@ const SHORT = {
 /** A schema in one line, from the same object the host is sent. */
 function render(schema, grouping = true) {
 	if (schema === path) return "path";
+	if (schema === message) return "message";
 	if (schema.pattern === version.pattern) return Array.isArray(schema.type) ? "version|null" : "version";
 	const types = Array.isArray(schema.type) ? schema.type : [schema.type];
 	const one = (type) => {
@@ -650,7 +652,7 @@ function render(schema, grouping = true) {
 			const grouped = [...GROUPS].filter(() => grouping).filter(([, keys]) => Object.entries(keys).every(([key, child]) => properties[key] === child));
 			const inGroup = new Set(grouped.flatMap(([, keys]) => Object.keys(keys)));
 			const fields = [...grouped.map(([name]) => `…${name}`), ...Object.entries(properties).filter(([key]) => !inGroup.has(key)).map(([key, child]) => {
-				const type = render(child, grouping);
+				const type = key === "base" && child === base || key === "number" && child.type === "integer" && Object.keys(child).length === 1 ? key : render(child, grouping);
 				return `${key}${required.includes(key) ? "" : "?"}${type === key ? "" : `: ${type}`}`;
 			})];
 			return fields.length > 0 ? `{ ${fields.join(", ")} }` : "{}";
@@ -667,8 +669,15 @@ function render(schema, grouping = true) {
 	return types.map(one).join("|");
 }
 function methodSection(table) {
-	const lines = table.map((method) => `- \`${method.name}\` \`${render(method.params)}\` → \`${render(method.result)}\``);
-	return `## Every method\n\nThe host's roster above (*Registered now*) gives each method's effect, bounds, description and every reason it may answer. Each line: the method, its params → its result. \`path\` is counted from the repository's root, or the placed folder, with \`/\` separators, at most 1,024 characters; no leading \`/\` or \`-\`, no \`\\\` or control character, no \`.\` or \`..\` segment. A \`?\` marks an optional key; a bare \`version\` or \`path\` key has that type; no other key is accepted but \`scope\`, a folder that paths and answers then count from. ${[...GROUPS].map(([name, keys]) => `\`…${name}\` is \`${render({
+	const lines = [];
+	let last = "";
+	for (const method of table) {
+		const shape = `\`${render(method.params)}\` → \`${render(method.result)}\``;
+		if (shape === last) lines[lines.length - 1] = lines[lines.length - 1].replace(` ${shape}`, ` / \`${method.name}\` ${shape}`);
+		else lines.push(`- \`${method.name}\` ${shape}`);
+		last = shape;
+	}
+	return `## Every method\n\nThe host's roster above (*Registered now*) gives each method's effect, bounds, description and every reason it may answer. Each line: the method, its params → its result. \`path\` is counted from the repository's root, or the placed folder, with \`/\` separators, at most 1,024 characters; no leading \`/\` or \`-\`, no \`\\\` or control character, no \`.\` or \`..\` segment. A \`?\` marks an optional key; a bare \`version\` or \`path\` key has that type, \`base\` is a \`version\`, \`number\` an int, \`message\` a string(≤500); no other key is accepted but \`scope\`, a folder that paths and answers then count from. ${[...GROUPS].map(([name, keys]) => `\`…${name}\` is \`${render({
 		type: "object",
 		properties: keys
 	}, false)}\`.`).join(" ")}\n\n${lines.join("\n")}\n`;
@@ -2236,6 +2245,70 @@ const rm = {
 	})
 };
 //#endregion
+//#region src/methods/move.ts
+/**
+* `syns mv` and `syns cp` (Syns roadmap/228, CLI 0.3.25), as they are (D-244 §2): one run, paths only on the wire,
+* one version. The answer is the CLI's own member, `from` and `to` as it resolved them.
+*/
+function pathWrite(verb, name, word, member, description) {
+	return {
+		name,
+		description,
+		effect: "contributed-write",
+		params: object({
+			from: path,
+			to: path,
+			base,
+			message
+		}, [
+			"from",
+			"to",
+			"base"
+		]),
+		result: {
+			type: "object",
+			properties: {
+				version,
+				number: { type: "integer" },
+				from: repoPath,
+				to: repoPath,
+				files: {
+					type: "integer",
+					description: "How many files it moved or copied."
+				}
+			},
+			required: [
+				"version",
+				"number",
+				"from",
+				"to",
+				"files"
+			]
+		},
+		maxRequestBytes: K64,
+		maxResponseBytes: K64,
+		reasons: ["exists"],
+		pathCount: () => 2,
+		command: (params, sessionId) => ({ args: buildArgs(verb, {
+			parent: params.base,
+			message: params.message || `${word} ${params.from} to ${params.to} from a page`.slice(0, 500),
+			...provenance(sessionId)
+		}, [params.from, params.to]) }),
+		shape: (out) => {
+			const one = Array.isArray(out[member]) ? out[member][0] : void 0;
+			return {
+				version: out.commitSha,
+				number: out.version,
+				from: one?.from,
+				to: one?.to,
+				files: one?.files
+			};
+		}
+	};
+}
+const move = pathWrite("mv", "syns.move", "Move", "moves", "Move a file or folder from to to as one new version against base, keeping its history. to must not exist at base (exists). Published at once, with no confirmation.");
+const copy = pathWrite("cp", "syns.copy", "Copy", "copies", "Copy a file or folder from to to as one new version against base; from stays. to must not exist at base (exists). Published at once, with no confirmation.");
+//#endregion
 //#region src/methods/enableChecks.ts
 /**
 * `syns enable-checks --json` in the page's placed folder (D49, D59): one
@@ -2865,6 +2938,8 @@ const METHODS = [
 	},
 	edit,
 	rm,
+	move,
+	copy,
 	revert,
 	readBinary,
 	writeBinary,
@@ -3134,7 +3209,7 @@ const PAGEHOST = String.raw`/*
   const baseOf = function (p) { return String(p).replace(/\/+$/, "").replace(/^.*\//, ""); };
 
   const SYNS = ["syns.repo", "syns.whoami", "syns.ls", "syns.glob", "syns.grep", "syns.read", "syns.readMany", "syns.readBinary",
-    "syns.history", "syns.diff", "syns.write", "syns.writeBinary", "syns.edit", "syns.rm", "syns.move", "syns.commit", "syns.revert"];
+    "syns.history", "syns.diff", "syns.write", "syns.writeBinary", "syns.edit", "syns.rm", "syns.move", "syns.copy", "syns.commit", "syns.revert"];
   const PASS = ["context.get", "session.reply", "session.activity", "session.messages", "sessions.snapshot", "sessions.start",
     "sessions.openHost", "pages.open", "pages.read", "navigation.openExternal", "providers.list", "workspaces.list"];
   const CACHED = { "syns.repo": 4000, "syns.whoami": 60000, "context.get": 10000 };
@@ -3399,7 +3474,7 @@ const PAGEHOST = String.raw`/*
       // A tool's calls carry its folder as scope: the plugin counts its paths from there and answers nothing outside it.
       const p = repo ? Object.assign({}, params, { scope: this.folder }) : params;
       // Reads that fail transiently (many at once, the CLI busy) are asked again, twice at most.
-      const write = /^syns\.(write|writeBinary|edit|rm|move|commit|revert)$/.test(method);
+      const write = /^syns\.(write|writeBinary|edit|rm|move|copy|commit|revert)$/.test(method);
       for (let n = 0; ; n++) {
         try { return await this.invoke(method, p); }
         catch (x) { if (write || n >= 2 || !/^(handler_error|timeout|rate_limited)$/.test(x.code || "")) throw x; await new Promise((ok) => setTimeout(ok, 600 * (n + 1))); }

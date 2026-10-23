@@ -1,5 +1,5 @@
 import { REASONS } from "../errors.js";
-import { GROUPS, path, reasonsOf, version, type Method, type Schema } from "../method.js";
+import { GROUPS, base, message, path, reasonsOf, version, type Method, type Schema } from "../method.js";
 
 /**
  * The guide text (spec 04), within GUIDE_MAX. The prose is written for the
@@ -74,17 +74,18 @@ const SHORT: Record<string, string> = { integer: "int", boolean: "bool" };
 /** A schema in one line, from the same object the host is sent. */
 function render(schema: Schema, grouping = true): string {
   if (schema === path) return "path";
+  if (schema === message) return "message";
   if (schema.pattern === version.pattern) return Array.isArray(schema.type) ? "version|null" : "version";
   const types = Array.isArray(schema.type) ? (schema.type as string[]) : [schema.type as string];
   const one = (type: string): string => {
     if (type === "object") {
       const properties = (schema.properties ?? {}) as Record<string, Schema>;
       const required = (schema.required ?? []) as string[];
-      // A key whose type is its own name (version, path) is written once.
+      // A key whose type is its own name (version, path, base, number, message) is written once.
       // A shared group of keys is written once, by name (D56).
       const grouped = [...GROUPS].filter(() => grouping).filter(([, keys]) => Object.entries(keys).every(([key, child]) => properties[key] === child));
       const inGroup = new Set(grouped.flatMap(([, keys]) => Object.keys(keys)));
-      const fields = [...grouped.map(([name]) => `…${name}`), ...Object.entries(properties).filter(([key]) => !inGroup.has(key)).map(([key, child]) => { const type = render(child, grouping); return `${key}${required.includes(key) ? "" : "?"}${type === key ? "" : `: ${type}`}`; })];
+      const fields = [...grouped.map(([name]) => `…${name}`), ...Object.entries(properties).filter(([key]) => !inGroup.has(key)).map(([key, child]) => { const type = (key === "base" && child === base) || (key === "number" && child.type === "integer" && Object.keys(child).length === 1) ? key : render(child, grouping); return `${key}${required.includes(key) ? "" : "?"}${type === key ? "" : `: ${type}`}`; })];
       return fields.length > 0 ? `{ ${fields.join(", ")} }` : "{}";
     }
     if (type === "array") {
@@ -100,8 +101,16 @@ function render(schema: Schema, grouping = true): string {
 }
 
 function methodSection(table: readonly Method[]): string {
-  const lines = table.map((method) => `- \`${method.name}\` \`${render(method.params)}\` → \`${render(method.result)}\``);
-  return `## Every method\n\nThe host's roster above (*Registered now*) gives each method's effect, bounds, description and every reason it may answer. Each line: the method, its params → its result. \`path\` is counted from the repository's root, or the placed folder, with \`/\` separators, at most 1,024 characters; no leading \`/\` or \`-\`, no \`\\\` or control character, no \`.\` or \`..\` segment. A \`?\` marks an optional key; a bare \`version\` or \`path\` key has that type; no other key is accepted but \`scope\`, a folder that paths and answers then count from. ${[...GROUPS].map(([name, keys]) => `\`…${name}\` is \`${render({ type: "object", properties: keys }, false)}\`.`).join(" ")}\n\n${lines.join("\n")}\n`;
+  // Methods whose params and result read alike share one line (syns.move, syns.copy).
+  const lines: string[] = [];
+  let last = "";
+  for (const method of table) {
+    const shape = `\`${render(method.params)}\` → \`${render(method.result)}\``;
+    if (shape === last) lines[lines.length - 1] = lines[lines.length - 1]!.replace(` ${shape}`, ` / \`${method.name}\` ${shape}`);
+    else lines.push(`- \`${method.name}\` ${shape}`);
+    last = shape;
+  }
+  return `## Every method\n\nThe host's roster above (*Registered now*) gives each method's effect, bounds, description and every reason it may answer. Each line: the method, its params → its result. \`path\` is counted from the repository's root, or the placed folder, with \`/\` separators, at most 1,024 characters; no leading \`/\` or \`-\`, no \`\\\` or control character, no \`.\` or \`..\` segment. A \`?\` marks an optional key; a bare \`version\` or \`path\` key has that type, \`base\` is a \`version\`, \`number\` an int, \`message\` a string(≤500); no other key is accepted but \`scope\`, a folder that paths and answers then count from. ${[...GROUPS].map(([name, keys]) => `\`…${name}\` is \`${render({ type: "object", properties: keys }, false)}\`.`).join(" ")}\n\n${lines.join("\n")}\n`;
 }
 
 /** The codes a reason may carry, in the order the guide lists them, with what each means for the page. */

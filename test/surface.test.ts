@@ -27,7 +27,7 @@ describe("the page surface (S6.1–S6.3, A62, A63)", () => {
   it("runs only the verbs, collaborators subcommands and repo flags spec 06 allows; nothing marked no or later", async () => {
     const seen = new Set<string>();
     for (const method of METHODS) {
-      const h = harness({ ...ANY, cat: rec("cat.ok"), ls: rec("ls.ok"), history: rec("history.ok"), commit: rec("write.ok"), read: rec("read.ok"), glob: rec("glob.ok"), grep: rec("grep.content.ok"), diff: rec("diff.ok"), write: rec("write.ok"), edit: rec("write.ok"), rm: rec("write.ok"), revert: rec("write.ok"), whoami: rec("whoami.ok"), place: rec("place.ok"), status: rec("status.clean") });
+      const h = harness({ ...ANY, cat: rec("cat.ok"), ls: rec("ls.ok"), history: rec("history.ok"), commit: rec("write.ok"), read: rec("read.ok"), glob: rec("glob.ok"), grep: rec("grep.content.ok"), diff: rec("diff.ok"), write: rec("write.ok"), edit: rec("write.ok"), rm: rec("write.ok"), mv: rec("mv.dir.0325"), cp: rec("cp.dir.0325"), revert: rec("write.ok"), whoami: rec("whoami.ok"), place: rec("place.ok"), status: rec("status.clean") });
       await h.call(method.name, SAMPLES[method.name]);
       for (const call of h.runner.calls) {
         const [verb, sub] = call.args;
@@ -35,7 +35,7 @@ describe("the page surface (S6.1–S6.3, A62, A63)", () => {
         seen.add(verb === "collaborators" && sub && !sub.startsWith("-") ? `${verb} ${sub}` : verb === "repo" || (verb === "cat" && call.args.some((arg) => arg.startsWith("--paths-from"))) ? flags : verb!);
       }
     }
-    const allowed = ["repo --json", "repo --json --visibility", "repo --json --within", "whoami", "ls", "cat", "cat --json --max-bytes --paths-from", "read", "glob", "grep", "history", "diff", "write", "edit", "rm", "commit", "revert", "place", "status", "share", "unshare", "collaborators", "collaborators add", "collaborators role", "collaborators remove", "enable-checks", "explore", "users"];
+    const allowed = ["repo --json", "repo --json --visibility", "repo --json --within", "whoami", "ls", "cat", "cat --json --max-bytes --paths-from", "read", "glob", "grep", "history", "diff", "write", "edit", "rm", "mv", "cp", "commit", "revert", "place", "status", "share", "unshare", "collaborators", "collaborators add", "collaborators role", "collaborators remove", "enable-checks", "explore", "users"];
     for (const one of seen) expect(allowed, one).toContain(one);
     for (const never of ["login", "logout", "upgrade", "delete", "push", "pull", "sync", "resolution", "fork", "repos", "teams", "links", "user", "forks"]) expect(seen.has(never), never).toBe(false);
   });
@@ -224,7 +224,7 @@ describe("fix round 1 (review thr_2sffsq2zs6)", () => {
 
   it("no run of any method carries --repo, --server or --if-repo as a flag (finding 5)", async () => {
     for (const method of METHODS) {
-      const h = harness({ ...ANY, cat: rec("cat.ok"), ls: rec("ls.ok"), history: rec("history.ok"), commit: rec("write.ok"), read: rec("read.ok"), glob: rec("glob.ok"), grep: rec("grep.content.ok"), diff: rec("diff.ok"), write: rec("write.ok"), edit: rec("write.ok"), rm: rec("write.ok"), revert: rec("write.ok"), whoami: rec("whoami.ok"), place: rec("place.ok"), status: rec("status.clean") });
+      const h = harness({ ...ANY, cat: rec("cat.ok"), ls: rec("ls.ok"), history: rec("history.ok"), commit: rec("write.ok"), read: rec("read.ok"), glob: rec("glob.ok"), grep: rec("grep.content.ok"), diff: rec("diff.ok"), write: rec("write.ok"), edit: rec("write.ok"), rm: rec("write.ok"), mv: rec("mv.dir.0325"), cp: rec("cp.dir.0325"), revert: rec("write.ok"), whoami: rec("whoami.ok"), place: rec("place.ok"), status: rec("status.clean") });
       await h.call(method.name, SAMPLES[method.name]);
       for (const call of h.runner.calls) {
         const end = call.args.indexOf("--");

@@ -45,6 +45,8 @@ export const SAMPLES: Record<string, Record<string, unknown>> = {
   "syns.write": { path: "notes/a.md", text: "a", base: HEAD },
   "syns.edit": { path: "notes/a.md", old: "a", new: "b", base: HEAD },
   "syns.rm": { path: "notes/a.md", base: HEAD },
+  "syns.move": { from: "notes/a.md", to: "notes/b.md", base: HEAD },
+  "syns.copy": { from: "notes/a.md", to: "notes/b.md", base: HEAD },
   "syns.revert": { path: "notes/a.md", to: OLD },
   "syns.readBinary": { path: "images/a.png" },
   "syns.writeBinary": { path: "images/a.png", base64: "iVBORw0KGgo=", base: HEAD },

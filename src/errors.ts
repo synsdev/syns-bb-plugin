@@ -73,7 +73,7 @@ export const REASONS = {
   bad_scope: {
     code: "invalid_params",
     message: "This page asked for something its folder cannot do here: it is outside its session's folder, or not a placed folder of its repository, or this action needs another kind of folder.",
-    meaning: "The scope is outside the session's folder, or not a placed folder of its repository where one is needed, or the method does not act there: a folder action at a root, a holder action in a placed folder, a folder's people before it is shared, a `scope` key on a whole-repository method.",
+    meaning: "The scope is outside the session's folder, not a placed folder of its repository where one is needed, or not where the method acts: a folder action at a root, a holder action in a placed folder, a folder's people before it is shared, `scope` on a whole-repository method.",
   },
   stale_head: {
     code: "conflict",
@@ -89,7 +89,7 @@ export const REASONS = {
   exists: {
     code: "conflict",
     message: "A file is already there. Nothing was written.",
-    meaning: "create was set and the path exists at base.",
+    meaning: "create's path, or a move's or copy's to, exists at base.",
   },
   no_match: {
     code: "invalid_params",
@@ -295,6 +295,8 @@ export async function interpret(run: RunResult, declared: readonly string[], run
   if (exit === 1 && error.includes("holds unpublished local changes")) throw fail("checkout_dirty");
   if (exit === 1 && error.includes("authentication required")) throw fail("not_logged_in");
   if (exit === 1 && error.includes("--old matched no content")) throw fail("no_match");
+  // syns mv / syns cp: the destination stands at the parent (Syns roadmap/228, `path_exists`).
+  if (exit === 1 && error.includes(" already exists at version ") && declared.includes("exists")) throw fail("exists");
   // syns place (D43, HOST_FACTS §14).
   if (exit === 1 && error.startsWith("configuration error") && error.includes(" already holds ")) throw fail("occupied");
   if (exit === 1 && error.startsWith("not_found:") && error.includes("is no repository you can read")) throw fail("no_such_template");

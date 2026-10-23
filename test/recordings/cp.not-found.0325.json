@@ -1,0 +1,1 @@
+{"source": "CLI 0.3.25, measured 2026-10-23 on a throwaway repository (kit/scratch.py), Syns B-0062: `syns cp nowhere x --parent <head> --json`", "exitCode": 1, "json": {"code": "not_found", "error": "path not found at version 8de074b37f3cfd27470a0bce411378b3eb964c1d: nowhere"}}
