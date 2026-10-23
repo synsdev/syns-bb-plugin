@@ -1,13 +1,13 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import http from "node:http";
 import { homedir, tmpdir } from "node:os";
-import { delimiter, join, sep } from "node:path";
+import { basename, delimiter, dirname, join, resolve, sep } from "node:path";
 import { createHash } from "node:crypto";
-import { access, constants, realpath, stat } from "node:fs/promises";
+import { access, constants, lstat, realpath, stat } from "node:fs/promises";
 import { spawn } from "node:child_process";
 //#region src/cli.ts
 const CLI_NOT_FOUND = "cli_not_found";
-/** The host half's answer when a scoped cwd is not a Syns folder inside the session's folder, once symlinks are followed (D43, D46). */
+/** The host half's answer when a scoped cwd is not a Syns folder inside the session's folder, or a scope parameter not a folder inside cwd, once symlinks are followed (D43, D46, D85). */
 const SCOPE_OUTSIDE = "scope_outside";
 const LIMITS = {
 	processMs: 2e4,
@@ -74,6 +74,7 @@ function createCli(runner, limits = LIMITS) {
 					hostId: where.hostId,
 					cwd: where.cwd,
 					...where.within ? { within: where.within } : {},
+					...where.scope ? { scope: where.scope } : {},
 					args,
 					...env ? { env } : {},
 					...input,
@@ -145,8 +146,8 @@ const REASONS = {
 	},
 	bad_scope: {
 		code: "invalid_params",
-		message: "This page asked for something its folder cannot do here: it is not a placed folder of its session's repository, or this action needs another kind of folder.",
-		meaning: "The scope is not a placed folder of the session's own repository, or the CLI does not act there: a folder action at a root, a holder action in a placed folder, a folder's people before it is shared."
+		message: "This page asked for something its folder cannot do here: it is outside its session's folder, or not a placed folder of its repository, or this action needs another kind of folder.",
+		meaning: "The scope is outside the session's folder, or not a placed folder of its repository where one is needed, or the method does not act there: a folder action at a root, a holder action in a placed folder, a folder's people before it is shared, a `scope` key on a whole-repository method."
 	},
 	stale_head: {
 		code: "conflict",
@@ -430,6 +431,27 @@ const path = {
 	maxLength: 1024,
 	pattern: "^(?![/-])(?!(?:.*/)?\\.{1,2}(?:/|$))[^\\\\\\u0000-\\u001f\\u007f-\\u009f]+$"
 };
+/** A glob pattern over whole paths (`syns.glob`, `syns.grep`): under a call's scope, counted from it like a path (S1.25). */
+const pathGlob = {
+	type: "string",
+	minLength: 1,
+	maxLength: 512
+};
+/** A repository path in a result, or a string beginning with one: under a call's scope, counted from it, and dropped when outside (S1.25). */
+const repoPath = { type: "string" };
+/** A call's scope (S1.25, D85), declared on every method beside its own params; the dispatch takes it out before they are checked. */
+const scope = {
+	type: "string",
+	maxLength: 1024
+};
+/** A method's params as declared to the host: its own and `scope`. */
+const declaredParams = (method) => ({
+	...method.params,
+	properties: {
+		...method.params.properties,
+		scope
+	}
+});
 /** A commit SHA, opaque to the page (D12). */
 const version = {
 	type: "string",
@@ -567,7 +589,7 @@ Only when the session's folder is a Syns repository, or a folder placed in one. 
 
 ## A placed folder
 
-A folder placed in a repository (a tool) is all the page sees: every \`path\` is counted from it; nothing outside is reachable. A document may also set a scope (\`threadPage.setScope\`): a placed folder of the session's own repository, holding its own identity file; its calls then answer for that folder alone. \`bad_scope\` refuses anything else: a plain folder, one below a placed folder, another checkout, a folder outside the session's, or any scope where the session's folder is no Syns repository. \`syns.repo\` adds \`holder\` (OWNER/NAME) and \`path\`: show those. \`owner\`, \`name\`, \`role\`, \`visibility\` and \`fileCount\` are the holder's; build no path or link from them. \`version\` is the holder's head, so \`syns.diff\` may list nothing. Once the CLI checks writes against the folder only, a write is \`stale_head\` only when the folder changed after \`base\`; before, any change to the holder. Writes publish to all who share the holder. \`syns.place { template, path }\` places a template as a new folder, always at the session's folder.
+A folder placed in a repository (a tool) is all the page sees: every \`path\` is counted from it; nothing outside is reachable. A document may also set a scope (\`threadPage.setScope\`): a placed folder of the session's own repository, holding its own identity file; its calls then answer for that folder alone. \`bad_scope\` refuses any other. \`syns.repo\` adds \`holder\` (OWNER/NAME) and \`path\`: show those. \`owner\`, \`name\`, \`role\`, \`visibility\` and \`fileCount\` are the holder's; build no path or link from them. \`version\` is the holder's head, so \`syns.diff\` may list nothing. Once the CLI checks writes against the folder only, a write is \`stale_head\` only when the folder changed after \`base\`; before, any change to the holder. Writes publish to all who share the holder. \`syns.place { template, path }\` places a template as a new folder, always at the session's folder.
 
 ## Apps in the workspace
 
@@ -646,7 +668,7 @@ function render(schema, grouping = true) {
 }
 function methodSection(table) {
 	const lines = table.map((method) => `- \`${method.name}\` \`${render(method.params)}\` → \`${render(method.result)}\``);
-	return `## Every method\n\nThe host's roster above (*Registered now*) gives each method's effect, bounds, description and every reason it may answer. Each line below: the method, its params → its result. \`path\` is counted from the repository's root, or the placed folder, with \`/\` separators, at most 1,024 characters; no leading \`/\` or \`-\`, no \`\\\` or control character, no \`.\` or \`..\` segment. A \`?\` marks an optional key; a bare \`version\` or \`path\` key has that type; no other key is accepted. ${[...GROUPS].map(([name, keys]) => `\`…${name}\` is \`${render({
+	return `## Every method\n\nThe host's roster above (*Registered now*) gives each method's effect, bounds, description and every reason it may answer. Each line: the method, its params → its result. \`path\` is counted from the repository's root, or the placed folder, with \`/\` separators, at most 1,024 characters; no leading \`/\` or \`-\`, no \`\\\` or control character, no \`.\` or \`..\` segment. A \`?\` marks an optional key; a bare \`version\` or \`path\` key has that type; no other key is accepted but \`scope\`, a folder that paths and answers then count from. ${[...GROUPS].map(([name, keys]) => `\`…${name}\` is \`${render({
 		type: "object",
 		properties: keys
 	}, false)}\`.`).join(" ")}\n\n${lines.join("\n")}\n`;
@@ -688,7 +710,7 @@ function buildDeclaration(table, settings) {
 			name: method.name,
 			description: method.description,
 			effect: method.effect,
-			params: method.params,
+			params: declaredParams(method),
 			result: method.result,
 			maxRequestBytes: method.maxRequestBytes,
 			maxResponseBytes: method.maxResponseBytes,
@@ -799,7 +821,7 @@ const readBinary = {
 		properties: {
 			version,
 			number: { type: "integer" },
-			path: { type: "string" },
+			path: repoPath,
 			size: { type: "integer" },
 			blob: { type: "string" },
 			mediaType: nullable("string"),
@@ -1130,7 +1152,7 @@ const diff = {
 				items: {
 					type: "object",
 					properties: {
-						path: { type: "string" },
+						path: repoPath,
 						status: { type: "string" },
 						patch: { type: "string" }
 					},
@@ -1256,12 +1278,9 @@ const glob = {
 	name: "syns.glob",
 	description: "The files whose whole path matches a glob pattern such as notes/**/*.md, under path (default root), at version (default head). No match: an empty list. Paged: up to 2000 from offset; nextOffset is null on the last page.",
 	effect: "read",
+	rootPath: true,
 	params: object({
-		pattern: {
-			type: "string",
-			minLength: 1,
-			maxLength: 512
-		},
+		pattern: pathGlob,
 		path,
 		version,
 		offset: {
@@ -1287,7 +1306,7 @@ const glob = {
 				items: {
 					type: "object",
 					properties: {
-						path: { type: "string" },
+						path: repoPath,
 						size: { type: "integer" },
 						blob: { type: "string" }
 					},
@@ -1350,6 +1369,7 @@ const grep = {
 	name: "syns.grep",
 	description: "Regex search under path, in files matching glob, at version (default head). output: content (default), files or count. headLimit caps rows (default 200). At most 400 files a call: pass nextOffset as offset and the first page's version",
 	effect: "read",
+	rootPath: true,
 	params: object({
 		pattern: {
 			type: "string",
@@ -1360,11 +1380,7 @@ const grep = {
 		glob: {
 			type: "array",
 			maxItems: 8,
-			items: {
-				type: "string",
-				minLength: 1,
-				maxLength: 512
-			}
+			items: pathGlob
 		},
 		ignoreCase: { type: "boolean" },
 		context: {
@@ -1417,7 +1433,7 @@ const grep = {
 				items: {
 					type: "object",
 					properties: {
-						path: { type: "string" },
+						path: repoPath,
 						reason: { type: "string" }
 					},
 					required: ["path", "reason"]
@@ -1428,7 +1444,7 @@ const grep = {
 				items: {
 					type: "object",
 					properties: {
-						path: { type: "string" },
+						path: repoPath,
 						line: { type: "integer" },
 						text: { type: "string" },
 						context: {
@@ -1446,14 +1462,14 @@ const grep = {
 			},
 			files: {
 				type: "array",
-				items: { type: "string" }
+				items: repoPath
 			},
 			counts: {
 				type: "array",
 				items: {
 					type: "object",
 					properties: {
-						path: { type: "string" },
+						path: repoPath,
 						count: { type: "integer" }
 					},
 					required: ["path", "count"]
@@ -1559,7 +1575,7 @@ const history = {
 						message: { type: "string" },
 						paths: {
 							type: "array",
-							items: { type: "string" },
+							items: repoPath,
 							maxItems: MAX_PATHS
 						},
 						pathsTruncated: { type: "boolean" },
@@ -1633,6 +1649,7 @@ const ls = {
 	name: "syns.ls",
 	description: "Files and folders under path (default root), one level or recursive, at version (default head). blob changes exactly when content does. Paged from offset: 1500 entries, or 9000 with format lines; nextOffset null at the end. Pass version on.",
 	effect: "read",
+	rootPath: true,
 	params: object({
 		path,
 		recursive: { type: "boolean" },
@@ -1668,7 +1685,7 @@ const ls = {
 				items: {
 					type: "object",
 					properties: {
-						path: { type: "string" },
+						path: repoPath,
 						type: {
 							type: "string",
 							enum: ["file", "dir"]
@@ -1686,7 +1703,7 @@ const ls = {
 			},
 			lines: {
 				type: "array",
-				items: { type: "string" }
+				items: repoPath
 			}
 		},
 		required: [
@@ -1803,7 +1820,7 @@ const read = {
 		properties: {
 			version,
 			number: { type: "integer" },
-			path: { type: "string" },
+			path: repoPath,
 			text: { type: "string" },
 			offset: { type: "integer" },
 			limit: { type: "integer" },
@@ -1863,6 +1880,7 @@ const template = {
 const CLEAN = /* @__PURE__ */ new Set(["converged", "remote_changes"]);
 const place = {
 	name: "syns.place",
+	unscoped: true,
 	description: "Place a template (OWNER/NAME, at version or its head) as a new folder at path of this session's repository: one version, the files on disk too. Runs at the session's folder whatever the scope.",
 	effect: "contributed-write",
 	unguarded: true,
@@ -1965,7 +1983,7 @@ const readMany = {
 					type: "object",
 					description: "Either path, text, size and blob, or path and error. not_text carries size and blob; too_large does when known.",
 					properties: {
-						path: { type: "string" },
+						path: repoPath,
 						text: { type: "string" },
 						size: { type: "integer" },
 						blob: nullable("string"),
@@ -1983,7 +2001,7 @@ const readMany = {
 			},
 			deferred: {
 				type: "array",
-				items: { type: "string" }
+				items: repoPath
 			}
 		},
 		required: [
@@ -2228,6 +2246,7 @@ const rm = {
 */
 const enableChecks = {
 	name: "syns.enableChecks",
+	unscoped: true,
 	description: "Turn on, for everyone working in the holder, the checks this placed folder recorded from its template; they run on every push. enabled: [] makes no version. Only from the reader's own press, naming the commands.",
 	effect: "contributed-write",
 	unguarded: true,
@@ -2300,6 +2319,7 @@ const exploreResult = {
 };
 const explore = {
 	name: "syns.explore",
+	unscoped: true,
 	description: "Public Syns repositories matching query, every tag in tags (syns-app for app templates) and status, limit at a time from offset; total says how many.",
 	effect: "read",
 	params: object({
@@ -2421,6 +2441,7 @@ const collaboratorsResult = {
 };
 const collaborators = {
 	name: "syns.collaborators",
+	unscoped: true,
 	description: "Who has access to this scope, and each one's role: a shared placed folder's own people, or at a root the whole repository's. limit at a time from offset; total says how many.",
 	effect: "read",
 	params: object({
@@ -2439,6 +2460,7 @@ const collaborators = {
 };
 const collaboratorAdd = {
 	name: "syns.collaboratorAdd",
+	unscoped: true,
 	description: "Give a person, by Syns username or e-mail, a role on this scope: a shared placed folder, or at a root the whole repository. Only from the reader's own press on a control naming the person, role and scope.",
 	effect: "contributed-write",
 	sharing: true,
@@ -2474,6 +2496,7 @@ const collaboratorAdd = {
 };
 const collaboratorRole = {
 	name: "syns.collaboratorRole",
+	unscoped: true,
 	description: "Change a collaborator's role on this scope, by the user id syns.collaborators answers. Only from the reader's own press on a control naming the person and the new role.",
 	effect: "contributed-write",
 	sharing: true,
@@ -2490,6 +2513,7 @@ const collaboratorRole = {
 };
 const collaboratorRemove = {
 	name: "syns.collaboratorRemove",
+	unscoped: true,
 	description: "Take a collaborator off this scope, by the user id syns.collaborators answers. Only from the reader's own press on a control naming the person.",
 	effect: "contributed-write",
 	sharing: true,
@@ -2527,6 +2551,7 @@ const usersResult = {
 };
 const users = {
 	name: "syns.users",
+	unscoped: true,
 	description: "Syns people whose handle or display name matches query, at most limit: id, username, name, image. For finding someone to share with.",
 	effect: "read",
 	params: object({
@@ -2602,6 +2627,7 @@ const shareInfoResult = result({
 ]);
 const shareInfo = {
 	name: "syns.shareInfo",
+	unscoped: true,
 	description: "Whether this placed folder is shared: its identity's record when it is, the name a share would offer when not, and the reader's holderRole. share . --show. At a repository's root: bad_scope.",
 	effect: "read",
 	params: object({}),
@@ -2625,6 +2651,7 @@ const shareResult = result({
 ]);
 const share = {
 	name: "syns.share",
+	unscoped: true,
 	description: "Share this placed folder under an identity of its own, named name or the CLI's offer. Already shared: created false. Reaches people at once: only from the reader's own press on a control saying so.",
 	effect: "contributed-write",
 	sharing: true,
@@ -2655,6 +2682,7 @@ const unshareResult = result({
 ]);
 const unshare = {
 	name: "syns.unshare",
+	unscoped: true,
 	description: "Stop sharing this placed folder: all who reached it through the folder lose access; its identity retires unless the folder has a visibility of its own. Only from the reader's own press on a control saying so.",
 	effect: "contributed-write",
 	sharing: true,
@@ -2679,6 +2707,7 @@ const folderVisibilityResult = result({
 ]);
 const folderVisibility = {
 	name: "syns.folderVisibility",
+	unscoped: true,
 	description: "Give this placed folder a visibility of its own. public: anyone, signed in or not, can find and read it. There is no way back to inheriting. Only from the reader's own press on a control saying exactly that.",
 	effect: "contributed-write",
 	sharing: true,
@@ -2707,6 +2736,7 @@ const repoVisibilityResult = result(RECORD, [
 ]);
 const repoVisibility = {
 	name: "syns.repoVisibility",
+	unscoped: true,
 	description: "Set this repository's visibility, from its root. public: anyone, signed in or not, can find and read every file. In a placed folder: bad_scope. Only from the reader's own press on a control saying exactly that.",
 	effect: "contributed-write",
 	sharing: true,
@@ -2852,6 +2882,62 @@ const METHODS = [
 	explore,
 	users
 ];
+//#endregion
+//#region src/scoped.ts
+/**
+* A call's scope in the server half (S1.25, D85): the method's paths count from that folder of the repository, and
+* what it answers is cut back to count from it, anything outside dropped. Which values are paths is read from the
+* schemas alone: `path` and `pathGlob` in params, `repoPath` in results. The host half checks the folder (S2.31).
+*/
+/** A write or read naming a path that leaves the scope (a `..` segment, a leading `/`) is outside it: `bad_scope`, before the params are checked. */
+function refuseEscape(schema, value) {
+	if (schema === path || schema === pathGlob) {
+		if (typeof value === "string" && (value.startsWith("/") || value.split("/").includes(".."))) throw fail("bad_scope");
+	} else if (Array.isArray(value)) {
+		if (schema.items) for (const item of value) refuseEscape(schema.items, item);
+	} else if (typeof value === "object" && value !== null && schema.properties) {
+		const properties = schema.properties;
+		for (const [key, child] of Object.entries(value)) if (Object.hasOwn(properties, key)) refuseEscape(properties[key], child);
+	}
+}
+/** The params the method runs with: every `path` and `pathGlob` value under the scope; an absent root `path` is the scope. */
+function scopeParams(method, params, scope) {
+	const given = under(method.params, params, scope);
+	if (method.rootPath && given.path === void 0) given.path = scope;
+	return given;
+}
+function under(schema, value, scope) {
+	if (schema === path || schema === pathGlob) return typeof value === "string" ? `${scope}/${value}` : value;
+	if (Array.isArray(value)) return schema.items ? value.map((item) => under(schema.items, item, scope)) : value;
+	if (typeof value === "object" && value !== null && schema.properties) {
+		const properties = schema.properties;
+		return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, Object.hasOwn(properties, key) ? under(properties[key], child, scope) : child]));
+	}
+	return value;
+}
+const OUTSIDE = Symbol("outside the scope");
+/** The result the page gets: each repository path counted from the scope; one outside dropped, with the list item holding it. */
+function scopeResult(method, result, scope) {
+	const kept = within(method.result, result, `${scope}/`, false);
+	if (kept === OUTSIDE) throw new SynsError("handler_error", { log: `${method.name} answered a path outside the call's scope` });
+	return kept;
+}
+function within(schema, value, prefix, item) {
+	if (schema === repoPath) return typeof value !== "string" ? value : value.startsWith(prefix) ? value.slice(prefix.length) : OUTSIDE;
+	if (Array.isArray(value)) return schema.items ? value.map((one) => within(schema.items, one, prefix, true)).filter((one) => one !== OUTSIDE) : value;
+	if (typeof value === "object" && value !== null && schema.properties) {
+		const properties = schema.properties;
+		const kept = {};
+		for (const [key, child] of Object.entries(value)) {
+			const one = Object.hasOwn(properties, key) ? within(properties[key], child, prefix, false) : child;
+			if (one === OUTSIDE) return OUTSIDE;
+			if (item && properties[key]?.items === repoPath && Array.isArray(one) && one.length === 0) return OUTSIDE;
+			kept[key] = one;
+		}
+		return kept;
+	}
+	return value;
+}
 /** An absolute path on the session's machine, POSIX or Windows (a drive letter, or a UNC path). */
 const ABSOLUTE = /^(\/|[A-Za-z]:[\\/]|\\\\)/;
 /** Where the CLI runs for the session: the folder the host passed, on its machine. Null when there is none; a malformed one throws. */
@@ -2894,7 +2980,8 @@ function createDispatch({ table = METHODS, cli, log, held = createHeld(), now = 
 		confirmed.set(key, now());
 		return ran;
 	}
-	async function run(method, params, sessionId, scope, workspace, deadline, signal) {
+	async function run(method, params, folder, sessionId, scope, workspace, deadline, signal) {
+		if (folder !== null) refuseEscape(method.params, params);
 		const problem = validate(method.params, params);
 		if (problem) throw new SynsError("invalid_params", { message: `Invalid parameters for ${method.name} at ${problem}` });
 		method.check?.(params);
@@ -2907,6 +2994,11 @@ function createDispatch({ table = METHODS, cli, log, held = createHeld(), now = 
 			within: session.cwd
 		};
 		const checked = where !== session ? await sameRepository(session, where, scope, deadline, signal) : void 0;
+		const at = folder === null ? where : {
+			...where,
+			scope: folder
+		};
+		const given = folder === null ? params : scopeParams(method, params, folder);
 		const declared = method.reasons ?? [];
 		let repoCheck = checked && Promise.resolve(checked);
 		let whoamiCheck;
@@ -2923,9 +3015,9 @@ function createDispatch({ table = METHODS, cli, log, held = createHeld(), now = 
 					SYNS_TRIGGER: mark.trigger
 				} : void 0;
 				const isRepo = args.join(" ") === "repo --json" && stdin === void 0 && env === void 0;
-				const ran = isRepo && checked ? checked : await cli.run(where, args, stdin, deadline, env, signal);
-				const repoCheckOf = () => repoCheck ??= isRepo ? Promise.resolve(ran) : cli.run(where, ["repo", "--json"], void 0, deadline, void 0, signal);
-				const whoamiCheckOf = () => whoamiCheck ??= cli.run(where, ["whoami", "--json"], void 0, deadline, void 0, signal);
+				const ran = isRepo && checked && folder === null ? checked : await cli.run(at, args, stdin, deadline, env, signal);
+				const repoCheckOf = () => repoCheck ??= isRepo ? Promise.resolve(ran) : cli.run(at, ["repo", "--json"], void 0, deadline, void 0, signal);
+				const whoamiCheckOf = () => whoamiCheck ??= cli.run(at, ["whoami", "--json"], void 0, deadline, void 0, signal);
 				return interpret(ran, declared, repoCheckOf, {
 					folder: session.cwd,
 					...method.notFound ? { notFound: method.notFound } : {}
@@ -2933,18 +3025,19 @@ function createDispatch({ table = METHODS, cli, log, held = createHeld(), now = 
 			}
 		};
 		let result;
-		if ("procedure" in method) result = await method.procedure(params, context);
+		if ("procedure" in method) result = await method.procedure(given, context);
 		else {
-			const command = method.command(params, sessionId);
+			const command = method.command(given, sessionId);
 			const output = await context.syns(command.args, command.stdin, command.provenanceEnv ? { provenanceEnv: true } : void 0);
 			if (typeof output !== "object" || output === null || Array.isArray(output)) throw new SynsError("handler_error", { log: "exit=0 output is not a JSON object" });
-			if (method.shape) result = method.shape(output, params);
+			if (method.shape) result = method.shape(output, given);
 			else {
 				const dropped = [];
 				result = pick(method.result, output, "$", dropped);
 				if (dropped.length > 0) log.warn(`${method.name} session=${sessionId} dropped from the CLI's output: ${dropped.join(", ").slice(0, 500)}`);
 			}
 		}
+		if (folder !== null) result = scopeResult(method, result, folder);
 		const hole = validate(method.result, result);
 		if (hole) throw new SynsError("handler_error", { log: `exit=0 the result lacks what the specification requires at ${hole}` });
 		return result;
@@ -2957,7 +3050,10 @@ function createDispatch({ table = METHODS, cli, log, held = createHeld(), now = 
 		if (rawScope !== void 0 && rawScope !== null && typeof rawScope !== "string") return toAnswer(fail("bad_scope"));
 		const scope = typeof rawScope === "string" && rawScope !== "" ? rawScope.startsWith("/") ? rawScope : rawScope.replace(/\/+$/, "") : null;
 		if (scope !== null && validate(path, scope)) return toAnswer(fail("bad_scope"));
-		const params = call.params ?? {};
+		const { scope: asked, ...params } = call.params ?? {};
+		if (asked !== void 0 && (typeof asked !== "string" || asked.startsWith("/"))) return toAnswer(fail("bad_scope"));
+		const folder = typeof asked === "string" && asked.replace(/\/+$/, "") !== "" ? asked.replace(/\/+$/, "") : null;
+		if (folder !== null && (method.unscoped || validate(path, folder))) return toAnswer(fail("bad_scope"));
 		const controller = new AbortController();
 		let timer;
 		const limit = new Promise((_, reject) => {
@@ -2968,7 +3064,7 @@ function createDispatch({ table = METHODS, cli, log, held = createHeld(), now = 
 		});
 		let outcome = "ok";
 		try {
-			const work = run(method, params, sessionId, scope, call.caller?.workspace, Date.now() + cli.limits.callMs, controller.signal);
+			const work = run(method, params, folder, sessionId, scope, call.caller?.workspace, Date.now() + cli.limits.callMs, controller.signal);
 			work.catch(() => void 0);
 			return {
 				ok: true,
@@ -3294,55 +3390,20 @@ const PAGEHOST = String.raw`/*
       if (CACHED[method] && !params.version) {
         const c = cache[method];
         if (!c || Date.now() - c.at >= CACHED[method]) { const value = this.invoke(method, params); cache[method] = { at: Date.now(), value: value }; value.catch(() => { delete cache[method]; }); }
-        return this.strip(await cache[method].value);
+        return cache[method].value;
       }
       if (PASS.includes(method)) return this.invoke(method, params);
       if (method === "storage.get" || method === "storage.set") return this.invoke(method, Object.assign({}, params, { key: nsKey(this.id, params.key) }));
       if (method === "storage.setMany") return this.invoke(method, { entries: (params.entries || []).map((x) => Object.assign({}, x, { key: nsKey(this.id, x.key) })) });
       if (!SYNS.includes(method)) throw Object.assign(new Error(method + " isn't available here"), { code: "unavailable" });
-      const F = this.folder;
-      const inF = (p) => {
-        if (typeof p !== "string") return p;
-        if (p.startsWith("/") || p.split("/").some((s) => s === ".." || s === ".")) throw Object.assign(new Error("A path must stay inside " + (F || "the repository")), { code: "invalid_params" });
-        return !repo ? p : p ? F + "/" + p : F;
-      };
-      const p = Object.assign({}, params);
-      if (repo) {
-        if ("path" in p || ["syns.ls", "syns.glob"].includes(method)) p.path = inF(p.path || "");
-        if (Array.isArray(p.paths)) p.paths = p.paths.map(inF);
-        if (typeof p.pattern === "string" && method === "syns.glob") p.pattern = F + "/" + p.pattern;
-        if (Array.isArray(p.glob)) p.glob = p.glob.map((g) => F + "/" + g);
-        if (method === "syns.move") { p.from = inF(p.from); p.to = inF(p.to); }
-        if (Array.isArray(p.files)) p.files = p.files.map((x) => Object.assign({}, x, { path: inF(x.path) }));
-        if (Array.isArray(p.deletions)) p.deletions = p.deletions.map((x) => typeof x === "string" ? inF(x) : Object.assign({}, x, { path: inF(x.path) }));
-      }
+      // A tool's calls carry its folder as scope: the plugin counts its paths from there and answers nothing outside it.
+      const p = repo ? Object.assign({}, params, { scope: this.folder }) : params;
       // Reads that fail transiently (many at once, the CLI busy) are asked again, twice at most.
       const write = /^syns\.(write|writeBinary|edit|rm|move|commit|revert)$/.test(method);
       for (let n = 0; ; n++) {
-        try { return this.strip(await this.invoke(method, p)); }
+        try { return await this.invoke(method, p); }
         catch (x) { if (write || n >= 2 || !/^(handler_error|timeout|rate_limited)$/.test(x.code || "")) throw x; await new Promise((ok) => setTimeout(ok, 600 * (n + 1))); }
       }
-    }
-    // A tool's answers name paths from its folder, and nothing outside it. An agent page's are the repository's.
-    strip(v) {
-      if (this.src.kind !== "repo") return v;
-      const pre = this.folder + "/";
-      const own = (s) => typeof s === "string" && (s.startsWith(pre) || s === this.folder);
-      const cut = (s) => s === this.folder ? "" : s.slice(pre.length);
-      const walk = (x, key) => {
-        if (Array.isArray(x)) {
-          return x.filter((y) => !(typeof y === "string" && /path/i.test(key || "")) || own(y))
-            .filter((y) => !(y && typeof y === "object" && typeof y.path === "string") || own(y.path))
-            .map((y) => typeof y === "string" && own(y) ? cut(y) : walk(y, key));
-        }
-        if (x && typeof x === "object") {
-          const o = {};
-          Object.keys(x).forEach((k) => { o[k] = (k === "path" && own(x[k])) ? cut(x[k]) : (k === "deferred" || k === "paths") ? walk(x[k], "path") : walk(x[k], k); });
-          return o;
-        }
-        return x;
-      };
-      return walk(v);
     }
     // Where a link goes, for the app to open: another site, a repository file, a document of the page.
     link(href, newTab) {
@@ -3599,6 +3660,33 @@ async function scopeFolder(cwd, within) {
 		return null;
 	}
 }
+/**
+* The host half's check of a call's `scope` parameter (S2.31, D85): `<folder>/<scope>`, symlinks followed, must be
+* `folder` or below it. No identity file is asked for, and the CLI still runs at `folder`. A part of the scope not on
+* disk yet is joined to its nearest existing parent, so a folder the checkout does not hold is judged by where it
+* would be; a link whose target is missing is refused, since it could point anywhere once that appears. It resolves
+* paths; it reads nothing in them.
+*/
+async function scopeInside(folder, scope) {
+	try {
+		const root = await realpath(folder);
+		const rest = [];
+		let at = resolve(root, scope);
+		for (;;) try {
+			at = await realpath(at);
+			break;
+		} catch (error) {
+			if (error.code !== "ENOENT" || dirname(at) === at) return false;
+			if (await lstat(at).then(() => true, () => false)) return false;
+			rest.unshift(basename(at));
+			at = dirname(at);
+		}
+		const full = join(at, ...rest);
+		return full === root || full.startsWith(root.endsWith(sep) ? root : root + sep);
+	} catch {
+		return false;
+	}
+}
 const executable = async (file) => access(file, constants.X_OK).then(() => true, () => false);
 /** The named executable if a setting names one; else PATH, then the usual folders under home. S2.8 */
 async function findSyns(synsPath, env = process.env, home = homedir()) {
@@ -3720,17 +3808,18 @@ const refused = (spawnError) => ({
 });
 /**
 * The Runner on Claude Code: the session's folder is on this machine, so the CLI runs here, in-process, with what
-* bb's host half calls on its machine (scopeFolder, findSyns, runSyns). No host call, so no 8 MiB bound and no
+* bb's host half calls on its machine (scopeFolder, scopeInside, findSyns, runSyns). No host call, so no 8 MiB bound and no
 * slices. `hostId` is ignored: there is one machine.
 */
 function createLocalRunner(synsPath) {
-	return { async run({ cwd, within, args, env, stdin, stdinBase64, timeoutMs, signal }) {
+	return { async run({ cwd, within, scope, args, env, stdin, stdinBase64, timeoutMs, signal }) {
 		let folder = cwd;
 		if (within !== void 0) {
 			const resolved = await scopeFolder(cwd, within);
 			if (resolved === null) return refused(SCOPE_OUTSIDE);
 			folder = resolved;
 		}
+		if (scope !== void 0 && !await scopeInside(folder, scope)) return refused(SCOPE_OUTSIDE);
 		const bin = await findSyns(synsPath);
 		if (!bin) return refused(CLI_NOT_FOUND);
 		const input = stdinBase64 === void 0 ? stdin : Buffer.from(stdinBase64, "base64");

@@ -1,5 +1,5 @@
 import { REASONS } from "./errors.js";
-import { reasonsOf, type Method, type Schema } from "./method.js";
+import { declaredParams, reasonsOf, type Method, type Schema } from "./method.js";
 import { FRAGMENT } from "./text/fragment.js";
 import { buildGuide } from "./text/guide.js";
 
@@ -35,7 +35,7 @@ export function buildDeclaration(table: readonly Method[], settings: { agentInst
       name: method.name,
       description: method.description,
       effect: method.effect,
-      params: method.params,
+      params: declaredParams(method),
       result: method.result,
       maxRequestBytes: method.maxRequestBytes,
       maxResponseBytes: method.maxResponseBytes,

@@ -19,13 +19,13 @@ const STOPPED: RunResult = { exitCode: null, stdout: "", stderr: "", timedOut: t
  */
 export function createHostRunner(call: HostCall, synsPath: () => Promise<string | undefined>): Runner {
   return {
-    async run({ hostId, cwd, within, args, env, stdin, stdinBase64, timeoutMs, signal }: RunRequest): Promise<RunResult> {
+    async run({ hostId, cwd, within, scope, args, env, stdin, stdinBase64, timeoutMs, signal }: RunRequest): Promise<RunResult> {
       const path = await synsPath();
       if (signal?.aborted) return STOPPED;
       // The call's signal reaches the host half: bb aborts the host call, and its context's signal stops the process.
       const options = { hostId, timeoutMs: timeoutMs + HOST_CALL_SLACK_MS, ...(signal ? { signal } : {}) };
       try {
-        const input: Record<string, unknown> = { cwd, args, timeoutMs, ...(within ? { within } : {}), ...(env ? { env } : {}), ...(path ? { synsPath: path } : {}) };
+        const input: Record<string, unknown> = { cwd, args, timeoutMs, ...(within ? { within } : {}), ...(scope ? { scope } : {}), ...(env ? { env } : {}), ...(path ? { synsPath: path } : {}) };
         if (stdin !== undefined) input.stdin = stdin;
         if (stdinBase64 !== undefined && stdinBase64.length <= SLICE) input.stdinBase64 = stdinBase64;
         if (stdinBase64 !== undefined && stdinBase64.length > SLICE) {

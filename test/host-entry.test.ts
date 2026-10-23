@@ -21,10 +21,10 @@ describe("the plugin opens no repository file (A5, S2.5, S2.6)", () => {
     expect(text).not.toMatch(/\brequire\s*\(|\bimport\s*\(/);
     expect(text).not.toMatch(/readFile|readdir|createReadStream|writeFile|\bopen(Sync)?\s*\(|opendir|\bstat(Sync)?\s*\(/);
   });
-  it("the scope check resolves paths and reads nothing: realpath and stat alone (D43)", () => {
+  it("the scope check resolves paths and reads nothing: realpath, lstat and stat alone (D43, D85)", () => {
     const text = source("scope.ts");
     const fromFs = imports(text).filter((entry) => entry.from.startsWith("node:fs") || entry.from === "fs" || entry.from.startsWith("fs/"));
-    expect(fromFs.flatMap((entry) => entry.names).sort()).toEqual(["realpath", "stat"]);
+    expect(fromFs.flatMap((entry) => entry.names).sort()).toEqual(["lstat", "realpath", "stat"]);
     expect(text).not.toMatch(/readFile|readdir|createReadStream|writeFile|\bopen(Sync)?\s*\(|opendir/);
   });
   it("starts the CLI with an argument array and no shell (S2.10)", () => {
@@ -146,6 +146,27 @@ describe("the host half, run against a stand-in executable", () => {
     const entry = hostEntry as unknown as { handlers: { run(input: Record<string, unknown>, context: { signal: AbortSignal }): Promise<Record<string, unknown>> } };
     const result = await entry.handlers.run({ cwd: dir, args: ["repo", "--json"], timeoutMs: 1000, synsPath: join(dir, "absent", "syns") }, { signal });
     expect(result).toEqual({ exitCode: null, stdout: "", stderr: "", timedOut: false, spawnError: CLI_NOT_FOUND, overflowed: false });
+  });
+
+  it("a scope parameter outside the folder, a link out, starts nothing on either host; a plain folder runs the CLI at the folder itself (S2.31, D85)", async () => {
+    const { mkdirSync: mk, symlinkSync } = await import("node:fs");
+    const { createLocalRunner } = await import("../hosts/claude/runner.js");
+    const work = join(dir, "work");
+    mk(join(work, "apps", "todo"), { recursive: true });
+    mk(join(dir, "elsewhere"));
+    symlinkSync(join(dir, "elsewhere"), join(work, "escape"));
+    const marker = join(dir, "started");
+    const bin = script("scoped", `touch "${marker}"; printf "cwd=%s" "$(pwd -P)"`);
+    const entry = hostEntry as unknown as { handlers: { run(input: Record<string, unknown>, context: { signal: AbortSignal }): Promise<Record<string, unknown>> } };
+    const local = createLocalRunner(bin);
+    for (const scope of ["escape", "escape/inner"]) {
+      expect(await entry.handlers.run({ cwd: work, scope, args: ["ls", "--json"], timeoutMs: 5000, synsPath: bin }, { signal }), scope).toMatchObject({ exitCode: null, spawnError: "scope_outside" });
+      expect(await local.run({ hostId: "local", cwd: work, scope, args: ["ls", "--json"], timeoutMs: 5000 }), scope).toMatchObject({ exitCode: null, spawnError: "scope_outside" });
+    }
+    expect(readdirSync(dir)).not.toContain("started");
+    const real = (await import("node:fs")).realpathSync(work);
+    expect(await entry.handlers.run({ cwd: work, scope: "apps/todo", args: ["ls", "--json"], timeoutMs: 5000, synsPath: bin }, { signal })).toMatchObject({ exitCode: 0, stdout: `cwd=${real}` });
+    expect(await local.run({ hostId: "local", cwd: work, scope: "apps/todo", args: ["ls", "--json"], timeoutMs: 5000 })).toMatchObject({ exitCode: 0, stdout: `cwd=${real}` });
   });
 
   it("the handler runs the executable the setting names", async () => {

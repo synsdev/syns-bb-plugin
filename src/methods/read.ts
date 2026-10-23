@@ -1,6 +1,6 @@
 import { buildArgs } from "../cli.js";
 import { SynsError } from "../errors.js";
-import { ENVELOPE, K64, M1, bytes, object, path, version, type SimpleMethod } from "../method.js";
+import { ENVELOPE, K64, M1, bytes, object, path, repoPath, version, type SimpleMethod } from "../method.js";
 
 /**
  * The lines of a window that fit one answer, from its first (D22). A text crosses as a JSON string, so a
@@ -33,7 +33,7 @@ export const read: SimpleMethod = {
     properties: {
       version,
       number: { type: "integer" },
-      path: { type: "string" },
+      path: repoPath,
       text: { type: "string" },
       offset: { type: "integer" },
       limit: { type: "integer" },

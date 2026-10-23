@@ -9,6 +9,8 @@ export interface RunRequest {
   cwd: string;
   /** For a scoped call, the session's folder: the host half refuses a cwd that resolves outside it, symlinks followed (D43). */
   within?: string;
+  /** A call's scope parameter: a folder below cwd; the host half refuses to start the CLI unless it resolves inside cwd, symlinks followed (S2.31, D85). */
+  scope?: string;
   args: string[];
   /** Provenance for a command that takes it only from the environment (`syns place`), D44. Exactly these three keys. */
   env?: ProvenanceEnv;
@@ -44,7 +46,7 @@ export interface ProvenanceEnv {
   SYNS_RUN: string;
   SYNS_TRIGGER: string;
 }
-/** The host half's answer when a scoped cwd is not a Syns folder inside the session's folder, once symlinks are followed (D43, D46). */
+/** The host half's answer when a scoped cwd is not a Syns folder inside the session's folder, or a scope parameter not a folder inside cwd, once symlinks are followed (D43, D46, D85). */
 export const SCOPE_OUTSIDE = "scope_outside";
 
 export interface Where {
@@ -52,6 +54,8 @@ export interface Where {
   cwd: string;
   /** Set when cwd is a scope below the session's folder (D43). */
   within?: string;
+  /** A call's scope parameter, checked by the host half on every run (S2.31, D85). */
+  scope?: string;
 }
 
 export interface Limits {
@@ -126,7 +130,7 @@ export function createCli(runner: Runner, limits: Limits = LIMITS): Cli {
         const left = deadline - Date.now();
         if (left <= 0 || signal?.aborted) return TIMED_OUT;
         const input = stdin === undefined ? {} : typeof stdin === "string" ? { stdin } : { stdinBase64: stdin.toString("base64") };
-        return await runner.run({ hostId: where.hostId, cwd: where.cwd, ...(where.within ? { within: where.within } : {}), args, ...(env ? { env } : {}), ...input, timeoutMs: Math.min(limits.processMs, left), ...(signal ? { signal } : {}) });
+        return await runner.run({ hostId: where.hostId, cwd: where.cwd, ...(where.within ? { within: where.within } : {}), ...(where.scope ? { scope: where.scope } : {}), args, ...(env ? { env } : {}), ...input, timeoutMs: Math.min(limits.processMs, left), ...(signal ? { signal } : {}) });
       } finally {
         const next = slots.waiting.shift();
         if (next) next();

@@ -1,6 +1,6 @@
 import { buildArgs } from "../cli.js";
 import { SynsError } from "../errors.js";
-import { K64, M1, nullable, object, path, version, type SimpleMethod } from "../method.js";
+import { K64, M1, nullable, object, path, pathGlob, repoPath, version, type SimpleMethod } from "../method.js";
 
 interface Params {
   pattern: string;
@@ -26,11 +26,12 @@ export const grep: SimpleMethod = {
   name: "syns.grep",
   description: "Regex search under path, in files matching glob, at version (default head). output: content (default), files or count. headLimit caps rows (default 200). At most 400 files a call: pass nextOffset as offset and the first page's version",
   effect: "read",
+  rootPath: true,
   params: object(
     {
       pattern: { type: "string", minLength: 1, maxLength: 512 },
       path,
-      glob: { type: "array", maxItems: 8, items: { type: "string", minLength: 1, maxLength: 512 } },
+      glob: { type: "array", maxItems: 8, items: pathGlob },
       ignoreCase: { type: "boolean" },
       context: { type: "integer", minimum: 0, maximum: 10, description: "Lines either side of each match. Only with output content." },
       output: { type: "string", enum: ["content", "files", "count"], maxLength: 7 },
@@ -50,13 +51,13 @@ export const grep: SimpleMethod = {
       output: { type: "string", enum: ["content", "files", "count"] },
       truncated: { type: "boolean" },
       nextOffset: nullable("integer"),
-      skipped: { type: "array", items: { type: "object", properties: { path: { type: "string" }, reason: { type: "string" } }, required: ["path", "reason"] } },
+      skipped: { type: "array", items: { type: "object", properties: { path: repoPath, reason: { type: "string" } }, required: ["path", "reason"] } },
       matches: {
         type: "array",
-        items: { type: "object", properties: { path: { type: "string" }, line: { type: "integer" }, text: { type: "string" }, context: { type: "array", items: lineAndText } }, required: ["path", "line", "text", "context"] },
+        items: { type: "object", properties: { path: repoPath, line: { type: "integer" }, text: { type: "string" }, context: { type: "array", items: lineAndText } }, required: ["path", "line", "text", "context"] },
       },
-      files: { type: "array", items: { type: "string" } },
-      counts: { type: "array", items: { type: "object", properties: { path: { type: "string" }, count: { type: "integer" } }, required: ["path", "count"] } },
+      files: { type: "array", items: repoPath },
+      counts: { type: "array", items: { type: "object", properties: { path: repoPath, count: { type: "integer" } }, required: ["path", "count"] } },
     },
     required: ["version", "number", "output", "truncated", "nextOffset", "skipped"],
   },

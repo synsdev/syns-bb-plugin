@@ -1,5 +1,5 @@
 import { buildArgs } from "../cli.js";
-import { K64, M1, nullable, object, path, version, type SimpleMethod } from "../method.js";
+import { K64, M1, nullable, object, path, repoPath, version, type SimpleMethod } from "../method.js";
 
 const MAX_PATHS = 200;
 const record = (value: unknown): Record<string, unknown> => (typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {});
@@ -24,7 +24,7 @@ export const history: SimpleMethod = {
             author: nullable("string"),
             at: { type: "string" },
             message: { type: "string" },
-            paths: { type: "array", items: { type: "string" }, maxItems: MAX_PATHS },
+            paths: { type: "array", items: repoPath, maxItems: MAX_PATHS },
             pathsTruncated: { type: "boolean" },
             by: {
               type: "object",

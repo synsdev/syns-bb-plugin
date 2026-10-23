@@ -72,8 +72,8 @@ export const REASONS = {
   },
   bad_scope: {
     code: "invalid_params",
-    message: "This page asked for something its folder cannot do here: it is not a placed folder of its session's repository, or this action needs another kind of folder.",
-    meaning: "The scope is not a placed folder of the session's own repository, or the CLI does not act there: a folder action at a root, a holder action in a placed folder, a folder's people before it is shared.",
+    message: "This page asked for something its folder cannot do here: it is outside its session's folder, or not a placed folder of its repository, or this action needs another kind of folder.",
+    meaning: "The scope is outside the session's folder, or not a placed folder of its repository where one is needed, or the method does not act there: a folder action at a root, a holder action in a placed folder, a folder's people before it is shared, a `scope` key on a whole-repository method.",
   },
   stale_head: {
     code: "conflict",

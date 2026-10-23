@@ -296,55 +296,20 @@ export const PAGEHOST = String.raw`/*
       if (CACHED[method] && !params.version) {
         const c = cache[method];
         if (!c || Date.now() - c.at >= CACHED[method]) { const value = this.invoke(method, params); cache[method] = { at: Date.now(), value: value }; value.catch(() => { delete cache[method]; }); }
-        return this.strip(await cache[method].value);
+        return cache[method].value;
       }
       if (PASS.includes(method)) return this.invoke(method, params);
       if (method === "storage.get" || method === "storage.set") return this.invoke(method, Object.assign({}, params, { key: nsKey(this.id, params.key) }));
       if (method === "storage.setMany") return this.invoke(method, { entries: (params.entries || []).map((x) => Object.assign({}, x, { key: nsKey(this.id, x.key) })) });
       if (!SYNS.includes(method)) throw Object.assign(new Error(method + " isn't available here"), { code: "unavailable" });
-      const F = this.folder;
-      const inF = (p) => {
-        if (typeof p !== "string") return p;
-        if (p.startsWith("/") || p.split("/").some((s) => s === ".." || s === ".")) throw Object.assign(new Error("A path must stay inside " + (F || "the repository")), { code: "invalid_params" });
-        return !repo ? p : p ? F + "/" + p : F;
-      };
-      const p = Object.assign({}, params);
-      if (repo) {
-        if ("path" in p || ["syns.ls", "syns.glob"].includes(method)) p.path = inF(p.path || "");
-        if (Array.isArray(p.paths)) p.paths = p.paths.map(inF);
-        if (typeof p.pattern === "string" && method === "syns.glob") p.pattern = F + "/" + p.pattern;
-        if (Array.isArray(p.glob)) p.glob = p.glob.map((g) => F + "/" + g);
-        if (method === "syns.move") { p.from = inF(p.from); p.to = inF(p.to); }
-        if (Array.isArray(p.files)) p.files = p.files.map((x) => Object.assign({}, x, { path: inF(x.path) }));
-        if (Array.isArray(p.deletions)) p.deletions = p.deletions.map((x) => typeof x === "string" ? inF(x) : Object.assign({}, x, { path: inF(x.path) }));
-      }
+      // A tool's calls carry its folder as scope: the plugin counts its paths from there and answers nothing outside it.
+      const p = repo ? Object.assign({}, params, { scope: this.folder }) : params;
       // Reads that fail transiently (many at once, the CLI busy) are asked again, twice at most.
       const write = /^syns\.(write|writeBinary|edit|rm|move|commit|revert)$/.test(method);
       for (let n = 0; ; n++) {
-        try { return this.strip(await this.invoke(method, p)); }
+        try { return await this.invoke(method, p); }
         catch (x) { if (write || n >= 2 || !/^(handler_error|timeout|rate_limited)$/.test(x.code || "")) throw x; await new Promise((ok) => setTimeout(ok, 600 * (n + 1))); }
       }
-    }
-    // A tool's answers name paths from its folder, and nothing outside it. An agent page's are the repository's.
-    strip(v) {
-      if (this.src.kind !== "repo") return v;
-      const pre = this.folder + "/";
-      const own = (s) => typeof s === "string" && (s.startsWith(pre) || s === this.folder);
-      const cut = (s) => s === this.folder ? "" : s.slice(pre.length);
-      const walk = (x, key) => {
-        if (Array.isArray(x)) {
-          return x.filter((y) => !(typeof y === "string" && /path/i.test(key || "")) || own(y))
-            .filter((y) => !(y && typeof y === "object" && typeof y.path === "string") || own(y.path))
-            .map((y) => typeof y === "string" && own(y) ? cut(y) : walk(y, key));
-        }
-        if (x && typeof x === "object") {
-          const o = {};
-          Object.keys(x).forEach((k) => { o[k] = (k === "path" && own(x[k])) ? cut(x[k]) : (k === "deferred" || k === "paths") ? walk(x[k], "path") : walk(x[k], k); });
-          return o;
-        }
-        return x;
-      };
-      return walk(v);
     }
     // Where a link goes, for the app to open: another site, a repository file, a document of the page.
     link(href, newTab) {

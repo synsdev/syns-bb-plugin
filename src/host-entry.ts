@@ -3,7 +3,7 @@ import { experimental_defineHostEntry } from "@get-bb/plugin-sdk/host";
 import { CLI_NOT_FOUND, SCOPE_OUTSIDE } from "./cli.js";
 import { hostContract } from "./contract.js";
 import { SLICE, createRelay } from "./relay.js";
-import { scopeFolder } from "./scope.js";
+import { scopeFolder, scopeInside } from "./scope.js";
 import { findSyns, runSyns } from "./syns-process.js";
 
 /**
@@ -89,10 +89,10 @@ export default experimental_defineHostEntry({
   },
 });
 
-type RunInput = { cwd: string; within?: string | undefined; args: string[]; env?: Record<string, string> | undefined; stdin?: string | undefined; stdinBase64?: string | undefined; stdinFrom?: string | undefined; timeoutMs: number; synsPath?: string | undefined };
+type RunInput = { cwd: string; within?: string | undefined; scope?: string | undefined; args: string[]; env?: Record<string, string> | undefined; stdin?: string | undefined; stdinBase64?: string | undefined; stdinFrom?: string | undefined; timeoutMs: number; synsPath?: string | undefined };
 
 /** One CLI run on this machine: the scope checked, the executable found, the process started. S2.6–S2.8 */
-async function run({ cwd, within, args, env, stdin, stdinBase64, stdinFrom, timeoutMs, synsPath }: RunInput, signal: AbortSignal) {
+async function run({ cwd, within, scope, args, env, stdin, stdinBase64, stdinFrom, timeoutMs, synsPath }: RunInput, signal: AbortSignal) {
   // A scoped call starts where the scope resolved, so a link swapped in afterwards cannot move it (D46).
   let folder = cwd;
   if (within !== undefined) {
@@ -100,6 +100,8 @@ async function run({ cwd, within, args, env, stdin, stdinBase64, stdinFrom, time
     if (resolved === null) return { exitCode: null, stdout: "", stderr: "", timedOut: false, spawnError: SCOPE_OUTSIDE, overflowed: false };
     folder = resolved;
   }
+  // A call's scope parameter: its paths count from that folder, which must be inside this one (S2.31, D85).
+  if (scope !== undefined && !(await scopeInside(folder, scope))) return { exitCode: null, stdout: "", stderr: "", timedOut: false, spawnError: SCOPE_OUTSIDE, overflowed: false };
   const bin = await findSyns(synsPath);
   if (!bin) return { exitCode: null, stdout: "", stderr: "", timedOut: false, spawnError: CLI_NOT_FOUND, overflowed: false };
   let input: string | Buffer | undefined = stdinBase64 === undefined ? stdin : Buffer.from(stdinBase64, "base64");

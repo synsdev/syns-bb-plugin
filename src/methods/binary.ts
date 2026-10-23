@@ -3,7 +3,7 @@ import { buildArgs } from "../cli.js";
 import { FILE_MAX, SynsError, fail } from "../errors.js";
 import type { Read, Upload } from "../held.js";
 import { GATHERING_PER_SESSION } from "../held.js";
-import { K64, M1, base, message, nullable, object, path, provenance, version, type Context, type ProcedureMethod, type Schema } from "../method.js";
+import { K64, M1, base, message, nullable, object, path, provenance, repoPath, version, type Context, type ProcedureMethod, type Schema } from "../method.js";
 
 /**
  * Pictures (D23–D27, roadmap 212, D-088). Bytes cross the bridge as base64, at
@@ -45,7 +45,7 @@ export const readBinary: ProcedureMethod = {
     properties: {
       version,
       number: { type: "integer" },
-      path: { type: "string" },
+      path: repoPath,
       size: { type: "integer" },
       blob: { type: "string" },
       mediaType: nullable("string"),

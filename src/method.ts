@@ -70,6 +70,10 @@ interface Common {
   sharing?: true;
   /** The sentence a not_found answer carries, where the plugin's default (a path or version) would mislead. */
   notFound?: string;
+  /** An absent `path` is the root: under a call's scope, the scope (S1.25). */
+  rootPath?: true;
+  /** Acts on the repository, its people or Syns as a whole, never on paths: a call with a scope is `bad_scope` and runs nothing (S1.25). */
+  unscoped?: true;
   /** How many paths a write names, for the plugin's log. Defaults to one when there is a `path`. S2.19 */
   pathCount?(params: any): number;
 }
@@ -114,6 +118,17 @@ export const path: Schema = {
   maxLength: 1024,
   pattern: "^(?![/-])(?!(?:.*/)?\\.{1,2}(?:/|$))[^\\\\\\u0000-\\u001f\\u007f-\\u009f]+$",
 };
+
+/** A glob pattern over whole paths (`syns.glob`, `syns.grep`): under a call's scope, counted from it like a path (S1.25). */
+export const pathGlob: Schema = { type: "string", minLength: 1, maxLength: 512 };
+
+/** A repository path in a result, or a string beginning with one: under a call's scope, counted from it, and dropped when outside (S1.25). */
+export const repoPath: Schema = { type: "string" };
+
+/** A call's scope (S1.25, D85), declared on every method beside its own params; the dispatch takes it out before they are checked. */
+export const scope: Schema = { type: "string", maxLength: 1024 };
+/** A method's params as declared to the host: its own and `scope`. */
+export const declaredParams = (method: Method): Schema => ({ ...method.params, properties: { ...(method.params.properties as Record<string, Schema>), scope } });
 
 /** A commit SHA, opaque to the page (D12). */
 export const version: Schema = { type: "string", pattern: "^[0-9a-f]{40}$", maxLength: 40 };

@@ -52,6 +52,16 @@ describe("the page script's text (S2.28)", () => {
   });
 });
 
+describe("the page host's app calls (S1.25, D85)", () => {
+  it("passes an app's folder as scope with every syns.* call, and rewrites no path in the call or the answer", () => {
+    const call = PAGEHOST.slice(PAGEHOST.indexOf("async call(method, params)"), PAGEHOST.indexOf("// Where a link goes"));
+    expect(call).toContain("const p = repo ? Object.assign({}, params, { scope: this.folder }) : params;");
+    expect(call).toContain("try { return await this.invoke(method, p); }");
+    for (const gone of ["inF", "strip", "F + \"/\"", "p.paths", "p.pattern", "p.glob", "p.deletions"]) expect(call, gone).not.toContain(gone);
+    expect(PAGEHOST).not.toContain("strip(v)");
+  });
+});
+
 describe("the page script on bb (S2.27)", () => {
   it("is declared, whatever agentInstructions says", () => {
     for (const agentInstructions of [true, false]) expect(buildDeclaration(METHODS, { agentInstructions }).pageScript).toBe(true);

@@ -1,6 +1,6 @@
 import { buildArgs } from "../cli.js";
 import { SynsError } from "../errors.js";
-import { K64, M1, object, version, type Context, type ProcedureMethod } from "../method.js";
+import { K64, M1, object, repoPath, version, type Context, type ProcedureMethod } from "../method.js";
 
 interface Params {
   from: string;
@@ -21,7 +21,7 @@ export const diff: ProcedureMethod = {
     properties: {
       from: end,
       to: end,
-      files: { type: "array", items: { type: "object", properties: { path: { type: "string" }, status: { type: "string" }, patch: { type: "string" } }, required: ["path", "status"] } },
+      files: { type: "array", items: { type: "object", properties: { path: repoPath, status: { type: "string" }, patch: { type: "string" } }, required: ["path", "status"] } },
     },
     required: ["from", "to", "files"],
   },

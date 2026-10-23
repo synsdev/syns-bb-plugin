@@ -31,6 +31,7 @@ const FOLDER_ARG = ["."];
 const shareInfoResult = result({ ...FOLDER, holderRole: nullable("string"), shared: { type: "boolean" }, offeredName: { type: "string" }, ...RECORD }, ["holder", "path", "shared"]);
 export const shareInfo: SimpleMethod = {
   name: "syns.shareInfo",
+  unscoped: true,
   description: "Whether this placed folder is shared: its identity's record when it is, the name a share would offer when not, and the reader's holderRole. share . --show. At a repository's root: bad_scope.",
   effect: "read",
   params: object({}),
@@ -45,6 +46,7 @@ export const shareInfo: SimpleMethod = {
 const shareResult = result({ ...RECORD, ...FOLDER, created: { type: "boolean" } }, ["owner", "name", "holder", "path", "created"]);
 export const share: SimpleMethod = {
   name: "syns.share",
+  unscoped: true,
   description: "Share this placed folder under an identity of its own, named name or the CLI's offer. Already shared: created false. Reaches people at once: only from the reader's own press on a control saying so.",
   effect: "contributed-write",
   sharing: true,
@@ -60,6 +62,7 @@ export const share: SimpleMethod = {
 const unshareResult = result({ owner: { type: "string" }, name: { type: "string" }, ...FOLDER, unshared: { type: "boolean" }, retired: nullable("boolean") }, ["owner", "name", "holder", "path", "unshared"]);
 export const unshare: SimpleMethod = {
   name: "syns.unshare",
+  unscoped: true,
   description: "Stop sharing this placed folder: all who reached it through the folder lose access; its identity retires unless the folder has a visibility of its own. Only from the reader's own press on a control saying so.",
   effect: "contributed-write",
   sharing: true,
@@ -76,6 +79,7 @@ export const unshare: SimpleMethod = {
 const folderVisibilityResult = result({ ...RECORD, ...FOLDER, created: { type: "boolean" } }, ["owner", "name", "visibility", "holder", "path"]);
 export const folderVisibility: SimpleMethod = {
   name: "syns.folderVisibility",
+  unscoped: true,
   description: "Give this placed folder a visibility of its own. public: anyone, signed in or not, can find and read it. There is no way back to inheriting. Only from the reader's own press on a control saying exactly that.",
   effect: "contributed-write",
   sharing: true,
@@ -91,6 +95,7 @@ export const folderVisibility: SimpleMethod = {
 const repoVisibilityResult = result(RECORD, ["owner", "name", "visibility"]);
 export const repoVisibility: SimpleMethod = {
   name: "syns.repoVisibility",
+  unscoped: true,
   description: "Set this repository's visibility, from its root. public: anyone, signed in or not, can find and read every file. In a placed folder: bad_scope. Only from the reader's own press on a control saying exactly that.",
   effect: "contributed-write",
   sharing: true,

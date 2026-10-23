@@ -36,6 +36,20 @@ function fakeHost(echo: (stdin: Buffer | string | undefined) => string, now = ()
 }
 
 const request = { hostId: "host_1", cwd: "/w", args: ["x"], timeoutMs: 1000 };
+
+describe("a call's scope crosses to the host half (S2.31, D85)", () => {
+  it("createHostRunner passes scope with run's input, and none when there is none", async () => {
+    const inputs: Record<string, unknown>[] = [];
+    const runner = createHostRunner(async (_method, input) => {
+      inputs.push(input);
+      return { exitCode: 0, stdout: "{}", stderr: "", timedOut: false, spawnError: null, overflowed: false };
+    }, async () => undefined);
+    await runner.run({ ...request, scope: "apps/todo" });
+    await runner.run(request);
+    expect(inputs[0]).toMatchObject({ cwd: "/w", scope: "apps/todo" });
+    expect(inputs[1]).not.toHaveProperty("scope");
+  });
+});
 const bytesOf = (size: number): Buffer => Buffer.from(Array.from({ length: size }, (_, index) => (index * 31) & 0xff));
 
 describe("the relay between the halves (D32)", () => {

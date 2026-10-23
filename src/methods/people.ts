@@ -27,6 +27,7 @@ const COLLABORATOR: Schema = { type: "object", properties: group("collaborator",
 const collaboratorsResult: Schema = { type: "object", properties: { total: { type: "integer" }, limit: { type: "integer" }, offset: { type: "integer" }, data: { type: "array", items: COLLABORATOR } }, required: ["total", "data"] };
 export const collaborators: SimpleMethod = {
   name: "syns.collaborators",
+  unscoped: true,
   description: "Who has access to this scope, and each one's role: a shared placed folder's own people, or at a root the whole repository's. limit at a time from offset; total says how many.",
   effect: "read",
   params: object({ limit, offset }),
@@ -41,6 +42,7 @@ export const collaborators: SimpleMethod = {
 const addResult: Schema = { type: "object", properties: { added: { type: "boolean" }, target: { type: "string" }, role: { type: "string" } }, required: ["added", "target", "role"] };
 export const collaboratorAdd: SimpleMethod = {
   name: "syns.collaboratorAdd",
+  unscoped: true,
   description: "Give a person, by Syns username or e-mail, a role on this scope: a shared placed folder, or at a root the whole repository. Only from the reader's own press on a control naming the person, role and scope.",
   effect: "contributed-write",
   sharing: true,
@@ -55,6 +57,7 @@ export const collaboratorAdd: SimpleMethod = {
 
 export const collaboratorRole: SimpleMethod = {
   name: "syns.collaboratorRole",
+  unscoped: true,
   description: "Change a collaborator's role on this scope, by the user id syns.collaborators answers. Only from the reader's own press on a control naming the person and the new role.",
   effect: "contributed-write",
   sharing: true,
@@ -70,6 +73,7 @@ export const collaboratorRole: SimpleMethod = {
 const removeResult: Schema = { type: "object", properties: { removed: { type: "boolean" }, userId: { type: "string" } }, required: ["removed", "userId"] };
 export const collaboratorRemove: SimpleMethod = {
   name: "syns.collaboratorRemove",
+  unscoped: true,
   description: "Take a collaborator off this scope, by the user id syns.collaborators answers. Only from the reader's own press on a control naming the person.",
   effect: "contributed-write",
   sharing: true,
@@ -86,6 +90,7 @@ export const collaboratorRemove: SimpleMethod = {
 const usersResult: Schema = { type: "object", properties: { data: { type: "array", items: { type: "object", properties: { id: { type: "string" }, username: { type: "string" }, name: nullable("string"), image: nullable("string") }, required: ["id", "username"] } } }, required: ["data"] };
 export const users: SimpleMethod = {
   name: "syns.users",
+  unscoped: true,
   description: "Syns people whose handle or display name matches query, at most limit: id, username, name, image. For finding someone to share with.",
   effect: "read",
   params: object({ query: { type: "string", maxLength: 100 }, limit }, ["query"]),

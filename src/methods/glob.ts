@@ -1,5 +1,5 @@
 import { buildArgs } from "../cli.js";
-import { K64, M1, nullable, object, path, version, type SimpleMethod } from "../method.js";
+import { K64, M1, nullable, object, path, pathGlob, repoPath, version, type SimpleMethod } from "../method.js";
 
 // The host refuses a result over 10,000 JSON nodes, and a match is four. D19
 const PAGE = 2000;
@@ -10,7 +10,8 @@ export const glob: SimpleMethod = {
   name: "syns.glob",
   description: "The files whose whole path matches a glob pattern such as notes/**/*.md, under path (default root), at version (default head). No match: an empty list. Paged: up to 2000 from offset; nextOffset is null on the last page.",
   effect: "read",
-  params: object({ pattern: { type: "string", minLength: 1, maxLength: 512 }, path, version, offset: { type: "integer", minimum: 0 }, limit: { type: "integer", minimum: 1, maximum: PAGE } }, ["pattern"]),
+  rootPath: true,
+  params: object({ pattern: pathGlob, path, version, offset: { type: "integer", minimum: 0 }, limit: { type: "integer", minimum: 1, maximum: PAGE } }, ["pattern"]),
   result: {
     type: "object",
     properties: {
@@ -21,7 +22,7 @@ export const glob: SimpleMethod = {
       nextOffset: nullable("integer"),
       matches: {
         type: "array",
-        items: { type: "object", properties: { path: { type: "string" }, size: { type: "integer" }, blob: { type: "string" } }, required: ["path", "size", "blob"] },
+        items: { type: "object", properties: { path: repoPath, size: { type: "integer" }, blob: { type: "string" } }, required: ["path", "size", "blob"] },
       },
     },
     required: ["version", "number", "truncated", "total", "nextOffset", "matches"],

@@ -18,6 +18,7 @@ const CLEAN = new Set(["converged", "remote_changes"]);
 
 export const place: ProcedureMethod = {
   name: "syns.place",
+  unscoped: true,
   description: "Place a template (OWNER/NAME, at version or its head) as a new folder at path of this session's repository: one version, the files on disk too. Runs at the session's folder whatever the scope.",
   effect: "contributed-write",
   unguarded: true,

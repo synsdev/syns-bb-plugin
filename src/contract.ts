@@ -14,6 +14,8 @@ export const hostContract = defineRpcContract({
         cwd: z.string().min(1),
         /** For a scoped call, the session's folder: cwd must resolve inside it (D43). */
         within: z.string().min(1).optional(),
+        /** A call's scope parameter: a folder below cwd, which must resolve inside it, symlinks followed (S2.31, D85). */
+        scope: z.string().min(1).max(1024).optional(),
         args: z.array(z.string()).max(64),
         /** Provenance through the environment, for a command with no flags for it (D44). These three keys and no other. */
         env: z.object({ SYNS_INTEGRATION: z.string().max(64), SYNS_RUN: z.string().max(128), SYNS_TRIGGER: z.string().max(64) }).strict().optional(),

@@ -1,6 +1,6 @@
 import { buildArgs } from "../cli.js";
 import { SynsError } from "../errors.js";
-import { ENVELOPE, K64, M1, bytes, nullable, object, path, version, type Context, type ProcedureMethod } from "../method.js";
+import { ENVELOPE, K64, M1, bytes, nullable, object, path, repoPath, version, type Context, type ProcedureMethod } from "../method.js";
 
 interface Params {
   paths: string[];
@@ -26,11 +26,11 @@ export const readMany: ProcedureMethod = {
         items: {
           type: "object",
           description: "Either path, text, size and blob, or path and error. not_text carries size and blob; too_large does when known.",
-          properties: { path: { type: "string" }, text: { type: "string" }, size: { type: "integer" }, blob: nullable("string"), error: { type: "string", enum: ["not_found", "too_large", "not_text"] } },
+          properties: { path: repoPath, text: { type: "string" }, size: { type: "integer" }, blob: nullable("string"), error: { type: "string", enum: ["not_found", "too_large", "not_text"] } },
           required: ["path"],
         },
       },
-      deferred: { type: "array", items: { type: "string" } },
+      deferred: { type: "array", items: repoPath },
     },
     required: ["version", "files", "deferred"],
   },

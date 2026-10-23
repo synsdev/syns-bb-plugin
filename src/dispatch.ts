@@ -4,6 +4,7 @@ import { path as pathSchema, pick, provenance, validate, type Context, type Meth
 import { METHODS } from "./methods/index.js";
 import { createHeld, type Held } from "./held.js";
 import { buildArgs, type Where } from "./cli.js";
+import { refuseEscape, scopeParams, scopeResult } from "./scoped.js";
 
 /** The session's folder as the host passes it (unife-pages 07 R5.84b, U44): an absolute path on `machine`, null where the host has one. */
 export interface Workspace {
@@ -90,7 +91,8 @@ export function createDispatch({ table = METHODS, cli, log, held = createHeld(),
     return ran;
   }
 
-  async function run(method: Method, params: Record<string, unknown>, sessionId: string | null, scope: string | null, workspace: unknown, deadline: number, signal: AbortSignal): Promise<unknown> {
+  async function run(method: Method, params: Record<string, unknown>, folder: string | null, sessionId: string | null, scope: string | null, workspace: unknown, deadline: number, signal: AbortSignal): Promise<unknown> {
+    if (folder !== null) refuseEscape(method.params, params);
     const problem = validate(method.params, params);
     if (problem) throw new SynsError("invalid_params", { message: `Invalid parameters for ${method.name} at ${problem}` });
     method.check?.(params);
@@ -107,6 +109,9 @@ export function createDispatch({ table = METHODS, cli, log, held = createHeld(),
     // A scope must be a folder of the session's own repository: the placed folder's holder, or the session's own identity (D46).
     // Where the check ran in this call, its run is the scope's `repo --json`: the method's own, and the 404 rule's (S3.5).
     const checked = where !== session ? await sameRepository(session, where, scope!, deadline, signal) : undefined;
+    // A call's scope parameter: every run carries it, and the host half refuses to start one outside (S1.25, S2.31, D85).
+    const at: Where = folder === null ? where : { ...where, scope: folder };
+    const given = folder === null ? params : scopeParams(method, params, folder);
 
     const declared = method.reasons ?? [];
     let repoCheck: Promise<RunResult> | undefined = checked && Promise.resolve(checked);
@@ -120,22 +125,22 @@ export function createDispatch({ table = METHODS, cli, log, held = createHeld(),
         const mark = provenance(sessionId);
         const env = options?.provenanceEnv ? { SYNS_INTEGRATION: mark.integration!, SYNS_RUN: mark.run!, SYNS_TRIGGER: mark.trigger! } : undefined;
         const isRepo = args.join(" ") === "repo --json" && stdin === undefined && env === undefined;
-        const ran = isRepo && checked ? checked : await cli.run(where, args, stdin, deadline, env, signal);
+        const ran = isRepo && checked && folder === null ? checked : await cli.run(at, args, stdin, deadline, env, signal);
         // The 404 rule's `repo` runs at most once per call, and not again after `repo` itself; then `whoami` once. S3.5, B-0011
-        const repoCheckOf = () => (repoCheck ??= isRepo ? Promise.resolve(ran) : cli.run(where, ["repo", "--json"], undefined, deadline, undefined, signal));
-        const whoamiCheckOf = () => (whoamiCheck ??= cli.run(where, ["whoami", "--json"], undefined, deadline, undefined, signal));
+        const repoCheckOf = () => (repoCheck ??= isRepo ? Promise.resolve(ran) : cli.run(at, ["repo", "--json"], undefined, deadline, undefined, signal));
+        const whoamiCheckOf = () => (whoamiCheck ??= cli.run(at, ["whoami", "--json"], undefined, deadline, undefined, signal));
         return interpret(ran, declared, repoCheckOf, { folder: session.cwd, ...(method.notFound ? { notFound: method.notFound } : {}) }, whoamiCheckOf);
       },
     };
 
     let result: unknown;
     if ("procedure" in method) {
-      result = await method.procedure(params, context);
+      result = await method.procedure(given, context);
     } else {
-      const command = method.command(params, sessionId);
+      const command = method.command(given, sessionId);
       const output = await context.syns(command.args, command.stdin, command.provenanceEnv ? { provenanceEnv: true } : undefined);
       if (typeof output !== "object" || output === null || Array.isArray(output)) throw new SynsError("handler_error", { log: "exit=0 output is not a JSON object" });
-      if (method.shape) result = method.shape(output as Record<string, unknown>, params);
+      if (method.shape) result = method.shape(output as Record<string, unknown>, given);
       else {
         // The CLI's JSON passed on (D59). A named key the CLI gave in another type is dropped; say which, never the value (S2.20).
         const dropped: string[] = [];
@@ -143,6 +148,7 @@ export function createDispatch({ table = METHODS, cli, log, held = createHeld(),
         if (dropped.length > 0) log.warn(`${method.name} session=${sessionId} dropped from the CLI's output: ${dropped.join(", ").slice(0, 500)}`);
       }
     }
+    if (folder !== null) result = scopeResult(method, result, folder);
     // Never a result with a hole in it. S3.7
     const hole = validate(method.result, result);
     if (hole) throw new SynsError("handler_error", { log: `exit=0 the result lacks what the specification requires at ${hole}` });
@@ -159,7 +165,12 @@ export function createDispatch({ table = METHODS, cli, log, held = createHeld(),
     if (rawScope !== undefined && rawScope !== null && typeof rawScope !== "string") return toAnswer(fail("bad_scope"));
     const scope = typeof rawScope === "string" && rawScope !== "" ? (rawScope.startsWith("/") ? rawScope : rawScope.replace(/\/+$/, "")) : null;
     if (scope !== null && validate(pathSchema, scope)) return toAnswer(fail("bad_scope"));
-    const params = (call.params ?? {}) as Record<string, unknown>;
+    // A call's scope parameter (S1.25, D85): absent or empty, none; a trailing `/` dropped; else a relative folder by
+    // the path rule, which the host half then checks on disk. A method acting on the whole repository takes none.
+    const { scope: asked, ...params } = (call.params ?? {}) as Record<string, unknown>;
+    if (asked !== undefined && (typeof asked !== "string" || asked.startsWith("/"))) return toAnswer(fail("bad_scope"));
+    const folder = typeof asked === "string" && asked.replace(/\/+$/, "") !== "" ? asked.replace(/\/+$/, "") : null;
+    if (folder !== null && (method.unscoped || validate(pathSchema, folder))) return toAnswer(fail("bad_scope"));
 
     // One controller per call: the limit aborts it, and so does the call's end, for anything still running (S2.14, D83).
     const controller = new AbortController();
@@ -172,7 +183,7 @@ export function createDispatch({ table = METHODS, cli, log, held = createHeld(),
     });
     let outcome = "ok";
     try {
-      const work = run(method, params, sessionId, scope, call.caller?.workspace, Date.now() + cli.limits.callMs, controller.signal);
+      const work = run(method, params, folder, sessionId, scope, call.caller?.workspace, Date.now() + cli.limits.callMs, controller.signal);
       work.catch(() => undefined); // it may lose the race; its failure is then nobody's
       return { ok: true, result: await Promise.race([work, limit]) };
     } catch (caught) {

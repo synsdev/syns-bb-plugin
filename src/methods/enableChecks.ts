@@ -10,6 +10,7 @@ import { K64, NOT_FOUND, object, version, type SimpleMethod } from "../method.js
  */
 export const enableChecks: SimpleMethod = {
   name: "syns.enableChecks",
+  unscoped: true,
   description: "Turn on, for everyone working in the holder, the checks this placed folder recorded from its template; they run on every push. enabled: [] makes no version. Only from the reader's own press, naming the commands.",
   effect: "contributed-write",
   unguarded: true,

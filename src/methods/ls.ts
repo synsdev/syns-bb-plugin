@@ -1,6 +1,6 @@
 import { buildArgs } from "../cli.js";
 import { SynsError } from "../errors.js";
-import { ENVELOPE, K64, M1, bytes, nullable, object, path, version, type SimpleMethod } from "../method.js";
+import { ENVELOPE, K64, M1, bytes, nullable, object, path, repoPath, version, type SimpleMethod } from "../method.js";
 
 // The host refuses a result over 10,000 JSON nodes. An entry is five, so a page holds 1,500; a line is one, so a page
 // of lines holds 9,000, and ends earlier at the last whole line inside the 1 MiB answer. D18, D83
@@ -25,6 +25,7 @@ export const ls: SimpleMethod = {
   name: "syns.ls",
   description: "Files and folders under path (default root), one level or recursive, at version (default head). blob changes exactly when content does. Paged from offset: 1500 entries, or 9000 with format lines; nextOffset null at the end. Pass version on.",
   effect: "read",
+  rootPath: true,
   params: object({
     path,
     recursive: { type: "boolean" },
@@ -46,11 +47,11 @@ export const ls: SimpleMethod = {
         type: "array",
         items: {
           type: "object",
-          properties: { path: { type: "string" }, type: { type: "string", enum: ["file", "dir"] }, size: nullable("integer"), blob: nullable("string") },
+          properties: { path: repoPath, type: { type: "string", enum: ["file", "dir"] }, size: nullable("integer"), blob: nullable("string") },
           required: ["path", "type", "size", "blob"],
         },
       },
-      lines: { type: "array", items: { type: "string" } },
+      lines: { type: "array", items: repoPath },
     },
     required: ["version", "number", "truncated", "total", "nextOffset"],
   },
