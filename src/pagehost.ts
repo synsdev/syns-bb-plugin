@@ -49,6 +49,8 @@ export const PAGEHOST = String.raw`/*
   // Storage keys are [A-Za-z0-9._:-], 128 at most: a source is named by a short hash.
   const hash = function (s) { let x = 2166136261; for (let i = 0; i < s.length; i++) { x ^= s.charCodeAt(i); x = Math.imul(x, 16777619); } return (x >>> 0).toString(36); };
   const nsKey = function (id, key) { return ("f." + hash(id) + ":" + String(key)).replace(/[^A-Za-z0-9._:-]/g, "_").slice(0, 128); };
+  // The frame's own drafts and scroll: no ":" after the hash, so no app key names it.
+  const stateKeyOf = function (id) { return "f." + hash(id) + ".state"; };
 
   // ------------------------------------------------------------------ inside the frame
   const SHIM = function (cfg) {
@@ -182,7 +184,7 @@ export const PAGEHOST = String.raw`/*
       this.folder = src.kind === "repo" ? String(src.folder).replace(/\/+$/, "") : "";
       this.failures = [];
       this.state = { draft: {}, scrollY: 0 };
-      this.stateKey = nsKey(this.id, "state");
+      this.stateKey = stateKeyOf(this.id);
       this.frame = document.createElement("iframe");
       this.frame.title = this.title();
       this.frame.setAttribute("sandbox", "allow-scripts allow-forms allow-downloads allow-popups");

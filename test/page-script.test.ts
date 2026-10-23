@@ -60,6 +60,18 @@ describe("the page host's app calls (S1.25, D85)", () => {
     for (const gone of ["inF", "strip", "F + \"/\"", "p.paths", "p.pattern", "p.glob", "p.deletions"]) expect(call, gone).not.toContain(gone);
     expect(PAGEHOST).not.toContain("strip(v)");
   });
+
+  it("keeps the frame's drafts and scroll under a key no app's storage.set can name, \"state\" included", () => {
+    const keys = PAGEHOST.slice(PAGEHOST.indexOf("const hash = function"), PAGEHOST.indexOf("// ---"));
+    const stateKey = /this\.stateKey = ([^;]+);/.exec(PAGEHOST)![1];
+    const host = new Function(keys + "return { nsKey, stateKey: function () { return " + stateKey + "; } };")();
+    for (const id of ["repo:board", "page:index.html"]) {
+      const own = host.stateKey.call({ id });
+      for (const key of ["state", ".state", "_state", ""]) expect(own).not.toBe(host.nsKey(id, key));
+      expect(own).not.toContain(":");
+      expect(host.nsKey(id, "state")).toContain(":");
+    }
+  });
 });
 
 describe("the page script on bb (S2.27)", () => {
