@@ -3,7 +3,7 @@
 ## 0.10.0
 
 The page opens inside the repository's workspace, with nothing for the agent to add (`bartsoj/syns`
-products/syns-plugins B-0063, B-0064, B-0066, B-0065; the design tree's D84). Needs Thread Pages 1.11.0 or Unife Pages 0.3.0.
+products/syns-plugins B-0063, B-0064, B-0066, B-0065, B-0067; the design tree's D84). Needs Thread Pages 1.11.0 or Unife Pages 0.3.0.
 
 - **A page script.** The declaration says `pageScript: true`, and the plugin answers each served page
   (`threadPagesPageScript` on bb, `kind: "pageScript"` on Claude Code): the page host, at the plugin's version, when
@@ -23,6 +23,9 @@ products/syns-plugins B-0063, B-0064, B-0066, B-0065; the design tree's D84). Ne
   page, and that an app is a folder holding an `index.html`. The *Tool first* line and its `bartsoj/syns-templates`
   pointer are gone, and so are the folder, pushed-state, `base`, loading and sharing rules and the setup pointer: the
   guide holds the rules.
+- **The guide says what an app is** (B-0067): a new section *Apps in the workspace* (a folder holding an
+  `index.html`, its sandboxed frame and own `threadPage`, paths from its folder, its own storage, forms, reloads on
+  another's change, what it may call), and *Loading a wiki* is *Loading files*.
 
 ## 0.9.1
 

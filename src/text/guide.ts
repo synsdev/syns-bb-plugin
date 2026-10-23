@@ -22,11 +22,15 @@ Only when the session's folder is a Syns repository, or a folder placed in one. 
 
 A folder placed in a repository (a tool) is all the page sees: every \`path\` is counted from it; nothing outside is reachable. A document may also set a scope (\`threadPage.setScope\`): a placed folder of the session's own repository, holding its own identity file; its calls then answer for that folder alone. \`bad_scope\` refuses anything else: a plain folder, one below a placed folder, another checkout, a folder outside the session's, or any scope where the session's folder is no Syns repository. \`syns.repo\` adds \`holder\` (OWNER/NAME) and \`path\`: show those. \`owner\`, \`name\`, \`role\`, \`visibility\` and \`fileCount\` are the holder's; build no path or link from them. \`version\` is the holder's head, so \`syns.diff\` may list nothing. Once the CLI checks writes against the folder only, a write is \`stale_head\` only when the folder changed after \`base\`; before, any change to the holder. Writes publish to all who share the holder. \`syns.place { template, path }\` places a template as a new folder, always at the session's folder.
 
+## Apps in the workspace
+
+An app is a folder holding an \`index.html\`, its CSS and JS beside it, named relatively. The workspace runs it in a sandboxed frame with its own \`threadPage\`: \`invoke\`, \`watch\`, \`scope\`. It may call \`syns.*\` but \`syns.place\`, \`syns.explore\` and those of *Sharing and people*; \`storage.*\` (its own), \`context.get\`, the session methods and \`navigation.openExternal\`. Its paths count from its folder; nothing outside it is reachable. A \`<form>\` messages the agent unless the app's script handles the submit. When someone else changes a file in its folder, the app reloads, keeping typed text and scroll; its own saves don't.
+
 ## Versions
 
 \`version\` is a commit id, opaque: compare it, pass it back, show it to nobody. \`number\` is the same version for display. \`blob\` changes exactly when a file's content does.
 
-## Loading a wiki
+## Loading files
 
 1. \`syns.ls { recursive: true }\`: every file with its \`blob\`, and the \`version\` listed. \`truncated: true\` means incomplete: list folder by folder.
 2. \`syns.readMany { paths, version }\` in groups of up to 64, passing that \`version\`; follow \`deferred\` the same way. \`too_large\` carries \`size\` when known (the bound counts the text as JSON escapes it): read it with \`syns.read\`.

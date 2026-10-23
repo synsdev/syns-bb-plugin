@@ -6,6 +6,7 @@ import { METHODS } from "../src/methods/index.js";
 import { REASONS } from "../src/errors.js";
 import { FRAGMENT } from "../src/text/fragment.js";
 import { GUIDE_MAX, buildGuide } from "../src/text/guide.js";
+import { PAGEHOST } from "../src/pagehost.js";
 import { ok } from "./fake-runner.js";
 import { harness, resultOf } from "./harness.js";
 
@@ -228,6 +229,21 @@ describe("what agents are told", () => {
     for (const word of ["`holder`", "counted from it", "the holder's", "Once the CLI checks writes against the folder only, a write is `stale_head` only when the folder changed after `base`"]) expect(declaration.guide, word).toContain(word);
     expect(declaration.guide).not.toContain("repository-relative");
     expect(declaration.guide).not.toContain("Choose a repository: it is the session's.");
+  });
+
+  it("the guide says what an app in the workspace is, and loads files, not a wiki (S4.9, A87, IN-0056 §5)", () => {
+    const guide = declaration.guide;
+    expect(guide).toContain("## Apps in the workspace");
+    expect(guide).toContain("## Loading files");
+    expect(guide).not.toContain("Loading a wiki");
+    for (const word of ["a folder holding an `index.html`", "CSS and JS beside it, named relatively", "sandboxed frame", "`invoke`, `watch`, `scope`", "`syns.*` but `syns.place`, `syns.explore` and those of *Sharing and people*", "`storage.*` (its own)", "`context.get`", "the session methods", "`navigation.openExternal`", "paths count from its folder; nothing outside it is reachable", "unless the app's script handles the submit", "keeping typed text and scroll; its own saves don't."]) expect(guide, word).toContain(word);
+  });
+
+  it("an app may call exactly the syns.* methods the guide says: all but syns.place, syns.explore and those of Sharing and people (S4.9)", () => {
+    // Those of Sharing and people are the 0.6.0 page surface but syns.explore.
+    const refused = new Set(["syns.place", ...SURFACE]);
+    const passed = JSON.parse(PAGEHOST.match(/const SYNS = (\[[^\]]*\])/)![1].replace(/\s+/g, " ")) as string[];
+    expect(ALL.filter((name) => !refused.has(name)).sort()).toEqual(passed.filter((name) => ALL.includes(name)).sort());
   });
 
   it("the guide says one rule on base: the version of the last read, from any read; each read's result carries it (A73, S4.8, D81)", () => {
