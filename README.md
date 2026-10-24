@@ -31,7 +31,7 @@ plugin id, and the methods are `syns.*`.
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| `agentInstructions` | `true` | Tell every eligible session about `syns.*`, in a fragment of about 1.2 KiB that the host places after its own instruction |
+| `agentInstructions` | `true` | Tell every eligible session about `syns.*`, in a fragment of about 1 KiB that the host places after its own instruction |
 | `synsPath` | unset | Absolute path of the `syns` executable, when it is not on the daemon's `PATH` or in `~/.cargo/bin`, `~/.local/bin`, `/usr/local/bin`, `/opt/homebrew/bin` |
 
 ## On Claude Code
@@ -66,10 +66,12 @@ written and its scripts run.
 ## What agents are told
 
 The plugin ships no skills. Its instruction fragment, which the host places after
-its own instruction, says when the page opens inside the repository's workspace,
-the two commands an agent runs before its first page (copy the workspace from
-`bartsoj/syns-workspace-light-template`, make the folder a repository), and that
-what the person keeps using is an app: a folder holding an `index.html`.
+its own instruction, says when the page the agent writes every turn opens inside
+the repository's workspace, the two commands an agent runs before its first page
+(copy the workspace from `bartsoj/syns-workspace-light-template`, make the folder a
+repository, signing in when the push asks for it), that what the person keeps
+using is an app: a folder holding an `index.html`, while the page reports and asks,
+and that the page and every app fit the workspace's design.
 
 The full method reference is in `bb pages guide`.
 
