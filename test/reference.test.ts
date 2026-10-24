@@ -23,7 +23,7 @@ const DOCUMENT = join(MONO, "packages/pages-core/src/domain/html/document.ts");
 const present = existsSync(VALIDATOR) && existsSync(DISCOVERY) && existsSync(PAGE_SCRIPTS) && existsSync(DOCUMENT);
 
 /** The declaration frozen at this version: a text or schema edit is a deliberate change to this file (D.6). */
-const FIXTURE = new URL("./fixtures/declaration-0.10.0.json", import.meta.url);
+const FIXTURE = new URL("./fixtures/declaration-0.10.1.json", import.meta.url);
 
 describe("the frozen declaration", () => {
   it("is what the table builds, but for the version, which declaration.test.ts holds to package.json", () => {

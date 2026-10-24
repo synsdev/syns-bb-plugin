@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.10.1
+
+The fragment is a new text; no method, result, reason, guide text or page script changed.
+
+- **The page every turn.** The fragment says the page the agent writes every turn opens inside the workspace, and
+  that the page reports and asks while the app does the work. It no longer says there is nothing to add to the page.
+- **Signing in when a push asks for it.** When `syns push` asks for `syns login`, the agent runs it in the
+  background, gives the person the link it prints, and pushes again once it says `Login successful`.
+- **The guide's section by name.** Apps point at the guide's *Apps in the workspace*, where they pointed at its
+  *syns* section.
+- **The look.** The design and layout of the agent's page and every app fit their content and the workspace's design.
+
 ## 0.10.0
 
 The page opens inside the repository's workspace, with nothing for the agent to add; an app's folder is a hard

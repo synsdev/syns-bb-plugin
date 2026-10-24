@@ -216,17 +216,20 @@ describe("what agents are told", () => {
     expect(room, `room ${room}, one more method ${Math.ceil(method + errorRow)}`).toBeGreaterThanOrEqual(method + errorRow);
   });
 
-  it("the fragment leads with the workspace line, then the two steps before a first page and where apps go; no template flow (A56, S4.6, D84)", () => {
+  it("the fragment leads with the workspace line, then the two steps before a first page, the sign-in a push asks for, where apps go and the look; no template flow (A56, S4.6, D84, D90)", () => {
     const text = declaration.instruction!;
-    expect(text.startsWith("**Syns workspace.** When this session's folder is empty or a Syns repository, your page opens inside the repository's workspace, beside its files and apps; nothing to add to your page.")).toBe(true);
+    expect(text.startsWith("**Syns workspace.** When this session's folder is empty or a Syns repository, your page (the one you write every turn) opens inside the repository's workspace.")).toBe(true);
+    expect(text).not.toContain("nothing to add");
     expect(text).toContain("- No `.page/index.html`: `mkdir -p .page && syns cat .page/index.html --repo bartsoj/syns-workspace-light-template > .page/index.html`");
-    expect(text).toContain("- No `.syns.yaml`: `syns push -n <a short name for this work> --visibility private`");
+    expect(text).toContain("- No `.syns.yaml`: `syns push -n <a short name for this work> --visibility private`. If it asks for `syns login`: run that in the background, give the person the link it prints, and push again once it says `Login successful`.");
     expect(text).toContain("Make what the person will keep using an app: a folder holding an `index.html`");
+    expect(text).toContain("Your page reports and asks; the app does the work.");
+    expect(text.endsWith("**Look.** The design and layout of your page and every app should fit its content and overall design of the workspace.")).toBe(true);
     for (const gone of ["Tool first", "bartsoj/syns-templates", "TOOLS.md", "syns explore", "syns-tools", "pagehost.js"]) expect(text, gone).not.toContain(gone);
   });
 
-  it("the fragment is the owner's text, verbatim (IN-0056 §4)", () => {
-    expect(declaration.instruction).toBe(readFileSync(new URL("./fixtures/fragment-0.10.0.md", import.meta.url), "utf8").trim());
+  it("the fragment is the owner's text, verbatim (IN-0058, D90)", () => {
+    expect(declaration.instruction).toBe(readFileSync(new URL("./fixtures/fragment-0.10.1.md", import.meta.url), "utf8").trim());
   });
 
   it("the guide says the folder rule: a placed folder is what the page sees, paths counted from it (A57, S4.7, D36)", () => {
@@ -281,7 +284,8 @@ describe("what agents are told", () => {
 
   it("the fragment says in words that it applies only when the session's folder is empty or a Syns repository, and where the rest is (S4.2)", () => {
     expect(declaration.instruction).toMatch(/When this session's folder is empty or a Syns repository/);
-    expect(declaration.instruction).toContain("(the guide's *syns* section)");
+    expect(declaration.instruction).toContain("(the guide's *Apps in the workspace*)");
+    expect(declaration.guide).toContain("## Apps in the workspace");
   });
 
   it("the fragment and the guide name no host: the declaration is the same on every host (07 R-X1)", () => {
