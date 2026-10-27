@@ -10,10 +10,11 @@ The page script and the guide's *Apps in the workspace* changed; no method, resu
   `unavailable`. Its stored values (`storage.*`) use the same keys in both views, so a value saved in one is found in
   the other; values the page saved inside the workspace under 0.10.0 or 0.10.1 are no longer found. Apps keep their
   own storage.
-- **An app calls what a Thread Page calls.** Sessions, pages, voice, workspaces and any method another plugin adds
-  reach the host as on a Thread Page, which confirms or grants each as it does there. They answered `unavailable`
-  before. An app's `syns.*` still count from its folder; of the methods acting on the whole repository it may call
-  `syns.explore` and `syns.users`, and the others answer `bad_scope`.
+- **An app calls what a Thread Page calls.** Every call an app makes reaches the host as on a Thread Page, which
+  confirms or grants each as it does there: `sessions.send`, `sessions.stop`, `sessions.archive`, `session.usage`,
+  `pages.answer`, voice, `workspaces.create` and any method another plugin adds no longer answer `unavailable`. An
+  app's `syns.*` still count from its folder; of the methods acting on the whole repository it may call
+  `syns.explore` and `syns.users`, which now take a scope and ignore it, and the others answer `bad_scope`.
 
 ## 0.10.1
 

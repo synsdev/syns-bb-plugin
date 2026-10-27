@@ -2425,7 +2425,6 @@ const exploreResult = {
 };
 const explore = {
 	name: "syns.explore",
-	unscoped: true,
 	description: "Public Syns repositories matching query, every tag in tags (syns-app for app templates) and status, limit at a time from offset; total says how many.",
 	effect: "read",
 	params: object({
@@ -2657,7 +2656,6 @@ const usersResult = {
 };
 const users = {
 	name: "syns.users",
-	unscoped: true,
 	description: "Syns people whose handle or display name matches query, at most limit: id, username, name, image. For finding someone to share with.",
 	effect: "read",
 	params: object({
@@ -3245,8 +3243,6 @@ const PAGEHOST = String.raw`/*
   const dirOf = function (p) { const i = String(p).lastIndexOf("/"); return i < 0 ? "" : String(p).slice(0, i + 1); };
   const baseOf = function (p) { return String(p).replace(/\/+$/, "").replace(/^.*\//, ""); };
 
-  // Of the syns.* methods acting on the whole repository, those reading nothing of it go without an app's scope.
-  const OPEN = ["syns.explore", "syns.users"];
   const CACHED = { "syns.repo": 4000, "syns.whoami": 60000, "context.get": 10000 };
   const cache = {};
 
@@ -3510,7 +3506,7 @@ const PAGEHOST = String.raw`/*
       if (!/^syns\./.test(method)) return this.invoke(method, params);
       // A tool's calls carry its folder as scope: the plugin counts its paths from there, answers nothing outside it,
       // and refuses it to a method acting on the whole repository (bad_scope).
-      const p = OPEN.includes(method) ? params : Object.assign({}, params, { scope: this.folder });
+      const p = Object.assign({}, params, { scope: this.folder });
       // Reads that fail transiently (many at once, the CLI busy) are asked again, twice at most.
       const write = /^syns\.(write|writeBinary|edit|rm|move|copy|commit|revert)$/.test(method);
       for (let n = 0; ; n++) {

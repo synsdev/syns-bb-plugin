@@ -121,11 +121,20 @@ describe("the scope parameter in the server half (S1.25, D85)", () => {
   });
   it("the methods acting on the whole repository, its people or Syns refuse any scope, and run nothing", async () => {
     const whole = METHODS.filter((method) => method.unscoped).map((method) => method.name).sort();
-    expect(whole).toEqual(["syns.collaboratorAdd", "syns.collaboratorRemove", "syns.collaboratorRole", "syns.collaborators", "syns.enableChecks", "syns.explore", "syns.folderVisibility", "syns.place", "syns.repoVisibility", "syns.share", "syns.shareInfo", "syns.unshare", "syns.users"]);
+    expect(whole).toEqual(["syns.collaboratorAdd", "syns.collaboratorRemove", "syns.collaboratorRole", "syns.collaborators", "syns.enableChecks", "syns.folderVisibility", "syns.place", "syns.repoVisibility", "syns.share", "syns.shareInfo", "syns.unshare"]);
     for (const name of whole) {
       const h = harness();
       expect(failureOf(await h.call(name, { ...SAMPLES[name], scope: APP })), name).toMatchObject({ reason: "bad_scope" });
       expect(h.runner.calls, name).toHaveLength(0);
+    }
+  });
+  it("syns.explore and syns.users read nothing of the repository: a scoped call runs as an unscoped one, in the checkout (D93)", async () => {
+    for (const [name, verb] of [["syns.explore", "explore"], ["syns.users", "users"]] as const) {
+      const plain = harness({ [verb]: rec(`${verb}.ok`) }), scoped = harness({ [verb]: rec(`${verb}.ok`) });
+      const a = await plain.call(name, SAMPLES[name]), b = await scoped.call(name, { ...SAMPLES[name], scope: APP });
+      expect(b, name).toEqual(a);
+      expect(resultOf(b), name).toBeDefined();
+      expect(scoped.runner.calls.map((c) => [c.cwd, c.args.join(" ")]), name).toEqual(plain.runner.calls.map((c) => [c.cwd, c.args.join(" ")]));
     }
   });
   it("a path the CLI answers outside the folder in a single-file answer is never passed on", async () => {

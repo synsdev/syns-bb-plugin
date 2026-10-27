@@ -90,7 +90,7 @@ export const collaboratorRemove: SimpleMethod = {
 const usersResult: Schema = { type: "object", properties: { data: { type: "array", items: { type: "object", properties: { id: { type: "string" }, username: { type: "string" }, name: nullable("string"), image: nullable("string") }, required: ["id", "username"] } } }, required: ["data"] };
 export const users: SimpleMethod = {
   name: "syns.users",
-  unscoped: true,
+  // Reads nothing of the repository: a call's scope is checked and changes nothing, so an app may call it (D93).
   description: "Syns people whose handle or display name matches query, at most limit: id, username, name, image. For finding someone to share with.",
   effect: "read",
   params: object({ query: { type: "string", maxLength: 100 }, limit }, ["query"]),

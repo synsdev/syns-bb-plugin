@@ -55,7 +55,7 @@ describe("the page script's text (S2.28)", () => {
 describe("the page host's app calls (S1.25, D85)", () => {
   it("passes an app's folder as scope with every syns.* call, and rewrites no path in the call or the answer", () => {
     const call = PAGEHOST.slice(PAGEHOST.indexOf("async call(method, params)"), PAGEHOST.indexOf("// Where a link goes"));
-    expect(call).toContain("const p = OPEN.includes(method) ? params : Object.assign({}, params, { scope: this.folder });");
+    expect(call).toContain("const p = Object.assign({}, params, { scope: this.folder });");
     expect(call).toContain("try { return await this.invoke(method, p); }");
     for (const gone of ["inF", "strip", "F + \"/\"", "p.paths", "p.pattern", "p.glob", "p.deletions"]) expect(call, gone).not.toContain(gone);
     expect(PAGEHOST).not.toContain("strip(v)");
@@ -96,17 +96,17 @@ describe("the page host's app calls (S1.25, D85)", () => {
     }
   });
 
-  it("gives an app's syns.* its folder as scope, but syns.explore and syns.users; storage.* stays its own (D85, D92)", async () => {
+  it("gives an app's every syns.* call its folder as scope, keeping no list of methods; storage.* stays its own (D85, D92, D93)", async () => {
     const { ask, calls } = await framed({ kind: "repo", folder: "apps/board/" });
     for (const method of ["syns.read", "syns.write", "syns.place", "syns.share", "syns.collaborators", "syns.enableChecks"]) await ask(method, { path: "a.md" });
     for (const method of ["syns.explore", "syns.users"]) await ask(method, { query: "x" });
     await ask("storage.set", { key: "k", value: 1 });
     expect(calls()).toEqual([
       ...["syns.read", "syns.write", "syns.place", "syns.share", "syns.collaborators", "syns.enableChecks"].map((m) => [m, { path: "a.md", scope: "apps/board" }]),
-      ["syns.explore", { query: "x" }], ["syns.users", { query: "x" }],
+      ["syns.explore", { query: "x", scope: "apps/board" }], ["syns.users", { query: "x", scope: "apps/board" }],
       ["storage.set", { key: expect.stringMatching(/^f\.[a-z0-9]+:k$/), value: 1 }],
     ]);
-    expect(PAGEHOST).not.toContain("isn't available here");
+    for (const gone of ["isn't available here", "const SYNS", "const PASS", "const OPEN"]) expect(PAGEHOST, gone).not.toContain(gone);
   });
 
   it("keeps the frame's drafts and scroll under a key no app's storage.set can name, \"state\" included", () => {
@@ -124,7 +124,7 @@ describe("the page host's app calls (S1.25, D85)", () => {
 
 describe("the agent's own page in a frame (S2.32, D91 point 2)", () => {
   // The frame's call(), run against a fake host invoke: what reaches the host, per frame kind.
-  const lists = PAGEHOST.slice(PAGEHOST.indexOf("const OPEN = "), PAGEHOST.indexOf("// ---"));
+  const lists = PAGEHOST.slice(PAGEHOST.indexOf("const CACHED = "), PAGEHOST.indexOf("// ---"));
   const body = PAGEHOST.slice(PAGEHOST.indexOf("async call(method, params)"), PAGEHOST.indexOf("// Where a link goes"));
   const host = new Function(lists + "return { " + body + " };")() as { call(this: unknown, m: string, p: Record<string, unknown>): Promise<unknown> };
   const frame = (src: Record<string, unknown>) => {

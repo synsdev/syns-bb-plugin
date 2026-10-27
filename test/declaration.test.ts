@@ -6,7 +6,6 @@ import { METHODS } from "../src/methods/index.js";
 import { REASONS } from "../src/errors.js";
 import { FRAGMENT } from "../src/text/fragment.js";
 import { GUIDE_MAX, buildGuide } from "../src/text/guide.js";
-import { PAGEHOST } from "../src/pagehost.js";
 import { ok } from "./fake-runner.js";
 import { harness, resultOf } from "./harness.js";
 
@@ -247,11 +246,9 @@ describe("what agents are told", () => {
     for (const word of ["a folder holding an `index.html`", "CSS and JS beside it, named relatively", "sandboxed frame", "`invoke`, `watch`, `scope`", "It may call what a Thread Page may, confirmed or granted as there", "`syns.*` but `syns.place` and those of *Sharing and people* other than `syns.users` (`bad_scope`)", "`storage.*` is its own", "paths count from its folder; nothing outside it is reachable", "unless the app's script handles the submit", "keeping typed text and scroll; its own saves don't."]) expect(guide, word).toContain(word);
   });
 
-  it("an app's syns.* carry its folder as scope but syns.explore and syns.users, so of those acting on the whole repository only these two run (S4.9, D85, D92)", () => {
-    const open = JSON.parse(PAGEHOST.match(/const OPEN = (\[[^\]]*\])/)![1]) as string[];
-    expect(open.sort()).toEqual(["syns.explore", "syns.users"]);
-    expect(METHODS.filter((m) => m.unscoped && !open.includes(m.name)).map((m) => m.name).sort()).toEqual(["syns.place", ...SURFACE].filter((n) => !open.includes(n)).sort());
-    for (const name of open) expect(METHODS.find((m) => m.name === name)!.unscoped, name).toBe(true);
+  it("of the methods acting on the whole repository, an app's scoped call reaches only syns.explore and syns.users: the others are unscoped, refusing any scope (S4.9, D85, D93)", () => {
+    const refused = METHODS.filter((m) => m.unscoped).map((m) => m.name).sort();
+    expect(refused).toEqual(["syns.place", ...SURFACE].filter((n) => n !== "syns.explore" && n !== "syns.users").sort());
   });
 
   it("the guide says one rule on base: the version of the last read, from any read; each read's result carries it (A73, S4.8, D81)", () => {

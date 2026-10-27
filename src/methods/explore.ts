@@ -22,7 +22,7 @@ const exploreResult: Schema = { type: "object", properties: { total: { type: "in
 
 export const explore: SimpleMethod = {
   name: "syns.explore",
-  unscoped: true,
+  // Reads nothing of the repository: a call's scope is checked and changes nothing, so an app may call it (D93).
   description: "Public Syns repositories matching query, every tag in tags (syns-app for app templates) and status, limit at a time from offset; total says how many.",
   effect: "read",
   params: object({
