@@ -244,14 +244,14 @@ describe("what agents are told", () => {
     expect(guide).toContain("## Apps in the workspace");
     expect(guide).toContain("## Loading files");
     expect(guide).not.toContain("Loading a wiki");
-    for (const word of ["a folder holding an `index.html`", "CSS and JS beside it, named relatively", "sandboxed frame", "`invoke`, `watch`, `scope`", "`syns.*` but `syns.place`, `syns.explore` and those of *Sharing and people*", "`storage.*` (its own)", "`context.get`", "the session methods", "`navigation.openExternal`", "paths count from its folder; nothing outside it is reachable", "unless the app's script handles the submit", "keeping typed text and scroll; its own saves don't."]) expect(guide, word).toContain(word);
+    for (const word of ["a folder holding an `index.html`", "CSS and JS beside it, named relatively", "sandboxed frame", "`invoke`, `watch`, `scope`", "It may call what a Thread Page may, confirmed or granted as there", "`syns.*` but `syns.place` and those of *Sharing and people* other than `syns.users` (`bad_scope`)", "`storage.*` is its own", "paths count from its folder; nothing outside it is reachable", "unless the app's script handles the submit", "keeping typed text and scroll; its own saves don't."]) expect(guide, word).toContain(word);
   });
 
-  it("an app may call exactly the syns.* methods the guide says: all but syns.place, syns.explore and those of Sharing and people (S4.9)", () => {
-    // Those of Sharing and people are the 0.6.0 page surface but syns.explore.
-    const refused = new Set(["syns.place", ...SURFACE]);
-    const passed = JSON.parse(PAGEHOST.match(/const SYNS = (\[[^\]]*\])/)![1].replace(/\s+/g, " ")) as string[];
-    expect(ALL.filter((name) => !refused.has(name)).sort()).toEqual(passed.filter((name) => ALL.includes(name)).sort());
+  it("an app's syns.* carry its folder as scope but syns.explore and syns.users, so of those acting on the whole repository only these two run (S4.9, D85, D92)", () => {
+    const open = JSON.parse(PAGEHOST.match(/const OPEN = (\[[^\]]*\])/)![1]) as string[];
+    expect(open.sort()).toEqual(["syns.explore", "syns.users"]);
+    expect(METHODS.filter((m) => m.unscoped && !open.includes(m.name)).map((m) => m.name).sort()).toEqual(["syns.place", ...SURFACE].filter((n) => !open.includes(n)).sort());
+    for (const name of open) expect(METHODS.find((m) => m.name === name)!.unscoped, name).toBe(true);
   });
 
   it("the guide says one rule on base: the version of the last read, from any read; each read's result carries it (A73, S4.8, D81)", () => {

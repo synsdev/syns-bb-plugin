@@ -1,4 +1,4 @@
-import { Script } from "node:vm";
+import { Script, createContext, runInContext } from "node:vm";
 import { describe, expect, it } from "vitest";
 import { VERSION, buildDeclaration } from "../src/declaration.js";
 import { METHODS } from "../src/methods/index.js";
@@ -55,10 +55,58 @@ describe("the page script's text (S2.28)", () => {
 describe("the page host's app calls (S1.25, D85)", () => {
   it("passes an app's folder as scope with every syns.* call, and rewrites no path in the call or the answer", () => {
     const call = PAGEHOST.slice(PAGEHOST.indexOf("async call(method, params)"), PAGEHOST.indexOf("// Where a link goes"));
-    expect(call).toContain("const p = repo ? Object.assign({}, params, { scope: this.folder }) : params;");
+    expect(call).toContain("const p = OPEN.includes(method) ? params : Object.assign({}, params, { scope: this.folder });");
     expect(call).toContain("try { return await this.invoke(method, p); }");
     for (const gone of ["inF", "strip", "F + \"/\"", "p.paths", "p.pattern", "p.glob", "p.deletions"]) expect(call, gone).not.toContain(gone);
     expect(PAGEHOST).not.toContain("strip(v)");
+  });
+
+  /** The page host run in a stand-in window: a frame of `src`, whose calls reach `invoke`, and `ask` as the frame asks. */
+  const framed = async (src: Record<string, unknown>) => {
+    const calls: [string, Record<string, unknown>][] = [];
+    const el = () => ({ style: {}, setAttribute() {}, remove() {}, contentWindow: { postMessage() {} } as { postMessage: (m: unknown) => void } });
+    const win: Record<string, unknown> = { addEventListener() {}, removeEventListener() {}, setTimeout, clearTimeout, setInterval, clearInterval, console };
+    win.window = win;
+    win.document = { createElement: el };
+    const ctx = createContext(win);
+    runInContext(PAGEHOST, ctx);
+    const invoke = (method: string, params: Record<string, unknown>) => { calls.push([method, params]); return Promise.resolve({ method }); };
+    const f = (win.SynsPages as { frame: (c: unknown, s: unknown, o: unknown) => any }).frame({ appendChild() {} }, src, { call: invoke, sessionId: "thr_1" });
+    await new Promise((settled) => setTimeout(settled, 0)); // its own first reads (state, the app's index.html) are not the app's calls
+    calls.length = 0;
+    const ask = (method: string, params: Record<string, unknown> = {}) => new Promise<any>((done) => {
+      f.frame.contentWindow.postMessage = done;
+      f.answer({ source: f.frame.contentWindow, data: { __tool: "invoke", id: 1, method, params } });
+    });
+    return { ask, calls: () => calls };
+  };
+  // Every built-in Thread Page method but storage.* (the host's confirmations and grants stay its own), and one another plugin added.
+  const THREAD_PAGE = ["context.get", "session.reply", "session.messages", "session.activity", "session.usage", "session.respond",
+    "sessions.snapshot", "sessions.messages", "sessions.markRead", "sessions.start", "sessions.send", "sessions.stop", "sessions.archive",
+    "sessions.respond", "sessions.openHost", "pages.open", "pages.read", "pages.answer", "providers.list", "workspaces.list",
+    "workspaces.create", "workspaces.browse", "navigation.openExternal", "voice.captureAndTranscribe", "other.plugin.method"];
+
+  it("passes an app's every Thread Page call to the app's invoke as given, so the host confirms or grants it as on a Thread Page (D91)", async () => {
+    for (const method of THREAD_PAGE) {
+      const { ask, calls } = await framed({ kind: "repo", folder: "apps/board" });
+      const params = { sessionId: "thr_2", text: "hi", files: [{ name: "a.png" }] };
+      const answer = await ask(method, params);
+      expect(answer, method).toMatchObject({ ok: true });
+      expect(calls(), method).toEqual([[method, params]]);
+    }
+  });
+
+  it("gives an app's syns.* its folder as scope, but syns.explore and syns.users; storage.* stays its own (D85, D92)", async () => {
+    const { ask, calls } = await framed({ kind: "repo", folder: "apps/board/" });
+    for (const method of ["syns.read", "syns.write", "syns.place", "syns.share", "syns.collaborators", "syns.enableChecks"]) await ask(method, { path: "a.md" });
+    for (const method of ["syns.explore", "syns.users"]) await ask(method, { query: "x" });
+    await ask("storage.set", { key: "k", value: 1 });
+    expect(calls()).toEqual([
+      ...["syns.read", "syns.write", "syns.place", "syns.share", "syns.collaborators", "syns.enableChecks"].map((m) => [m, { path: "a.md", scope: "apps/board" }]),
+      ["syns.explore", { query: "x" }], ["syns.users", { query: "x" }],
+      ["storage.set", { key: expect.stringMatching(/^f\.[a-z0-9]+:k$/), value: 1 }],
+    ]);
+    expect(PAGEHOST).not.toContain("isn't available here");
   });
 
   it("keeps the frame's drafts and scroll under a key no app's storage.set can name, \"state\" included", () => {
@@ -76,7 +124,7 @@ describe("the page host's app calls (S1.25, D85)", () => {
 
 describe("the agent's own page in a frame (S2.32, D91 point 2)", () => {
   // The frame's call(), run against a fake host invoke: what reaches the host, per frame kind.
-  const lists = PAGEHOST.slice(PAGEHOST.indexOf("const SYNS = "), PAGEHOST.indexOf("// ---"));
+  const lists = PAGEHOST.slice(PAGEHOST.indexOf("const OPEN = "), PAGEHOST.indexOf("// ---"));
   const body = PAGEHOST.slice(PAGEHOST.indexOf("async call(method, params)"), PAGEHOST.indexOf("// Where a link goes"));
   const host = new Function(lists + "return { " + body + " };")() as { call(this: unknown, m: string, p: Record<string, unknown>): Promise<unknown> };
   const frame = (src: Record<string, unknown>) => {
@@ -110,9 +158,10 @@ describe("the agent's own page in a frame (S2.32, D91 point 2)", () => {
     expect(app.seen[0][1].key).not.toBe("draft");
   });
 
-  it("still narrows an app's frame (B-0084 sets its rule)", async () => {
+  it("an app's frame differs only in its syns.* scope and its storage keys (B-0084, D91 point 1)", async () => {
     const app = frame({ kind: "repo", folder: "board" });
-    await expect(app.call("session.usage", {})).rejects.toMatchObject({ code: "unavailable" });
+    await expect(app.call("session.usage", {})).resolves.toEqual({ ok: "session.usage" });
+    expect(app.seen.at(-1)).toEqual(["session.usage", {}]);
     await app.call("syns.read", { path: "a.md" });
     expect(app.seen.at(-1)).toEqual(["syns.read", { path: "a.md", scope: "board" }]);
   });

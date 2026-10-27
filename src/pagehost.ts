@@ -29,9 +29,9 @@ export const PAGEHOST = String.raw`/*
  *
  * In the frame: a window.threadPage of its own (invoke, watch, scope); storage.* per app; drafts and the
  * scroll position kept and restored; forms answering the session; links handed to onLink; hash-only
- * history calls as fragment navigations. The agent's own page calls the host as it does shown as written; an
- * app's frame may make syns.*, storage.*, context, session, navigation and confirmed session calls, and is refused
- * anything else.
+ * history calls as fragment navigations. The agent's own page calls the host as it does shown as written; an app's
+ * frame calls what a Thread Page calls, through the app's invoke and its confirmations, its syns.* with its folder
+ * as scope (D85, D91).
  */
 (function () {
   "use strict";
@@ -40,10 +40,8 @@ export const PAGEHOST = String.raw`/*
   const dirOf = function (p) { const i = String(p).lastIndexOf("/"); return i < 0 ? "" : String(p).slice(0, i + 1); };
   const baseOf = function (p) { return String(p).replace(/\/+$/, "").replace(/^.*\//, ""); };
 
-  const SYNS = ["syns.repo", "syns.whoami", "syns.ls", "syns.glob", "syns.grep", "syns.read", "syns.readMany", "syns.readBinary",
-    "syns.history", "syns.diff", "syns.write", "syns.writeBinary", "syns.edit", "syns.rm", "syns.move", "syns.copy", "syns.commit", "syns.revert"];
-  const PASS = ["context.get", "session.reply", "session.activity", "session.messages", "sessions.snapshot", "sessions.start",
-    "sessions.openHost", "pages.open", "pages.read", "navigation.openExternal", "providers.list", "workspaces.list"];
+  // Of the syns.* methods acting on the whole repository, those reading nothing of it go without an app's scope.
+  const OPEN = ["syns.explore", "syns.users"];
   const CACHED = { "syns.repo": 4000, "syns.whoami": 60000, "context.get": 10000 };
   const cache = {};
 
@@ -297,18 +295,17 @@ export const PAGEHOST = String.raw`/*
     async call(method, params) {
       // The agent's own page calls the host as it does shown as written (S2.32); the rest is for apps.
       if (this.src.kind === "page") return this.invoke(method, params);
-      const repo = this.src.kind === "repo";
       if (CACHED[method] && !params.version) {
         const c = cache[method];
         if (!c || Date.now() - c.at >= CACHED[method]) { const value = this.invoke(method, params); cache[method] = { at: Date.now(), value: value }; value.catch(() => { delete cache[method]; }); }
         return cache[method].value;
       }
-      if (PASS.includes(method)) return this.invoke(method, params);
       if (method === "storage.get" || method === "storage.set") return this.invoke(method, Object.assign({}, params, { key: nsKey(this.id, params.key) }));
       if (method === "storage.setMany") return this.invoke(method, { entries: (params.entries || []).map((x) => Object.assign({}, x, { key: nsKey(this.id, x.key) })) });
-      if (!SYNS.includes(method)) throw Object.assign(new Error(method + " isn't available here"), { code: "unavailable" });
-      // A tool's calls carry its folder as scope: the plugin counts its paths from there and answers nothing outside it.
-      const p = repo ? Object.assign({}, params, { scope: this.folder }) : params;
+      if (!/^syns\./.test(method)) return this.invoke(method, params);
+      // A tool's calls carry its folder as scope: the plugin counts its paths from there, answers nothing outside it,
+      // and refuses it to a method acting on the whole repository (bad_scope).
+      const p = OPEN.includes(method) ? params : Object.assign({}, params, { scope: this.folder });
       // Reads that fail transiently (many at once, the CLI busy) are asked again, twice at most.
       const write = /^syns\.(write|writeBinary|edit|rm|move|copy|commit|revert)$/.test(method);
       for (let n = 0; ; n++) {

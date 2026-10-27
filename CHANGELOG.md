@@ -2,7 +2,7 @@
 
 ## 0.10.2
 
-The page script changed; no method, result, reason, guide text or fragment changed.
+The page script and the guide's *Apps in the workspace* changed; no method, result, reason or fragment changed.
 
 - **The agent's page inside the workspace.** When the workspace shows the agent's own page, every call the page makes
   reaches the host as it does when the page is shown as written: `session.usage`, `sessions.*`, `pages.answer`, the
@@ -10,6 +10,10 @@ The page script changed; no method, result, reason, guide text or fragment chang
   `unavailable`. Its stored values (`storage.*`) use the same keys in both views, so a value saved in one is found in
   the other; values the page saved inside the workspace under 0.10.0 or 0.10.1 are no longer found. Apps keep their
   own storage.
+- **An app calls what a Thread Page calls.** Sessions, pages, voice, workspaces and any method another plugin adds
+  reach the host as on a Thread Page, which confirms or grants each as it does there. They answered `unavailable`
+  before. An app's `syns.*` still count from its folder; of the methods acting on the whole repository it may call
+  `syns.explore` and `syns.users`, and the others answer `bad_scope`.
 
 ## 0.10.1
 
