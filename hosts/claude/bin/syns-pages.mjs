@@ -711,7 +711,7 @@ function buildGuide(table) {
 //#endregion
 //#region src/declaration.ts
 /** The plugin's version, as declared to the host. A test holds it equal to package.json's. */
-const VERSION = "0.10.1";
+const VERSION = "0.10.2";
 /** threadPagesContributions, generated from the table. With `agentInstructions` off no fragment is declared (S4.5); the page script is declared either way (S2.27). */
 function buildDeclaration(table, settings) {
 	return {
@@ -3232,10 +3232,11 @@ const PAGEHOST = String.raw`/*
  *   SynsPages.pageUrl(sessionId, path, fragment)   the host's address of a document of the page
  *   SynsPages.goTo(fromPath, path)                  this document goes to another document of the page
  *
- * In the frame: a window.threadPage of its own (invoke, watch, scope); storage.* per page; drafts and the
+ * In the frame: a window.threadPage of its own (invoke, watch, scope); storage.* per app; drafts and the
  * scroll position kept and restored; forms answering the session; links handed to onLink; hash-only
- * history calls as fragment navigations. Calls the frame may make: syns.*, storage.*, context, session,
- * navigation and confirmed session calls; anything else is refused.
+ * history calls as fragment navigations. The agent's own page calls the host as it does shown as written; an
+ * app's frame may make syns.*, storage.*, context, session, navigation and confirmed session calls, and is refused
+ * anything else.
  */
 (function () {
   "use strict";
@@ -3499,6 +3500,8 @@ const PAGEHOST = String.raw`/*
       }
     }
     async call(method, params) {
+      // The agent's own page calls the host as it does shown as written (S2.32); the rest is for apps.
+      if (this.src.kind === "page") return this.invoke(method, params);
       const repo = this.src.kind === "repo";
       if (CACHED[method] && !params.version) {
         const c = cache[method];
@@ -3738,7 +3741,7 @@ async function answerPageScript(cli, ask, ms = PAGE_SCRIPT_MS) {
 		clearTimeout(timer);
 		controller.abort();
 	}
-	return ask.have === "0.10.1" ? { version: VERSION } : {
+	return ask.have === "0.10.2" ? { version: VERSION } : {
 		version: VERSION,
 		script: PAGEHOST
 	};

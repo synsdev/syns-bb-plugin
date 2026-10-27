@@ -74,6 +74,50 @@ describe("the page host's app calls (S1.25, D85)", () => {
   });
 });
 
+describe("the agent's own page in a frame (S2.32, D91 point 2)", () => {
+  // The frame's call(), run against a fake host invoke: what reaches the host, per frame kind.
+  const lists = PAGEHOST.slice(PAGEHOST.indexOf("const SYNS = "), PAGEHOST.indexOf("// ---"));
+  const body = PAGEHOST.slice(PAGEHOST.indexOf("async call(method, params)"), PAGEHOST.indexOf("// Where a link goes"));
+  const host = new Function(lists + "return { " + body + " };")() as { call(this: unknown, m: string, p: Record<string, unknown>): Promise<unknown> };
+  const frame = (src: Record<string, unknown>) => {
+    const seen: [string, Record<string, unknown>][] = [];
+    const f = { src, id: src.kind === "repo" ? "repo:" + src.folder : "page:" + src.path, folder: src.kind === "repo" ? src.folder : "",
+      invoke: async (m: string, p: Record<string, unknown>) => { seen.push([m, p]); return { ok: m }; } };
+    return { seen, call: (m: string, p: Record<string, unknown>) => host.call.call(f, m, p) };
+  };
+  const methods = ["session.usage", "sessions.messages", "sessions.send", "sessions.markRead", "pages.answer", "syns.shareInfo", "syns.collaborators",
+    "syns.place", "syns.explore", "syns.users", "syns.enableChecks", "syns.read", "context.get", "syns.repo"];
+
+  it("passes every call of the agent's page to the host as the page shown as written makes it: no list, no scope, no cache", async () => {
+    const page = frame({ kind: "page", path: "index.html" });
+    for (const m of methods) {
+      const params = { path: "a.md", version: undefined };
+      await expect(page.call(m, params), m).resolves.toEqual({ ok: m });
+      expect(page.seen.at(-1), m).toEqual([m, params]);
+    }
+    await page.call("syns.repo", {});
+    expect(page.seen.filter(([m]) => m === "syns.repo")).toHaveLength(2);
+  });
+
+  it("keeps the agent's page's storage keys as written, so a value saved in one view is read in the other; an app's stay its own", async () => {
+    const page = frame({ kind: "page", path: "index.html" });
+    await page.call("storage.set", { key: "draft", value: 1 });
+    await page.call("storage.get", { key: "draft" });
+    await page.call("storage.setMany", { entries: [{ key: "a", value: 2 }] });
+    expect(page.seen).toEqual([["storage.set", { key: "draft", value: 1 }], ["storage.get", { key: "draft" }], ["storage.setMany", { entries: [{ key: "a", value: 2 }] }]]);
+    const app = frame({ kind: "repo", folder: "board" });
+    await app.call("storage.get", { key: "draft" });
+    expect(app.seen[0][1].key).not.toBe("draft");
+  });
+
+  it("still narrows an app's frame (B-0084 sets its rule)", async () => {
+    const app = frame({ kind: "repo", folder: "board" });
+    await expect(app.call("session.usage", {})).rejects.toMatchObject({ code: "unavailable" });
+    await app.call("syns.read", { path: "a.md" });
+    expect(app.seen.at(-1)).toEqual(["syns.read", { path: "a.md", scope: "board" }]);
+  });
+});
+
 describe("the page script on bb (S2.27)", () => {
   it("is declared, whatever agentInstructions says", () => {
     for (const agentInstructions of [true, false]) expect(buildDeclaration(METHODS, { agentInstructions }).pageScript).toBe(true);

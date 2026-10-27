@@ -27,10 +27,11 @@ export const PAGEHOST = String.raw`/*
  *   SynsPages.pageUrl(sessionId, path, fragment)   the host's address of a document of the page
  *   SynsPages.goTo(fromPath, path)                  this document goes to another document of the page
  *
- * In the frame: a window.threadPage of its own (invoke, watch, scope); storage.* per page; drafts and the
+ * In the frame: a window.threadPage of its own (invoke, watch, scope); storage.* per app; drafts and the
  * scroll position kept and restored; forms answering the session; links handed to onLink; hash-only
- * history calls as fragment navigations. Calls the frame may make: syns.*, storage.*, context, session,
- * navigation and confirmed session calls; anything else is refused.
+ * history calls as fragment navigations. The agent's own page calls the host as it does shown as written; an
+ * app's frame may make syns.*, storage.*, context, session, navigation and confirmed session calls, and is refused
+ * anything else.
  */
 (function () {
   "use strict";
@@ -294,6 +295,8 @@ export const PAGEHOST = String.raw`/*
       }
     }
     async call(method, params) {
+      // The agent's own page calls the host as it does shown as written (S2.32); the rest is for apps.
+      if (this.src.kind === "page") return this.invoke(method, params);
       const repo = this.src.kind === "repo";
       if (CACHED[method] && !params.version) {
         const c = cache[method];
