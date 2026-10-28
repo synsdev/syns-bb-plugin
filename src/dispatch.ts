@@ -3,7 +3,7 @@ import { SynsError, fail, interpret, redact, toAnswer, type FailureAnswer } from
 import { path as pathSchema, pick, provenance, validate, type Context, type Method } from "./method.js";
 import { METHODS } from "./methods/index.js";
 import { createHeld, type Held } from "./held.js";
-import { SCOPE_OUTSIDE, buildArgs, type Where } from "./cli.js";
+import { buildArgs, type Where } from "./cli.js";
 import { scopeParams, scopeResult } from "./scoped.js";
 
 /** The session's folder as the host passes it (unife-pages 07 R5.84b, U44): an absolute path on `machine`, null where the host has one. */
@@ -17,7 +17,7 @@ export interface Workspace {
 export interface Call {
   method: string;
   params: unknown;
-  /** `scope`: a folder inside the session's folder that the calling document set: a placed one (D43), or an app's (its frame's scope, B-0103); null for the folder itself. */
+  /** `scope`: a placed folder inside the session's folder that the calling document set (D43); null for the folder itself. */
   caller: { sessionId: string | null; scope: string | null; workspace: Workspace | null };
   requestId: string;
 }
@@ -64,24 +64,19 @@ export const SCOPE_TTL_MS = 60_000;
 export function createDispatch({ table = METHODS, cli, log, held = createHeld(), now = Date.now }: DispatchDeps): (call: Call) => Promise<Answer> {
   const byName = new Map(table.map((method) => [method.name, method]));
 
-  /** Scopes found to belong to their session's repository, each held a minute (D46), and whether each is a placed folder: the answer is about the folder, not its contents. */
-  const confirmed = new Map<string, { at: number; placed: boolean }>();
+  /** Scopes found to belong to their session's repository, each held a minute (D46): the answer is about the folder, not its contents. */
+  const confirmed = new Map<string, number>();
 
   /**
    * D46 rule 2, as amended (D83): one run at the scope, `syns repo --within=<session folder> --json`. The CLI
    * answers `within` from the identity files on disk (roadmap 277). Its run, when one was made, is returned: a
-   * scoped `syns.repo` answers from it (S1.10, S1.14). `placed: false`: the host half found no placed folder there
-   * (no identity file of its own, or not on disk), so the scope is an app's folder, checked as a scope parameter is.
+   * scoped `syns.repo` answers from it (S1.10, S1.14).
    */
-  async function sameRepository(session: Where, scoped: Where, scope: string, deadline: number, signal: AbortSignal): Promise<{ ran?: RunResult; placed: boolean }> {
+  async function sameRepository(session: Where, scoped: Where, scope: string, deadline: number, signal: AbortSignal): Promise<RunResult | undefined> {
     const key = `${session.hostId}\u0000${session.cwd}\u0000${scope}`;
-    const held = confirmed.get(key);
-    if (held !== undefined && now() - held.at < SCOPE_TTL_MS) return { placed: held.placed };
+    const at = confirmed.get(key);
+    if (at !== undefined && now() - at < SCOPE_TTL_MS) return undefined;
     const ran = await cli.run(scoped, buildArgs("repo", { within: session.cwd }), undefined, deadline, undefined, signal);
-    if (ran.spawnError === SCOPE_OUTSIDE) {
-      confirmed.set(key, { at: now(), placed: false });
-      return { placed: false };
-    }
     let out: unknown;
     try {
       // The run is its own repo check; a 404 there asks whoami at the session's folder, so a signed-out machine says so (D82, B-0011).
@@ -92,29 +87,11 @@ export function createDispatch({ table = METHODS, cli, log, held = createHeld(),
       throw error;
     }
     if ((out as Record<string, unknown> | null)?.within !== true) throw fail("bad_scope");
-    confirmed.set(key, { at: now(), placed: true });
-    return { ran, placed: true };
+    confirmed.set(key, now());
+    return ran;
   }
 
-  async function run(method: Method, params: Record<string, unknown>, asked: string | null, sessionId: string | null, documentScope: string | null, workspace: unknown, deadline: number, signal: AbortSignal): Promise<unknown> {
-    // A document's scope that is no placed folder is an app's folder (Thread Pages runs an app as a frame of the page,
-    // its folder the frame's scope, B-0103): it is the call's scope parameter (D85), which the host half checks on every
-    // run (S2.31), so a folder outside the session's is bad_scope there. A placed folder runs the CLI in it (D43).
-    let scope = documentScope;
-    let folder = asked;
-    let checked: RunResult | undefined;
-    if (scope !== null && sessionId !== null) {
-      const session = sessionWhere(workspace);
-      if (session) {
-        const check = await sameRepository(session, { hostId: session.hostId, cwd: `${session.cwd.replace(/\/+$/, "")}/${scope}`, within: session.cwd }, scope, deadline, signal);
-        if (check.placed) checked = check.ran;
-        else {
-          if (method.unscoped) throw fail("bad_scope");
-          folder = folder === null ? scope : `${scope}/${folder}`;
-          scope = null;
-        }
-      }
-    }
+  async function run(method: Method, params: Record<string, unknown>, folder: string | null, sessionId: string | null, scope: string | null, workspace: unknown, deadline: number, signal: AbortSignal): Promise<unknown> {
     // Under a call's scope a read's `../` is resolved before the schema sees it, and an escape is bad_scope first (S1.25).
     const scoped = folder === null ? null : scopeParams(method, params, folder);
     const problem = validate(method.params, scoped?.checked ?? params);
@@ -131,8 +108,9 @@ export function createDispatch({ table = METHODS, cli, log, held = createHeld(),
     // that acts on the session's repository as a whole (syns.place) runs at the session's folder.
     const where = scope === null || method.atRoot ? session : { hostId: session.hostId, cwd: `${session.cwd.replace(/\/+$/, "")}/${scope}`, within: session.cwd };
 
-    // A scope must be a folder of the session's own repository: the placed folder's holder, or the session's own identity (D46),
-    // checked above. Where the check ran in this call, its run is the scope's `repo --json`: the method's own, and the 404 rule's (S3.5).
+    // A scope must be a folder of the session's own repository: the placed folder's holder, or the session's own identity (D46).
+    // Where the check ran in this call, its run is the scope's `repo --json`: the method's own, and the 404 rule's (S3.5).
+    const checked = where !== session ? await sameRepository(session, where, scope!, deadline, signal) : undefined;
     // A call's scope parameter: every run carries it, and the host half refuses to start one outside (S1.25, S2.31, D85).
     const at: Where = folder === null ? where : { ...where, scope: folder };
     const given = scoped?.given ?? params;

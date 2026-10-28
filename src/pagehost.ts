@@ -12,27 +12,27 @@ export const PAGEHOST = String.raw`/*
  *
  *   const f = SynsPages.frame(container, src, options)
  *     src      { kind: "repo", folder, doc? }   a folder's index.html, else a placed template's .page/index.html,
- *                                              its folder the frame's scope (syns.* and storage.* count from it)
+ *                                              with syns.* answered for that folder alone (threadPage.scope)
  *              { kind: "page", path, html? }   a document of the session's own page (html: the one this
  *                                              document is, as SynsPages.page has it; else read with pages.read)
- *     options  call(method, params)    the app's own invoke, for what the host reads (default threadPage.invoke)
+ *     options  call(method, params)    the app's own invoke (default threadPage.invoke)
  *              sessionId               default: context.get
  *              onLink(target)          { kind: "external" | "repo" | "page", path | url, newTab }; default: external only
  *                                      (a page address …/page?session= goes to navigation.openExternal itself, and reaches onLink as "page" only when the host refuses it as its own)
- *              onState(state)          { status: "loading" | "shown" | "failed", message, failures: [] }
+ *              onState(state)          { status: "loading" | "shown" | "failed", message, failures: [text] }
  *     f.reload()   f.changed(paths)   f.destroy()   f.frame (the iframe)   f.title()
  *
  *   SynsPages.page            the Thread Page this document is, taken before the app loaded (the bootstrap, at the end of this file)
- *   SynsPages.showPage(page)  a new version of SynsPages.page: the frames showing it take it
+ *   SynsPages.showPage(page)  a new version of SynsPages.page: the frames showing it take it (drafts and scroll kept)
  *   SynsPages.tools(paths)    the folders among the repository's paths that open as pages
  *   SynsPages.pageUrl(sessionId, path, fragment)   the host's address of a document of the page
  *   SynsPages.goTo(fromPath, path)                  this document goes to another document of the page
  *
- * A frame is the host's own (threadPage.embed { html, scope, title }: Thread Pages 1.13.0, Unife Pages 0.5.0), a frame
- * of the page with its kernel and its plugins' page scripts: its calls, forms, text areas, file inputs, drafts and
- * scroll are a Thread Page's (Unife Pages IN-0020, B-0102, B-0103, B-0104). The page host reads the document, carries
- * its relative CSS and JS inside it (bb serves a page's files inside the page, not by URL), and hands its links to
- * onLink; this script, run again inside the frame, does the last.
+ * In the frame: a window.threadPage of its own (invoke, watch, scope); storage.* per app; drafts and the
+ * scroll position kept and restored; forms answering the session; links handed to onLink; hash-only
+ * history calls as fragment navigations. The agent's own page calls the host as it does shown as written; an app's
+ * frame calls what a Thread Page calls, through the app's invoke and its confirmations, its syns.* with its folder
+ * as scope (D85, D91).
  */
 (function () {
   "use strict";
@@ -40,21 +40,129 @@ export const PAGEHOST = String.raw`/*
   const P = (window.SynsPages = window.SynsPages || {});
   const dirOf = function (p) { const i = String(p).lastIndexOf("/"); return i < 0 ? "" : String(p).slice(0, i + 1); };
   const baseOf = function (p) { return String(p).replace(/\/+$/, "").replace(/^.*\//, ""); };
-  const MARK = "syns-pages-frame"; // a <meta name> in every document the page host frames
 
-  // ------------------------------------------------------------------ inside a frame the page host made
-  // Its links go to the page host that made it, which opens them (onLink); the kernel takes every other link.
-  const kernelConfig = function () { try { return JSON.parse(document.querySelector("script[data-thread-page-kernel]").getAttribute("data-config")) || {}; } catch (e) { return {}; } };
-  if (kernelConfig().embedded === true && window.parent !== window) {
-    window.addEventListener("click", function (e) {
-      const a = e.target && e.target.closest && e.target.closest("a[href]");
-      if (!a || e.defaultPrevented || e.button !== 0 || a.hasAttribute("download") || !document.querySelector('meta[name="' + MARK + '"]')) return;
-      const href = a.getAttribute("href");
-      if (/^\s*(#|blob:|data:|javascript:|mailto:|tel:|sms:)/i.test(href)) return;
-      e.preventDefault();
-      window.parent.postMessage({ __tool: "link", href: href, newTab: e.metaKey || e.ctrlKey || a.target === "_blank" }, "*");
-    }, true);
-  }
+  const CACHED = { "syns.repo": 4000, "syns.whoami": 60000, "context.get": 10000 };
+  const cache = {};
+
+  // Storage keys are [A-Za-z0-9._:-], 128 at most: a source is named by a short hash.
+  const hash = function (s) { let x = 2166136261; for (let i = 0; i < s.length; i++) { x ^= s.charCodeAt(i); x = Math.imul(x, 16777619); } return (x >>> 0).toString(36); };
+  const nsKey = function (id, key) { return ("f." + hash(id) + ":" + String(key)).replace(/[^A-Za-z0-9._:-]/g, "_").slice(0, 128); };
+  // The frame's own drafts and scroll: no ":" after the hash, so no app key names it.
+  const stateKeyOf = function (id) { return "f." + hash(id) + ".state"; };
+
+  // ------------------------------------------------------------------ inside the frame
+  const SHIM = function (cfg) {
+    var n = 0, wait = {}, post = function (m) { parent.postMessage(m, "*"); };
+    addEventListener("message", function (e) {
+      var d = e.data; if (e.source !== parent || !d) return;
+      if (d.__tool === "formdone") return formDone(d);
+      if (d.__tool !== "answer" || !wait[d.id]) return;
+      var w = wait[d.id]; delete wait[d.id];
+      if (d.ok) w[0](d.result); else { var x = new Error(d.error.message || d.error.code); x.code = d.error.code; x.reason = d.error.reason; x.detail = d.error.detail; w[1](x); }
+    });
+    function invoke(method, params) { return new Promise(function (ok, no) { var id = ++n; wait[id] = [ok, no]; post({ __tool: "invoke", id: id, method: method, params: params || {} }); }); }
+    function watch(method, params, cb, o) {
+      var ms = Math.min(300000, Math.max(2000, (o && o.intervalMs) || 8000)), live = true, t;
+      (function tick() { invoke(method, params).then(function (v) { if (live) cb(v, null); }, function (e) { if (live) cb(null, e); }).then(function () { if (live) t = setTimeout(tick, ms); }); })();
+      return function () { live = false; clearTimeout(t); };
+    }
+    // A srcdoc document can't push or replace a URL of its own: a hash-only one becomes a fragment navigation.
+    ["pushState", "replaceState"].forEach(function (k) {
+      var o = history[k].bind(history);
+      history[k] = function (st, t, u) {
+        try { return o(st, t, u); } catch (e) {
+          if (typeof u === "string" && u.charAt(0) === "#") { location.hash = u; return; } // location.replace would leave about:srcdoc
+          throw e;
+        }
+      };
+    });
+    window.threadPage = Object.freeze({ version: 1, scope: cfg.scope, invoke: invoke, watch: watch,
+      setDirty: function (on) { post({ __tool: "dirty", on: !!on }); }, setScope: function () {}, embed: function () { return function () {}; } });
+    document.addEventListener("click", function (e) {
+      var a = e.target.closest && e.target.closest("a[href]"); if (!a || e.defaultPrevented || a.hasAttribute("download") || /^(#|blob:|data:|javascript:)/i.test(a.getAttribute("href"))) return;
+      e.preventDefault(); post({ __tool: "link", href: a.getAttribute("href"), newTab: e.metaKey || e.ctrlKey || a.target === "_blank" });
+    });
+
+    // ---- drafts, as Thread Pages keeps them: fields by id, else name; never passwords, files or autocomplete="off"
+    var drafted = function (el) {
+      if (!el.matches || !el.matches("input, textarea, select") || el.disabled) return false;
+      var t = (el.type || "").toLowerCase(), ac = (el.getAttribute("autocomplete") || "").toLowerCase(), f = el.form;
+      if (/^(password|file|hidden|submit|button|reset|image)$/.test(t)) return false;
+      if (/^(off|current-password|new-password|one-time-code)$/.test(ac) || (f && (f.getAttribute("autocomplete") || "") === "off")) return false;
+      return !!(el.id || el.name);
+    };
+    var keyOf = function (el) { var t = (el.type || "").toLowerCase(); var k = el.id || el.name; return (t === "radio" || t === "checkbox") && !el.id ? k + "=" + el.value : k; };
+    var collect = function () {
+      var out = {};
+      document.querySelectorAll("input, textarea, select").forEach(function (el) {
+        if (!drafted(el)) return; var t = (el.type || "").toLowerCase();
+        if (t === "radio" || t === "checkbox") { if (el.checked !== el.defaultChecked) out[keyOf(el)] = el.checked; }
+        else if (el.tagName === "SELECT" && el.multiple) { out[keyOf(el)] = Array.from(el.selectedOptions).map(function (o) { return o.value; }); }
+        else if (el.value !== el.defaultValue) out[keyOf(el)] = el.value;
+      });
+      return out;
+    };
+    var draftTimer = null;
+    var saveDraft = function () { clearTimeout(draftTimer); draftTimer = setTimeout(function () { post({ __tool: "draft", values: collect() }); }, 400); };
+    document.addEventListener("input", saveDraft, true);
+    document.addEventListener("change", saveDraft, true);
+    var restore = function () {
+      var d = cfg.draft || {};
+      document.querySelectorAll("input, textarea, select").forEach(function (el) {
+        if (!drafted(el) || !(keyOf(el) in d)) return;
+        var v = d[keyOf(el)], t = (el.type || "").toLowerCase();
+        if (t === "radio" || t === "checkbox") { if (el.checked !== el.defaultChecked) return; el.checked = !!v; }
+        else if (el.tagName === "SELECT" && el.multiple) { Array.from(el.options).forEach(function (o) { o.selected = v.indexOf(o.value) >= 0; }); }
+        else { if (el.value !== el.defaultValue) return; el.value = v; } // a field the page's script already filled is kept
+        el.dispatchEvent(new Event("input", { bubbles: true })); el.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      if (cfg.scrollY) scrollTo(0, cfg.scrollY);
+    };
+    addEventListener("load", function () { restore(); setTimeout(restore, 300); });
+    var scrollTimer = null;
+    addEventListener("scroll", function () { clearTimeout(scrollTimer); scrollTimer = setTimeout(function () { post({ __tool: "scroll", y: Math.round(scrollY) }); }, 300); }, { passive: true });
+
+    // ---- forms: every form answers the session, as on a Thread Page, unless its own script owns it
+    var labelOf = function (el) {
+      var fs = el.closest("fieldset"), lg = fs && fs.querySelector("legend"), t = (el.type || "").toLowerCase();
+      var wrap = el.closest("label"), forL = el.id && document.querySelector('label[for="' + el.id + '"]');
+      var text = function (x) { return x ? x.textContent.replace(/\s+/g, " ").trim() : ""; };
+      if (el.getAttribute("data-label")) return el.getAttribute("data-label");
+      if ((t === "radio" || t === "checkbox") && lg) return text(lg);
+      return text(lg) || el.getAttribute("aria-label") || text(wrap) || text(forL) || el.name || "Answer";
+    };
+    var sending = null;
+    document.addEventListener("submit", function (e) {
+      var f = e.target; if (e.defaultPrevented || f.hasAttribute("data-thread-page-manual") || f.method === "dialog") return;
+      e.preventDefault(); if (sending) return;
+      var groups = {}, order = [];
+      Array.from(f.elements).forEach(function (el) {
+        var t = (el.type || "").toLowerCase();
+        if (!el.name && !el.id || /^(submit|button|reset|image|file|hidden)$/.test(t) || el.tagName === "FIELDSET" || el.tagName === "BUTTON") return;
+        var k = t === "radio" || t === "checkbox" ? "g:" + el.name : "f:" + (el.id || el.name);
+        if (!groups[k]) { groups[k] = { label: labelOf(el), kind: t, items: [] }; order.push(k); }
+        groups[k].items.push(el);
+      });
+      var answers = order.map(function (k) {
+        var g = groups[k], v;
+        if (g.kind === "checkbox") v = g.items.length === 1 ? (g.items[0].checked ? "Yes" : "No") : g.items.filter(function (x) { return x.checked; }).map(function (x) { return x.value; }).join(", ");
+        else if (g.kind === "radio") { var c = g.items.filter(function (x) { return x.checked; })[0]; v = c ? c.value : ""; }
+        else if (g.items[0].tagName === "SELECT" && g.items[0].multiple) v = Array.from(g.items[0].selectedOptions).map(function (o) { return o.value; }).join(", ");
+        else v = g.items[0].value;
+        return { label: g.label, value: String(v).trim() ? String(v) : "(left blank)" };
+      });
+      sending = f; Array.from(f.elements).forEach(function (el) { el.dataset.wasDisabled = el.disabled ? "1" : ""; el.disabled = true; });
+      post({ __tool: "form", title: f.getAttribute("aria-label") || (f.querySelector("h1,h2,legend") || {}).textContent || document.title, action: e.submitter && e.submitter.value || null, answers: answers });
+    });
+    function formDone(d) {
+      var f = sending; sending = null; if (!f) return;
+      Array.from(f.elements).forEach(function (el) { el.disabled = el.dataset.wasDisabled === "1"; });
+      var line = f.querySelector(".tp-status") || f.appendChild(Object.assign(document.createElement("p"), { className: "tp-status" }));
+      line.style.cssText = "font-size:13px;opacity:.75;margin:8px 0 0";
+      line.textContent = d.ok ? "Sent" : "Not sent: " + (d.message || "");
+      if (d.ok) post({ __tool: "draft", values: collect(), sent: true });
+    }
+  };
 
   const safeScript = function (t) { return String(t).replace(/<\/(script)/gi, "<\\/$1").replace(/<!(?=--)/g, "<\\!"); };
   const local = function (ref) { return !!ref && !/^([a-z][a-z0-9+.-]*:|\/\/|#|\/)/i.test(ref); };
@@ -64,8 +172,6 @@ export const PAGEHOST = String.raw`/*
     (dir + "/" + ref.split(/[?#]/)[0]).split("/").forEach(function (s) { if (s === "..") above = above || !out.pop(); else if (s && s !== ".") out.push(s); });
     return above ? "" : out.join("/");
   };
-  const NEEDS = "showing a page in a frame needs Thread Pages 1.13.0 or Unife Pages 0.5.0";
-  const STATES = { too_large: "too large to show in a frame", unavailable: "not shown", not_found: "not found", no_page: "not written yet" };
 
   const live = new Set();
   class PageFrame {
@@ -73,7 +179,11 @@ export const PAGEHOST = String.raw`/*
       this.src = Object.assign({}, src);
       this.opts = options || {};
       this.invoke = this.opts.call || function (m, p) { return window.threadPage.invoke(m, p); };
+      this.id = src.kind === "repo" ? "repo:" + src.folder : "page:" + src.path;
       this.folder = src.kind === "repo" ? String(src.folder).replace(/\/+$/, "") : "";
+      this.failures = [];
+      this.state = { draft: {}, scrollY: 0 };
+      this.stateKey = stateKeyOf(this.id);
       this.frame = document.createElement("iframe");
       this.frame.title = this.title();
       this.frame.setAttribute("sandbox", "allow-scripts allow-forms allow-downloads allow-popups");
@@ -84,16 +194,21 @@ export const PAGEHOST = String.raw`/*
       this.onMessage = (e) => this.answer(e);
       window.addEventListener("message", this.onMessage);
       if (src.kind === "page" && !src.html) this.poll = setInterval(() => this.checkPage(), 4000);
-      this.load();
+      this.start();
     }
     title() { return this.src.title || (this.src.kind === "repo" ? baseOf(this.folder) : baseOf(this.src.path).replace(/\.html?$/i, "")); }
     entry() { return this.src.kind === "repo" ? this.folder + "/" + (this.src.doc || "index.html") : this.src.path; }
-    destroy() { this.dead = true; live.delete(this); clearInterval(this.poll); window.removeEventListener("message", this.onMessage); if (this.stop) this.stop(); this.frame.remove(); }
-    reload() { return this.load(); }
+    destroy() { this.dead = true; live.delete(this); clearInterval(this.poll); window.removeEventListener("message", this.onMessage); this.frame.remove(); }
+    reload() { this.dirty = false; return this.load(); }
     /** Repository paths that changed: a tool reloads when one is in its folder. */
     changed(paths) { if (this.src.kind === "repo" && !this.dead && (paths || []).some((p) => String(p).startsWith(this.folder + "/"))) this.load(); }
-    report(status, message) { if (this.opts.onState) this.opts.onState({ status: status, message: message || "", failures: [] }); }
+    report(status, message) { if (this.opts.onState) this.opts.onState({ status: status, message: message || "", failures: this.failures.slice() }); }
     async session() { if (!this.sessionId) this.sessionId = this.opts.sessionId || ((await this.invoke("context.get", {})).session || {}).id; return this.sessionId; }
+    async start() {
+      try { const r = await this.invoke("storage.get", { key: this.stateKey }); if (r && r.found && r.value && typeof r.value === "object") this.state = Object.assign(this.state, r.value); } catch (e) { /* none kept */ }
+      this.load();
+    }
+    saveState() { clearTimeout(this.saveTimer); this.saveTimer = setTimeout(() => this.invoke("storage.set", { key: this.stateKey, value: this.state }).catch(() => {}), 800); }
 
     async readAll(paths, version) {
       const got = {};
@@ -122,8 +237,8 @@ export const PAGEHOST = String.raw`/*
           if (e.error || e.html === undefined) throw new Error(at + ": " + ((e.error && (e.error.reason || e.error.message)) || "not served"));
           text = e.html; this.revision = e.revision;
         }
-        if (typeof (window.threadPage && window.threadPage.embed) !== "function") throw new Error(NEEDS);
         const doc = new DOMParser().parseFromString(text, "text/html");
+        doc.querySelectorAll("script[data-thread-page-kernel], script[data-thread-page-contributor], base").forEach((el) => el.remove()); // the host's kernel, page scripts and base: this frame has its own
         const refs = this.src.kind === "page" ? [] : Array.from(doc.querySelectorAll('link[rel="stylesheet"][href], script[src]'))
           .filter((el) => local(el.getAttribute("href") || el.getAttribute("src")));
         const want = refs.map((el) => join(dir, el.getAttribute("href") || el.getAttribute("src")));
@@ -134,26 +249,19 @@ export const PAGEHOST = String.raw`/*
           else { el.removeAttribute("src"); el.textContent = safeScript(t) + "\n//# sourceURL=" + want[i]; }
         });
         doc.querySelectorAll("script:not([src])").forEach((s) => { s.textContent = safeScript(s.textContent); });
-        const mark = doc.createElement("meta");
-        mark.setAttribute("name", MARK);
-        doc.head.prepend(mark);
+        const shim = doc.createElement("script");
+        shim.textContent = "(" + SHIM.toString() + ")(" + JSON.stringify({ scope: this.src.kind === "repo" ? this.folder : null, draft: this.state.draft, scrollY: this.state.scrollY }).replace(/</g, "\\u003c") + ");";
+        doc.head.prepend(shim);
         if (this.dead) return;
-        if (this.stop) this.stop();
+        this.frame.srcdoc = "<!doctype html>\n" + doc.documentElement.outerHTML;
         this.frame.style.display = "";
-        try {
-          this.stop = window.threadPage.embed(this.frame, {
-            html: "<!doctype html>\n" + doc.documentElement.outerHTML,
-            scope: this.src.kind === "repo" ? this.folder || null : null,
-            title: this.title(),
-            onState: (s) => { if (s.status === "shown" || s.status === "loading") this.report(s.status); else this.report("failed", at + ": " + (STATES[s.status] || s.status)); },
-          });
-        } catch (x) { this.stop = null; throw new Error(x && x.name === "TypeError" ? NEEDS + " (" + x.message + ")" : String(x && x.message || x)); } // an older host takes { sessionId } alone
+        this.report("shown");
       } catch (e) {
         this.frame.style.display = "none";
         this.report("failed", String(e && e.message || e));
       }
     }
-    // A page read with pages.read reloads when the agent saves it.
+    // A page read with pages.read reloads when the agent saves it (drafts and scroll come back with it).
     async checkPage() {
       if (this.dead || !this.frame.isConnected || this.frame.offsetParent === null || document.visibilityState !== "visible" || !this.revision) return;
       try {
@@ -163,10 +271,48 @@ export const PAGEHOST = String.raw`/*
       } catch (e) { /* gone or busy: keep what is shown */ }
     }
 
-    // ---- what the frame asks: only where a link goes
+    // ---- what the frame asks
     answer(e) {
-      if (e.source !== this.frame.contentWindow || !e.data || e.data.__tool !== "link") return;
-      this.link(String(e.data.href || ""), !!e.data.newTab);
+      if (e.source !== this.frame.contentWindow || !e.data || !e.data.__tool) return;
+      const d = e.data, win = this.frame.contentWindow, reply = (msg) => win && win.postMessage(Object.assign({ __tool: "answer", id: d.id }, msg), "*");
+      if (d.__tool === "invoke") {
+        this.call(d.method, d.params || {}).then((result) => reply({ ok: true, result: result }), (x) => {
+          this.failures.push(d.method + ": " + (x.code || "") + (x.reason ? " (" + x.reason + ")" : "") + " " + String(x.message || x).slice(0, 160));
+          this.report("shown");
+          reply({ ok: false, error: { code: x.code || "unavailable", reason: x.reason, detail: x.detail, message: String(x.message || x) } });
+        });
+      } else if (d.__tool === "link") this.link(String(d.href || ""), !!d.newTab);
+      else if (d.__tool === "dirty") this.dirty = !!d.on;
+      else if (d.__tool === "draft") { this.state.draft = d.sent ? {} : (d.values || {}); this.saveState(); }
+      else if (d.__tool === "scroll") { this.state.scrollY = d.y || 0; this.saveState(); }
+      else if (d.__tool === "form") {
+        const lines = ["**" + String(d.title || this.title()).trim() + "**" + (this.src.kind === "page" ? " (page " + this.src.path + ")" : " (tool " + this.folder + ")")];
+        if (d.action) lines.push("Action: " + d.action);
+        (d.answers || []).forEach((a) => lines.push("- " + a.label + ": " + a.value));
+        this.invoke("session.reply", { kind: "prompt", text: lines.join("\n") })
+          .then(() => win && win.postMessage({ __tool: "formdone", ok: true }, "*"), (x) => win && win.postMessage({ __tool: "formdone", ok: false, message: String(x.message || x) }, "*"));
+      }
+    }
+    async call(method, params) {
+      // The agent's own page calls the host as it does shown as written (S2.32); the rest is for apps.
+      if (this.src.kind === "page") return this.invoke(method, params);
+      if (CACHED[method] && !params.version) {
+        const c = cache[method];
+        if (!c || Date.now() - c.at >= CACHED[method]) { const value = this.invoke(method, params); cache[method] = { at: Date.now(), value: value }; value.catch(() => { delete cache[method]; }); }
+        return cache[method].value;
+      }
+      if (method === "storage.get" || method === "storage.set") return this.invoke(method, Object.assign({}, params, { key: nsKey(this.id, params.key) }));
+      if (method === "storage.setMany") return this.invoke(method, { entries: (params.entries || []).map((x) => Object.assign({}, x, { key: nsKey(this.id, x.key) })) });
+      if (!/^syns\./.test(method)) return this.invoke(method, params);
+      // A tool's calls carry its folder as scope: the plugin counts its paths from there, answers nothing outside it,
+      // and refuses it to a method acting on the whole repository (bad_scope).
+      const p = Object.assign({}, params, { scope: this.folder });
+      // Reads that fail transiently (many at once, the CLI busy) are asked again, twice at most.
+      const write = /^syns\.(write|writeBinary|edit|rm|move|copy|commit|revert)$/.test(method);
+      for (let n = 0; ; n++) {
+        try { return await this.invoke(method, p); }
+        catch (x) { if (write || n >= 2 || !/^(handler_error|timeout|rate_limited)$/.test(x.code || "")) throw x; await new Promise((ok) => setTimeout(ok, 600 * (n + 1))); }
+      }
     }
     // Where a link goes, for the app to open: a page on this host, another site, a repository file, a document of the page.
     link(href, newTab) {
@@ -220,8 +366,7 @@ export const PAGEHOST = String.raw`/*
  * The bootstrap. It keeps the page as the host served it (window.SynsPages.page), holds back the page's own scripts
  * (they run in the workspace's frame instead) and reads the repository's workspace (.page/index.html); only once it
  * is there does it clear the document and load the workspace into it. With no workspace to read (no such file, no
- * repository yet, or no syns.* here) the page stays as written and its scripts run; in a frame of a page (the kernel's
- * config says embedded) it does nothing, so a framed document runs as written. Once the workspace
+ * repository yet, or no syns.* here, as in an embed) the page stays as written and its scripts run. Once the workspace
  * is shown, a saved page is taken through threadPage.onPageUpdate where the host offers it: only the agent's page
  * (SynsPages.page and its frame) changes, with no new boot; without it the host loads the saved page as before.
  *   SynsPages.app   { version, reload(), onStop(fn) }   an in-page reload: stop the app, read it again, start it.
@@ -230,8 +375,6 @@ export const PAGEHOST = String.raw`/*
   "use strict";
   const P = window.SynsPages;
   if (P.page || !document.currentScript || document.readyState !== "loading") return;
-  // In a frame of a page (an app, the agent's page, another session's) the document is the frame's own, as written.
-  try { if (JSON.parse(document.querySelector("script[data-thread-page-kernel]").getAttribute("data-config")).embedded === true) return; } catch (e) { /* no kernel config: a page */ }
   const me = document.currentScript;
   // The host's kernel and every contributor's page script run as served; only the page's own scripts are held.
   const served = function (s) { return s === me || s.hasAttribute("data-thread-page-kernel") || s.hasAttribute("data-thread-page-contributor"); };

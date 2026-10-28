@@ -1,30 +1,5 @@
 # Changelog
 
-## 0.11.0
-
-The page script and how a call's document scope is read changed; no method, result, reason, guide text or fragment
-changed. Needs Thread Pages 1.13.0 (bb) or Unife Pages 0.5.0 (Claude Code): on an older host an app shows "showing a
-page in a frame needs Thread Pages 1.13.0 or Unife Pages 0.5.0" in place of the app.
-
-- **An app is a frame of the page.** The workspace shows each app, and the agent's own page, through the host's own
-  frame (`threadPage.embed { html, scope, title }`, Unife Pages IN-0020), with the host's kernel and every plugin's
-  page script in it. What works on the page works in the app: its forms answer the agent as the page's own, naming
-  the app; its text areas offer Dictate and Attach; its file inputs upload to `uploads/`, a voice note with its
-  transcript; its calls, `{ files }` included, go under the host's confirmations and the page's own budget; its drafts
-  and scroll are kept while it is shown. The page host's own copy of these (the call relay, the form serializer, the
-  drafts and scroll keeping, the `embed` stub, the kernel strip) is gone (Syns B-0103, B-0102, B-0104, D92).
-- **What the page host still does.** It reads the app's document, carries its relative CSS and JS inside it (bb serves
-  a page's files inside the page, not by URL), and opens its links as before (B-0105). An app's frame no longer
-  reports its failed calls in `onState` (`failures` is always empty).
-- **An app's folder as the document's scope.** The host gives an app's frame its folder as `threadPage.scope`, and a
-  call carries it as the document's scope. A scope that is no placed folder (the host half finds no identity file of
-  its own there) is now read as the call's `scope` parameter: the app's paths count from its folder, a read's `../`
-  reaches the rest of the session's folder, its writes stay inside, and a method acting on the whole repository is
-  `bad_scope`, as before. Before, such a scope was `bad_scope` on every call. A placed folder's scope runs the CLI in
-  it as before; `syns.place` from its document now follows the scope's one check.
-- **Stored values.** An app's `storage.*` is now kept under its folder's scope by the host, not under the page host's
-  per-app keys: values an app stored under 0.10.x are no longer found.
-
 ## 0.10.3
 
 The page script changed; no method, result, reason, guide text or fragment changed.
