@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.10.3
+
+The page script changed; no method, result, reason, guide text or fragment changed.
+
+- **Links to this host's pages.** A link in an app or the agent's page to a page address (`…/page?session=…`) still
+  goes to `navigation.openExternal` first. When the host refuses it as its own address (`invalid_params`), which bb
+  and Unife Pages do for every name they count as theirs, the link opens instead: this session's own documents in
+  the workspace, another session's page with `pages.open` (its entry document: `pages.open` takes no path). Before,
+  nothing opened. The address `bb pages init` gives (bb Connect's) works the same when the page is read locally
+  (Syns B-0105).
+- **Full screen and copy in a frame.** Every frame the workspace opens carries `allow="fullscreen *; clipboard-write
+  *"`: full screen works from an app as on a Thread Page, and a clipboard write works wherever the Thread Page itself
+  may write it (Syns B-0105, D91).
+
 ## 0.10.2
 
 The page script, the guide's *Apps in the workspace*, the scope rule of `syns.explore` and `syns.users` and what a

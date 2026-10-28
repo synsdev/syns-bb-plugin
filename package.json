@@ -1,6 +1,6 @@
 {
   "name": "bb-plugin-syns",
-  "version": "0.10.2",
+  "version": "0.10.3",
   "type": "module",
   "private": true,
   "engines": {

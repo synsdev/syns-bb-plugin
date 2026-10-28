@@ -229,3 +229,75 @@ describe("the page script on bb (S2.27)", () => {
     expect(Date.now() - started).toBeLessThan(2_000);
   });
 });
+
+describe("a frame gets what a Thread Page frame gets (B-0105, D91, D92)", () => {
+  it("carries allow=\"fullscreen *; clipboard-write *\": the Thread Page's own fullscreen (unife-pages R3.3b, WebKit refuses a plain fullscreen) and the clipboard write it may pass on", () => {
+    const ctor = PAGEHOST.slice(PAGEHOST.indexOf("class PageFrame"), PAGEHOST.indexOf("container.appendChild(this.frame)"));
+    expect(ctor).toContain('this.frame.setAttribute("allow", "fullscreen *; clipboard-write *");');
+  });
+
+  /** The page host's link() run on its own, from an app (repo) or the agent's page, read at `origin`, on a host whose navigation.openExternal refuses `own` origins as R5.32a says. */
+  const linkOf = (src: { kind: "repo"; folder: string } | { kind: "page"; path: string }, origin = "https://bart.getbb.app", own = [origin]) => {
+    const body = PAGEHOST.slice(PAGEHOST.indexOf("    link(href, newTab) {"), PAGEHOST.indexOf("  P.frame = function"));
+    const helpers = PAGEHOST.slice(PAGEHOST.indexOf("  const dirOf = function"), PAGEHOST.indexOf("  const baseOf = function")) + PAGEHOST.slice(PAGEHOST.indexOf("  const local = function"), PAGEHOST.indexOf("  const live = new Set()"));
+    const Frame = new Function("location", helpers + "return class { " + body.trim().replace(/\}\s*$/, "") + " };")({ href: origin + "/x", origin });
+    const went: unknown[] = [], asked: unknown[] = [];
+    const f = Object.assign(new Frame(), {
+      src, folder: src.kind === "repo" ? src.folder : "", opts: { onLink: (t: unknown) => went.push(t) },
+      invoke: async (m: string, p: { url?: string }) => {
+        asked.push([m, p]);
+        if (m === "navigation.openExternal" && /declined/.test(p.url!)) throw Object.assign(new Error("The reader declined"), { code: "denied" });
+        if (m === "navigation.openExternal" && /limited/.test(p.url!)) throw Object.assign(new Error("Too many calls"), { code: "rate_limited" });
+        if (m === "navigation.openExternal" && own.includes(new URL(p.url!).origin)) throw Object.assign(new Error("This is the host's own address; use pages.open or sessions.openHost"), { code: "invalid_params" });
+        return {};
+      },
+      session: async () => "thr_own", entry: () => (src.kind === "repo" ? src.folder + "/index.html" : src.path), load: () => undefined,
+    });
+    return { link: async (href: string, newTab = false) => { await f.link(href, newTab); return { went: went.splice(0), asked: asked.splice(0) }; } };
+  };
+  const refused = (url: string) => ["navigation.openExternal", { url }];
+
+  it("opens another session's page on this host with pages.open once the host refuses it as its own, on bb's address and on Unife Pages' (Claude Code)", async () => {
+    const bb = linkOf({ kind: "repo", folder: "tools/app" });
+    const a = "https://bart.getbb.app/api/v1/plugins/thread-pages/http/page?session=thr_other&path=notes.html#top";
+    expect(await bb.link(a)).toEqual({ went: [], asked: [refused(a), ["pages.open", { sessionId: "thr_other" }]] });
+    const cc = linkOf({ kind: "page", path: "index.html" }, "http://127.0.0.1:4848", ["http://127.0.0.1:4848", "http://localhost:4848"]);
+    for (const b of ["http://127.0.0.1:4848/page?session=thr_other", "http://localhost:4848/page?session=thr_other"]) expect(await cc.link(b), b).toEqual({ went: [], asked: [refused(b), ["pages.open", { sessionId: "thr_other" }]] });
+  });
+
+  it("opens the address an agent is given (bb Connect) while the reader is on the local origin, as the host counts both as its own (B-0105 F1)", async () => {
+    const local = linkOf({ kind: "repo", folder: "tools/app" }, "http://127.0.0.1:38886", ["http://127.0.0.1:38886", "https://bart.getbb.app"]);
+    const a = "https://bart.getbb.app/api/v1/plugins/thread-pages/http/page?session=thr_other";
+    expect(await local.link(a)).toEqual({ went: [], asked: [refused(a), ["pages.open", { sessionId: "thr_other" }]] });
+    const b = "https://bart.getbb.app/api/v1/plugins/thread-pages/http/page?session=thr_own&path=docs%2Fplan.html";
+    expect(await local.link(b)).toEqual({ went: [{ kind: "page", path: "docs/plan.html", newTab: false }], asked: [refused(b)] });
+  });
+
+  it("leaves another host's page address to navigation.openExternal, which opens it", async () => {
+    const one = linkOf({ kind: "repo", folder: "tools/app" });
+    const a = "https://alice.getbb.app/api/v1/plugins/thread-pages/http/page?session=thr_other";
+    expect(await one.link(a)).toEqual({ went: [], asked: [["navigation.openExternal", { url: a }]] });
+  });
+
+  it("opens nothing on any other refusal of a page address (declined, rate_limited)", async () => {
+    const one = linkOf({ kind: "repo", folder: "tools/app" });
+    for (const a of ["https://alice.getbb.app/declined/page?session=thr_other", "https://bart.getbb.app/limited/page?session=thr_other"]) expect(await one.link(a), a).toEqual({ went: [], asked: [["navigation.openExternal", { url: a }]] });
+  });
+
+  it("opens this session's own page's documents in the workspace, as a relative link does", async () => {
+    const one = linkOf({ kind: "repo", folder: "tools/app" });
+    const a = "https://bart.getbb.app/api/v1/plugins/thread-pages/http/page?session=thr_own&path=docs%2Fplan.html";
+    expect(await one.link(a, true)).toEqual({ went: [{ kind: "page", path: "docs/plan.html", newTab: true }], asked: [refused(a)] });
+    const b = "https://bart.getbb.app/api/v1/plugins/thread-pages/http/page?session=thr_own";
+    expect(await one.link(b)).toEqual({ went: [{ kind: "page", path: "index.html", newTab: false }], asked: [refused(b)] });
+    const c = "https://bart.getbb.app/api/v1/plugins/thread-pages/http/page?session=thr_own&path=tool.html%3Fscope%3Da#top";
+    expect(await one.link(c)).toEqual({ went: [{ kind: "page", path: "tool.html?scope=a#top", newTab: false }], asked: [refused(c)] });
+  });
+
+  it("leaves every other address to the workspace's own external handler: another path on this host, a page address with no session", async () => {
+    const one = linkOf({ kind: "repo", folder: "tools/app" });
+    for (const url of ["https://bart.getbb.app/threads/thr_other", "https://bart.getbb.app/api/v1/plugins/thread-pages/http/page", "https://bart.getbb.app/pages?session=thr_other", "https://"]) {
+      expect(await one.link(url), url).toEqual({ went: [{ kind: "external", url, newTab: true }], asked: [] });
+    }
+  });
+});

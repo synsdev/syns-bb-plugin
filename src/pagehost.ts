@@ -18,6 +18,7 @@ export const PAGEHOST = String.raw`/*
  *     options  call(method, params)    the app's own invoke (default threadPage.invoke)
  *              sessionId               default: context.get
  *              onLink(target)          { kind: "external" | "repo" | "page", path | url, newTab }; default: external only
+ *                                      (a page address …/page?session= goes to navigation.openExternal itself, and reaches onLink as "page" only when the host refuses it as its own)
  *              onState(state)          { status: "loading" | "shown" | "failed", message, failures: [text] }
  *     f.reload()   f.changed(paths)   f.destroy()   f.frame (the iframe)   f.title()
  *
@@ -186,6 +187,7 @@ export const PAGEHOST = String.raw`/*
       this.frame = document.createElement("iframe");
       this.frame.title = this.title();
       this.frame.setAttribute("sandbox", "allow-scripts allow-forms allow-downloads allow-popups");
+      this.frame.setAttribute("allow", "fullscreen *; clipboard-write *");
       Object.assign(this.frame.style, { flex: "1", width: "100%", height: "100%", border: "0", display: "none", background: "transparent" });
       container.appendChild(this.frame);
       live.add(this);
@@ -312,10 +314,17 @@ export const PAGEHOST = String.raw`/*
         catch (x) { if (write || n >= 2 || !/^(handler_error|timeout|rate_limited)$/.test(x.code || "")) throw x; await new Promise((ok) => setTimeout(ok, 600 * (n + 1))); }
       }
     }
-    // Where a link goes, for the app to open: another site, a repository file, a document of the page.
+    // Where a link goes, for the app to open: a page on this host, another site, a repository file, a document of the page.
     link(href, newTab) {
       const go = this.opts.onLink || ((t) => { if (t.kind === "external") this.invoke("navigation.openExternal", { url: t.url }).catch(() => {}); });
-      if (/^https?:/i.test(href)) return go({ kind: "external", url: href, newTab: true });
+      if (/^https?:/i.test(href)) {
+        let u = null; try { u = new URL(href); } catch (e) { /* no address: external, as written */ }
+        // A page address (bb's and Unife Pages' routes both end in /page): the host says whether it is its own, by refusing it (R5.32a, before any confirmation);
+        // then this session's documents open in place, another session's page by pages.open (which takes no path). Until the kernel routes such links (unife-pages IN-0019).
+        const id = u && /\/page$/.test(u.pathname) && u.searchParams.get("session");
+        if (id) return this.invoke("navigation.openExternal", { url: href }).catch((x) => { if (x && x.code === "invalid_params") return this.session().then((own) => id === own ? go({ kind: "page", path: (u.searchParams.get("path") || "index.html") + u.hash, newTab: newTab }) : this.invoke("pages.open", { sessionId: id })); }).catch(() => {});
+        return go({ kind: "external", url: href, newTab: true });
+      }
       if (!local(href)) return;
       const to = join(dirOf(this.entry()).replace(/\/$/, ""), href);
       if (this.src.kind === "page") return go({ kind: "page", path: to, newTab: newTab });
