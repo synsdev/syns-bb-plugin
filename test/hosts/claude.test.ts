@@ -150,7 +150,7 @@ describe("Claude Code: the process against a daemon's control socket (R-X5)", ()
     expect(daemon.seen.deletes).toEqual(["/v1/contributors/syns"]);
   });
 
-  it("a scope runs the CLI in the placed folder, checked on this machine; a plain folder is bad_scope; a session with no folder is no_repo", async () => {
+  it("a scope runs the CLI in the placed folder, checked on this machine; a plain folder is an app's, run at the session's folder with it as scope (B-0103); a session with no folder is no_repo", async () => {
     const { checkout, synsPath, runs } = machine();
     daemon = fakeDaemon(join(dir, "control.sock"));
     await daemon.listen();
@@ -162,7 +162,9 @@ describe("Claude Code: the process against a daemon's control socket (R-X5)", ()
     // one check at the scope (D46 as amended, D83), whose run is the scoped syns.repo's answer
     expect(runs()).toEqual([`${realpathSync(join(checkout, "clients/vela/crm"))} repo --within=${checkout} --json`]);
 
-    expect(await post(served.endpoint, { method: "syns.repo", params: {}, caller: { sessionId: SESSION, scope: "notes", workspace: { id: "ws", path: checkout, machine: null } }, requestId: "r3" })).toMatchObject({ body: { ok: false, error: { reason: "bad_scope" } } });
+    // a plain folder: the host half refuses it as a placed folder, and the call runs at the session's folder with it as scope
+    expect(await post(served.endpoint, { method: "syns.repo", params: {}, caller: { sessionId: SESSION, scope: "notes", workspace: { id: "ws", path: checkout, machine: null } }, requestId: "r3" })).toMatchObject({ status: 200, body: { ok: true } });
+    expect(runs().slice(1)).toEqual([`${realpathSync(checkout)} repo --json`]);
     expect(await post(served.endpoint, { method: "syns.repo", params: {}, caller: { sessionId: SESSION, scope: "../elsewhere", workspace: { id: "ws", path: checkout, machine: null } }, requestId: "r4" })).toMatchObject({ body: { ok: false, error: { reason: "bad_scope" } } });
     expect(await post(served.endpoint, { method: "syns.repo", params: {}, caller: { sessionId: "bbbbbbbb-0000-0000-0000-000000000000", scope: null, workspace: null }, requestId: "r5" })).toMatchObject({ body: { ok: false, error: { reason: "no_repo" } } });
     expect(await post(served.endpoint, { method: "syns.repo", params: {}, caller: { sessionId: null, scope: null, workspace: null }, requestId: "r6" })).toMatchObject({ body: { ok: false, error: { reason: "no_repo" } } });

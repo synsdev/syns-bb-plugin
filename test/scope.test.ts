@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { rec } from "./fake-runner.js";
+import { rec, spawnFailed } from "./fake-runner.js";
 import { failureOf, harness, resultOf } from "./harness.js";
 
 /** A call from a document that set a scope (D43). The host's exact field may still change. */
@@ -150,10 +150,40 @@ describe("a document's scope: one check run (D46 as amended, D83; rows 13–19)"
       expect(h.runner.calls, scope).toHaveLength(0);
     }
   });
-  it("syns.place runs at the session's folder even from a scoped document, with no scope check", async () => {
-    const h = harness({ place: rec("place.ok"), status: rec("status.clean") });
+  it("syns.place from a placed folder's document runs at the session's folder, after the scope's one check", async () => {
+    const h = harness({ repo: repoBy({ [SCOPE]: PLACED }), place: rec("place.ok"), status: rec("status.clean") });
     expect((await scoped(h, "clients/vela/q3-board", "syns.place", { template: "acme/whiteboard-template", path: "clients/acme/roadmap" })).ok).toBe(true);
-    expect(h.runner.calls.every((call) => call.cwd === "/work/checkout")).toBe(true);
+    expect(h.runner.calls[0]).toMatchObject({ cwd: SCOPE, args: ["repo", "--within=/work/checkout", "--json"] });
+    expect(h.runner.calls.slice(1).every((call) => call.cwd === "/work/checkout")).toBe(true);
+  });
+});
+
+describe("an app's folder as the document's scope: Thread Pages' frame of an app (B-0103, D85)", () => {
+  /** The host half finds no placed folder at the scope (no identity file of its own): the check never starts the CLI. */
+  const app = (more: NonNullable<Parameters<typeof harness>[0]> = {}) => {
+    return harness({ repo: (request) => (request.args.some((arg) => arg.startsWith("--within=")) ? spawnFailed("scope_outside") : rec("repo.ok")), ...more });
+  };
+  it("is the call's scope parameter: the CLI runs at the session's folder with the folder as scope, its paths counted from it", async () => {
+    const h = app({ ls: rec("ls.ok"), cat: rec("cat.ok") });
+    expect((await scoped(h, "apps/board", "syns.ls", {})).ok).toBe(true);
+    expect(h.runner.calls.map((call) => [call.cwd, call.scope, call.args[0]])).toEqual([["/work/checkout/apps/board", undefined, "repo"], ["/work/checkout", "apps/board", "ls"]]);
+    await scoped(h, "apps/board", "syns.read", { path: "notes/a.md" });
+    expect(h.runner.calls.at(-1)).toMatchObject({ cwd: "/work/checkout", scope: "apps/board", args: expect.arrayContaining(["apps/board/notes/a.md"]) });
+  });
+  it("reads ../ beyond the folder; a write's ../ and a whole-repository method are bad_scope, running nothing more (A88)", async () => {
+    const h = app({ cat: rec("cat.ok"), place: rec("place.ok"), status: rec("status.clean") });
+    await scoped(h, "apps/board", "syns.read", { path: "../shared/theme.css" });
+    expect(h.runner.calls.at(-1)).toMatchObject({ scope: "apps/board", args: expect.arrayContaining(["apps/shared/theme.css"]) });
+    const runs = h.runner.calls.length;
+    expect(failureOf(await scoped(h, "apps/board", "syns.write", { path: "../x.md", text: "a", base: "7ca9bc78ba047d9e7798b8d2733c254e24cfc837" }))).toMatchObject({ reason: "bad_scope" });
+    for (const method of ["syns.place", "syns.share", "syns.enableChecks"]) expect(failureOf(await scoped(h, "apps/board", method, { template: "acme/whiteboard-template", path: "a", name: "a" })), method).toMatchObject({ reason: "bad_scope" });
+    expect(h.runner.calls).toHaveLength(runs);
+  });
+  it("is checked once a minute, as a placed folder is; a scope parameter it carries counts from it", async () => {
+    const h = app({ ls: rec("ls.ok") });
+    await scoped(h, "apps/board", "syns.ls", {});
+    await h.invoke({ method: "syns.ls", params: { scope: "lists" }, caller: { sessionId: "thr_page", scope: "apps/board" }, requestId: "r" });
+    expect(h.runner.calls.map((call) => [call.args[0], call.scope])).toEqual([["repo", undefined], ["ls", "apps/board"], ["ls", "apps/board/lists"]]);
   });
 });
 
