@@ -109,6 +109,17 @@ describe("the page host's app calls (S1.25, D85)", () => {
     for (const gone of ["isn't available here", "const SYNS", "const PASS", "const OPEN"]) expect(PAGEHOST, gone).not.toContain(gone);
   });
 
+  it("follows an app's ../ links as far as the session's folder; one climbing above it loads nothing (S1.25, Q-0025, B-0083)", () => {
+    const helper = /const join = function \(dir, ref\) \{[\s\S]*?\n  \};/.exec(PAGEHOST)![0];
+    const join = new Function(helper + " return join;")() as (dir: string, ref: string) => string;
+    expect(join("tools/app", "style.css")).toBe("tools/app/style.css");
+    expect(join("tools/app", "../shared/theme.css")).toBe("tools/shared/theme.css");
+    expect(join("tools/app", "../../notes/plan.css?v=2")).toBe("notes/plan.css");
+    expect(join("tools/app", "../../../x.css")).toBe("");
+    expect(join("tools/app", "../../../../private/secret.txt")).toBe("");
+    expect(PAGEHOST).toContain("await this.readAll(want.filter(Boolean), version)");
+  });
+
   it("keeps the frame's drafts and scroll under a key no app's storage.set can name, \"state\" included", () => {
     const keys = PAGEHOST.slice(PAGEHOST.indexOf("const hash = function"), PAGEHOST.indexOf("// ---"));
     const stateKey = /this\.stateKey = ([^;]+);/.exec(PAGEHOST)![1];

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { buildDeclaration } from "../src/declaration.js";
 import { METHODS } from "../src/methods/index.js";
+import { validate, type Schema } from "../src/method.js";
 import { scopeInside } from "../src/scope.js";
 import { ok, rec, spawnFailed } from "./fake-runner.js";
 import { HEAD, OLD, SAMPLES, failureOf, harness, resultOf } from "./harness.js";
@@ -111,8 +112,8 @@ describe("the scope parameter in the server half (S1.25, D85)", () => {
     expect(resultOf(await h.call("syns.ls", { scope: "" })).entries).toHaveLength(2);
     expect(h.runner.calls[0]!.scope).toBeUndefined();
   });
-  it("a path or pattern that leaves the folder is bad_scope, and runs nothing; without a scope it is invalid_params as before", async () => {
-    for (const [method, params] of [["syns.write", { path: "../x", text: "a", base: HEAD }], ["syns.write", { path: "/x", text: "a", base: HEAD }], ["syns.commit", { base: HEAD, deletions: ["a/../../x"] }], ["syns.glob", { pattern: "../*.md" }], ["syns.readMany", { paths: ["ok.md", "../x"] }]] as const) {
+  it("a write's path that leaves the folder, or a read's that leaves the session's, is bad_scope, and runs nothing; without a scope it is invalid_params as before", async () => {
+    for (const [method, params] of [["syns.write", { path: "../x", text: "a", base: HEAD }], ["syns.write", { path: "/x", text: "a", base: HEAD }], ["syns.commit", { base: HEAD, deletions: ["a/../../x"] }], ["syns.glob", { pattern: "../../../*.md" }], ["syns.readMany", { paths: ["ok.md", "../../../x"] }]] as const) {
       const h = harness();
       expect(failureOf(await h.call(method, { ...params, scope: APP })), method).toMatchObject({ code: "invalid_params", reason: "bad_scope" });
       expect(h.runner.calls, method).toHaveLength(0);
@@ -140,6 +141,128 @@ describe("the scope parameter in the server half (S1.25, D85)", () => {
   it("a path the CLI answers outside the folder in a single-file answer is never passed on", async () => {
     const h = harness({ cat: ok({ commitSha: HEAD, version: 6, path: "secret.md", content: "x", totalLines: 1, size: 1, sha: "s" }) });
     expect(failureOf(await h.call("syns.read", { path: "a.md", scope: APP })).code).toBe("handler_error");
+  });
+});
+
+describe("a read's ../ reaches the rest of the session's folder; a write's stays in the folder (S1.25, Q-0025, B-0083)", () => {
+  const APPS = "tools/app";
+  it("syns.read of ../../notes/plan.md reads notes/plan.md at the session's folder, and answers the path as asked", async () => {
+    const h = harness({ read: ok({ commitSha: HEAD, version: 6, path: "notes/plan.md", content: "plan", offset: 1, limit: 1, totalLines: 1, size: 4, sha: "p1" }) });
+    const result = resultOf(await h.call("syns.read", { path: "../../notes/plan.md", scope: APPS }));
+    expect(h.runner.calls.map((call) => [call.cwd, call.scope, call.args.at(-1)])).toEqual([["/work/checkout", APPS, "notes/plan.md"]]);
+    expect(result).toMatchObject({ path: "../../notes/plan.md", text: "plan" });
+  });
+  it("syns.ls of .. lists the app's neighbours counted from the folder, none dropped", async () => {
+    const h = harness({ ls: ok({ commitSha: HEAD, version: 6, truncated: false, entries: [{ path: "tools/app", type: "dir", size: null, sha: null }, { path: "tools/other", type: "dir", size: null, sha: null }, { path: "tools/README.md", type: "file", size: 1, sha: "r1" }] }) });
+    const result = resultOf(await h.call("syns.ls", { path: "..", scope: APPS }));
+    expect(args(h)).toEqual(["ls --json -- tools"]);
+    expect((result.entries as { path: string }[]).map((entry) => entry.path)).toEqual(["../app", "../other", "../README.md"]);
+  });
+  it("syns.ls of ../.. lists the session's folder itself, every path counted with ../../", async () => {
+    const h = harness({ ls: ok({ commitSha: HEAD, version: 6, truncated: false, entries: [{ path: "README.md", type: "file", size: 1, sha: "r1" }, { path: "tools", type: "dir", size: null, sha: null }] }) });
+    const result = resultOf(await h.call("syns.ls", { path: "../..", scope: APPS }));
+    expect(args(h)).toEqual(["ls --json"]);
+    expect((result.entries as { path: string }[]).map((entry) => entry.path)).toEqual(["../../README.md", "../../tools"]);
+  });
+  it("syns.readMany mixes the folder's own files and ../ ones, each answered as asked", async () => {
+    const h = harness({ cat: ok({ commitSha: HEAD, files: [{ path: `${APPS}/a.md`, content: "a", size: 1, sha: "a1" }, { path: "tools/shared/theme.css", content: "b", size: 1, sha: "b1" }] }) });
+    const result = resultOf(await h.call("syns.readMany", { paths: ["a.md", "../shared/theme.css"], scope: APPS }));
+    expect(h.runner.calls[0]!.stdin).toBe(`${APPS}/a.md\ntools/shared/theme.css\n`);
+    expect(result).toMatchObject({ files: [{ path: "a.md", text: "a" }, { path: "../shared/theme.css", text: "b" }] });
+  });
+  it("syns.readBinary of ../img.png reads tools/img.png", async () => {
+    const h = harness({ cat: ok({ commitSha: HEAD, version: 6, path: "tools/img.png", contentBase64: "iVBORw0KGgo=", size: 8, sha: "i1", mediaType: "image/png" }) });
+    const result = resultOf(await h.call("syns.readBinary", { path: "../img.png", scope: APPS }));
+    expect(h.runner.calls[0]!.args.at(-1)).toBe("tools/img.png");
+    expect(result.path).toBe("../img.png");
+  });
+  it("syns.glob of ../*.md searches the folder it climbs to", async () => {
+    const h = harness({ glob: ok({ commitSha: HEAD, version: 6, truncated: false, matches: [{ path: "tools/a.md", size: 1, sha: "a1" }] }) });
+    expect(resultOf(await h.call("syns.glob", { pattern: "../*.md", scope: APPS })).matches).toEqual([{ path: "../a.md", size: 1, blob: "a1" }]);
+    expect(args(h)).toEqual(["glob --path=tools --json -- tools/*.md"]);
+  });
+  it("syns.grep with a ../../ glob searches the whole session's folder and answers ../../ paths", async () => {
+    const h = harness({ grep: ok({ commitSha: HEAD, version: 6, output: "files", truncated: false, files: ["notes/a.md"], skipped: [] }) });
+    const result = resultOf(await h.call("syns.grep", { pattern: "x", glob: ["../../notes/**"], output: "files", scope: APPS }));
+    expect(args(h)[0]).not.toContain("--path=");
+    expect(args(h)[0]).toContain("--glob=notes/**");
+    expect(JSON.stringify(result)).toContain("../../notes/a.md");
+  });
+  it("syns.history of a ../ file asks for it at the session's folder and answers its paths counted from the folder", async () => {
+    const h = harness({ history: rec("history.file.ok") });
+    const result = resultOf(await h.call("syns.history", { path: "../notes/n01.md", scope: "tools" }));
+    expect(args(h)).toEqual(["history --file=notes/n01.md --limit=20 --json"]);
+    expect((result.entries as unknown[]).length).toBeGreaterThan(0);
+    expect(JSON.stringify(result)).toContain("../notes/n01.md");
+  });
+  it("the declaration lets a read's ../ reach the plugin, as the host checks a call against it first; a write's .. stays refused there (VERIFY F1)", () => {
+    const declared = new Map(buildDeclaration(METHODS, { agentInstructions: true }).methods.map((m) => [m.name, m.params as Schema]));
+    for (const [method, params] of [
+      ["syns.read", { path: "../../notes/plan.md" }], ["syns.read", { path: "../../README.md" }], ["syns.ls", { path: ".." }],
+      ["syns.ls", { path: "../.." }], ["syns.readMany", { paths: ["a.md", "../shared/b.md"] }], ["syns.readBinary", { path: "../img.png" }],
+      ["syns.history", { path: "../notes/plan.md" }], ["syns.history", { path: "../.." }], ["syns.glob", { pattern: "*.md", path: "../notes" }],
+      ["syns.grep", { pattern: "x", path: "../.." }], ["syns.read", { path: "a.md" }],
+    ] as const) expect(validate(declared.get(method)!, { ...params, scope: APPS }), `${method} ${JSON.stringify(params)}`).toBeNull();
+    for (const [method, params] of [
+      ["syns.write", { path: "../x.md", text: "", base: HEAD }], ["syns.rm", { path: "..", base: HEAD }], ["syns.move", { from: "a.md", to: "../a.md", base: HEAD }],
+      ["syns.read", { path: "a/../b.md" }], ["syns.read", { path: "../a/../b.md" }], ["syns.read", { path: "../" }], ["syns.read", { path: "..//x" }],
+      ["syns.read", { path: "../-x" }], ["syns.read", { path: "/x" }], ["syns.read", { path: "./x" }],
+    ] as const) expect(validate(declared.get(method)!, { ...params, scope: APPS }), `${method} ${JSON.stringify(params)}`).not.toBeNull();
+  });
+  it("a ../ that climbs above the session's folder, a .. after a path's start, and a leading / are bad_scope and run nothing", async () => {
+    for (const [method, params] of [
+      ["syns.read", { path: "../../../x.md" }],
+      ["syns.ls", { path: "../../.." }],
+      ["syns.read", { path: "../a/../b.md" }],
+      ["syns.read", { path: "a/../b.md" }],
+      ["syns.read", { path: "/x.md" }],
+      ["syns.glob", { pattern: "../../../*.md" }],
+      ["syns.readMany", { paths: ["ok.md", "../../../x"] }],
+      ["syns.grep", { pattern: "x", glob: ["../a/../**"] }],
+    ] as const) {
+      const h = harness();
+      expect(failureOf(await h.call(method, { ...params, scope: APPS })), JSON.stringify(params)).toMatchObject({ code: "invalid_params", reason: "bad_scope" });
+      expect(h.runner.calls, JSON.stringify(params)).toHaveLength(0);
+    }
+  });
+  it("syns.history of .. up to the session's folder is the session's whole history, none dropped", async () => {
+    const h = harness({ history: rec("history.ok") });
+    const result = resultOf(await h.call("syns.history", { path: "..", scope: "notes" }));
+    expect(args(h)).toEqual(["history --limit=20 --json"]);
+    expect(JSON.stringify(result)).toContain("by hand");
+  });
+  it("a read's ../ that resolves to a leading / is bad_scope; one landing back in the folder is the same path twice", async () => {
+    const glob = harness();
+    expect(failureOf(await glob.call("syns.glob", { pattern: "../..//etc/*", scope: APPS })).reason).toBe("bad_scope");
+    expect(glob.runner.calls).toHaveLength(0);
+    const many = harness();
+    expect(failureOf(await many.call("syns.readMany", { paths: ["a.md", "../app/a.md"], scope: APPS })).message).toContain("distinct");
+    expect(many.runner.calls).toHaveLength(0);
+  });
+  it("every write with a .. path is bad_scope and runs nothing (D91 point 3)", async () => {
+    for (const [method, params] of [
+      ["syns.write", { path: "../x.md", text: "a", base: HEAD }],
+      ["syns.writeBinary", { path: "../a.png", base64: "iVBORw0KGgo=", base: HEAD }],
+      ["syns.edit", { path: "../x.md", old: "a", new: "b", base: HEAD }],
+      ["syns.rm", { path: "../x.md", base: HEAD }],
+      ["syns.move", { from: "a.md", to: "../b.md", base: HEAD }],
+      ["syns.move", { from: "../a.md", to: "b.md", base: HEAD }],
+      ["syns.copy", { from: "../a.md", to: "b.md", base: HEAD }],
+      ["syns.commit", { base: HEAD, files: [{ path: "../a.md", text: "a" }] }],
+      ["syns.commit", { base: HEAD, deletions: ["../old.md"] }],
+      ["syns.revert", { path: "../x.md", to: OLD, base: HEAD }],
+    ] as const) {
+      const h = harness();
+      expect(failureOf(await h.call(method, { ...params, scope: APPS })), `${method} ${JSON.stringify(params)}`).toMatchObject({ code: "invalid_params", reason: "bad_scope" });
+      expect(h.runner.calls, method).toHaveLength(0);
+    }
+  });
+  it("a call naming no ../ answers as before: syns.ls {} and syns.history {} drop what is outside", async () => {
+    const ls = harness({ ls: ok({ commitSha: HEAD, version: 6, truncated: false, entries: [{ path: `${APPS}/index.html`, type: "file", size: 9, sha: "a1" }, { path: "tools/other/x.md", type: "file", size: 1, sha: "b2" }] }) });
+    expect(JSON.stringify(resultOf(await ls.call("syns.ls", { scope: APPS })))).toBe(JSON.stringify({ version: HEAD, number: 6, truncated: false, total: 2, nextOffset: null, entries: [{ path: "index.html", type: "file", size: 9, blob: "a1" }] }));
+    const history = harness({ history: rec("history.ok") });
+    const entries = resultOf(await history.call("syns.history", { scope: "notes" })).entries as { paths: string[] }[];
+    expect(entries.map((entry) => entry.paths)).toEqual([["n29.md"]]);
   });
 });
 

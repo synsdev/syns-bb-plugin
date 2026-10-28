@@ -2,8 +2,8 @@
 
 ## 0.10.2
 
-The page script, the guide's *Apps in the workspace* and the scope rule of `syns.explore` and `syns.users` changed;
-no result, reason or fragment changed.
+The page script, the guide's *Apps in the workspace*, the scope rule of `syns.explore` and `syns.users` and what a
+scoped read may name (`../`) changed; no reason or fragment changed.
 
 - **The agent's page inside the workspace.** When the workspace shows the agent's own page, every call the page makes
   reaches the host as it does when the page is shown as written: `session.usage`, `sessions.*`, `pages.answer`, the
@@ -16,6 +16,13 @@ no result, reason or fragment changed.
   `pages.answer`, voice, `workspaces.create` and any method another plugin adds no longer answer `unavailable`. An
   app's `syns.*` still count from its folder; of the methods acting on the whole repository it may call
   `syns.explore` and `syns.users`, which now take a scope, checked and otherwise unused, and the others answer `bad_scope`.
+- **An app reads outside its folder with `../`** (Syns B-0083, D92). Under a call's `scope`, a read's path or pattern
+  may begin with `../`: `syns.read`, `readMany`, `readBinary`, `ls`, `glob`, `grep` and `history` resolve it against
+  the folder, and their answer counts paths from the folder with `../` (`syns.ls { path: ".." }` lists `../other`),
+  none dropped. A `../` above the session's folder, a `..` after a path's start and a leading `/` are `bad_scope`;
+  every write's `..` stays `bad_scope`. A call naming no `../` answers as before. The page host loads nothing for an
+  app's link climbing above the session's folder, where it loaded the file at the top. The guide's *Apps in the
+  workspace* says so.
 
 ## 0.10.1
 

@@ -4,7 +4,7 @@ import { path as pathSchema, pick, provenance, validate, type Context, type Meth
 import { METHODS } from "./methods/index.js";
 import { createHeld, type Held } from "./held.js";
 import { buildArgs, type Where } from "./cli.js";
-import { refuseEscape, scopeParams, scopeResult } from "./scoped.js";
+import { scopeParams, scopeResult } from "./scoped.js";
 
 /** The session's folder as the host passes it (unife-pages 07 R5.84b, U44): an absolute path on `machine`, null where the host has one. */
 export interface Workspace {
@@ -92,10 +92,12 @@ export function createDispatch({ table = METHODS, cli, log, held = createHeld(),
   }
 
   async function run(method: Method, params: Record<string, unknown>, folder: string | null, sessionId: string | null, scope: string | null, workspace: unknown, deadline: number, signal: AbortSignal): Promise<unknown> {
-    if (folder !== null) refuseEscape(method.params, params);
-    const problem = validate(method.params, params);
+    // Under a call's scope a read's `../` is resolved before the schema sees it, and an escape is bad_scope first (S1.25).
+    const scoped = folder === null ? null : scopeParams(method, params, folder);
+    const problem = validate(method.params, scoped?.checked ?? params);
     if (problem) throw new SynsError("invalid_params", { message: `Invalid parameters for ${method.name} at ${problem}` });
-    method.check?.(params);
+    // What a schema cannot say is checked on the paths the CLI is given: `../app/a.md` is `a.md` (B-0083).
+    method.check?.(scoped?.given ?? params);
 
     // The session and its folder come from the host and from nowhere else. No session, no folder. S2.1, S2.2; U44
     if (sessionId === null) throw fail("no_repo");
@@ -111,7 +113,7 @@ export function createDispatch({ table = METHODS, cli, log, held = createHeld(),
     const checked = where !== session ? await sameRepository(session, where, scope!, deadline, signal) : undefined;
     // A call's scope parameter: every run carries it, and the host half refuses to start one outside (S1.25, S2.31, D85).
     const at: Where = folder === null ? where : { ...where, scope: folder };
-    const given = folder === null ? params : scopeParams(method, params, folder);
+    const given = scoped?.given ?? params;
 
     const declared = method.reasons ?? [];
     let repoCheck: Promise<RunResult> | undefined = checked && Promise.resolve(checked);
@@ -148,9 +150,9 @@ export function createDispatch({ table = METHODS, cli, log, held = createHeld(),
         if (dropped.length > 0) log.warn(`${method.name} session=${sessionId} dropped from the CLI's output: ${dropped.join(", ").slice(0, 500)}`);
       }
     }
-    if (folder !== null) {
-      if (method.scoped) result = method.scoped(result, (path) => typeof path === "string" && path.startsWith(`${folder}/`));
-      result = scopeResult(method, result, folder);
+    if (scoped) {
+      if (method.scoped) result = method.scoped(result, (path) => scoped.reaches || (typeof path === "string" && path.startsWith(`${folder}/`)));
+      result = scopeResult(method, result, folder!, scoped.reaches);
     }
     // Never a result with a hole in it. S3.7
     const hole = validate(method.result, result);

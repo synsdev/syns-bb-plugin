@@ -167,8 +167,9 @@ export const PAGEHOST = String.raw`/*
   const local = function (ref) { return !!ref && !/^([a-z][a-z0-9+.-]*:|\/\/|#|\/)/i.test(ref); };
   const join = function (dir, ref) {
     const out = [];
-    (dir + "/" + ref.split(/[?#]/)[0]).split("/").forEach(function (s) { if (s === "..") out.pop(); else if (s && s !== ".") out.push(s); });
-    return out.join("/");
+    let above = false; // a ../ past the session's folder names nothing (Q-0025)
+    (dir + "/" + ref.split(/[?#]/)[0]).split("/").forEach(function (s) { if (s === "..") above = above || !out.pop(); else if (s && s !== ".") out.push(s); });
+    return above ? "" : out.join("/");
   };
 
   const live = new Set();
@@ -239,7 +240,7 @@ export const PAGEHOST = String.raw`/*
         const refs = this.src.kind === "page" ? [] : Array.from(doc.querySelectorAll('link[rel="stylesheet"][href], script[src]'))
           .filter((el) => local(el.getAttribute("href") || el.getAttribute("src")));
         const want = refs.map((el) => join(dir, el.getAttribute("href") || el.getAttribute("src")));
-        const got = await this.readAll(want, version);
+        const got = await this.readAll(want.filter(Boolean), version);
         refs.forEach((el, i) => {
           const t = got[want[i]] || "";
           if (el.tagName === "LINK") { const s = doc.createElement("style"); s.textContent = t; el.replaceWith(s); }

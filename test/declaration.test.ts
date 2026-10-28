@@ -243,7 +243,7 @@ describe("what agents are told", () => {
     expect(guide).toContain("## Apps in the workspace");
     expect(guide).toContain("## Loading files");
     expect(guide).not.toContain("Loading a wiki");
-    for (const word of ["a folder holding an `index.html`", "CSS and JS beside it, named relatively", "sandboxed frame", "`invoke`, `watch`, `scope`", "It may call what a Thread Page may, confirmed or granted as there", "`syns.*` but `syns.place` and those of *Sharing and people* other than `syns.users` (`bad_scope`)", "`storage.*` is its own", "paths count from its folder; nothing outside it is reachable", "unless the app's script handles the submit", "keeping typed text and scroll; its own saves don't."]) expect(guide, word).toContain(word);
+    for (const word of ["a folder holding an `index.html`", "CSS and JS beside it, named relatively", "sandboxed frame", "`invoke`, `watch`, `scope`", "It may call what a Thread Page may, confirmed or granted as there", "`syns.*` but `syns.place` and those of *Sharing and people* other than `syns.users` (`bad_scope`)", "`storage.*` is its own", "paths count from its folder; `../` reaches the rest of the session's folder for reading (its CSS and JS links and `syns.*` reads), and its writes stay inside its folder.", "unless the app's script handles the submit", "keeping typed text and scroll; its own saves don't."]) expect(guide, word).toContain(word);
   });
 
   it("of the methods acting on the whole repository, an app's scoped call reaches only syns.explore and syns.users: the others are unscoped, refusing any scope (S4.9, D85, D93)", () => {

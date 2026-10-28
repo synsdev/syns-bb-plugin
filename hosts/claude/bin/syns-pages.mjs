@@ -445,14 +445,31 @@ const scope = {
 	type: "string",
 	maxLength: 1024
 };
-/** A method's params as declared to the host: its own and `scope`. */
-const declaredParams = (method) => ({
-	...method.params,
-	properties: {
-		...method.params.properties,
-		scope
-	}
-});
+/**
+* A read's path as declared to the host, which checks a call against it before the plugin sees it: a path, or one
+* beginning with `../` segments (S1.25, B-0083). The dispatch resolves those against the call's scope and checks the
+* result as a path (S2.9); without a scope it is checked as given.
+*/
+const readPath = {
+	...path,
+	pattern: "^(?:\\.\\.(?:/\\.\\.)*$|(?:\\.\\./)*" + path.pattern.slice(1) + ")"
+};
+const reaching = (schema) => schema === path ? readPath : schema.items === path ? {
+	...schema,
+	items: readPath
+} : schema;
+/** A method's params as declared to the host: its own, a read's paths as `readPath`, and `scope`. */
+const declaredParams = (method) => {
+	const own = method.params.properties;
+	const properties = method.effect === "read" ? Object.fromEntries(Object.entries(own).map(([name, schema]) => [name, reaching(schema)])) : own;
+	return {
+		...method.params,
+		properties: {
+			...properties,
+			scope
+		}
+	};
+};
 /** A commit SHA, opaque to the page (D12). */
 const version = {
 	type: "string",
@@ -596,7 +613,7 @@ A folder placed in a repository (a tool) is all the page sees: every \`path\` is
 
 ## Apps in the workspace
 
-An app is a folder holding an \`index.html\`, its CSS and JS beside it, named relatively. The workspace runs it in a sandboxed frame with its own \`threadPage\`: \`invoke\`, \`watch\`, \`scope\`. It may call what a Thread Page may, confirmed or granted as there, and \`syns.*\` but \`syns.place\` and those of *Sharing and people* other than \`syns.users\` (\`bad_scope\`); \`storage.*\` is its own. Its paths count from its folder; nothing outside it is reachable. A \`<form>\` messages the agent unless the app's script handles the submit. When someone else changes a file in its folder, the app reloads, keeping typed text and scroll; its own saves don't.
+An app is a folder holding an \`index.html\`, its CSS and JS beside it, named relatively. The workspace runs it in a sandboxed frame with its own \`threadPage\`: \`invoke\`, \`watch\`, \`scope\`. It may call what a Thread Page may, confirmed or granted as there, and \`syns.*\` but \`syns.place\` and those of *Sharing and people* other than \`syns.users\` (\`bad_scope\`); \`storage.*\` is its own. Its paths count from its folder; \`../\` reaches the rest of the session's folder for reading (its CSS and JS links and \`syns.*\` reads), and its writes stay inside its folder. A \`<form>\` messages the agent unless the app's script handles the submit. When someone else changes a file in its folder, the app reloads, keeping typed text and scroll; its own saves don't.
 
 ## Versions
 
@@ -2991,51 +3008,76 @@ const METHODS = [
 //#endregion
 //#region src/scoped.ts
 /**
-* A call's scope in the server half (S1.25, D85): the method's paths count from that folder of the repository, and
-* what it answers is cut back to count from it, anything outside dropped. Which values are paths is read from the
-* schemas alone: `path` and `pathGlob` in params, `repoPath` in results. The host half checks the folder (S2.31).
+* A read's path or pattern may begin with `../` segments, resolved against the scope; one climbing above the session's
+* folder is `bad_scope`. A write's `..`, a `..` after a path's start, a leading `/`: `bad_scope`, before the params are
+* checked (S1.25, D91 point 3 as amended by Q-0025).
 */
-/** A write or read naming a path that leaves the scope (a `..` segment, a leading `/`) is outside it: `bad_scope`, before the params are checked. */
-function refuseEscape(schema, value) {
-	if (schema === path || schema === pathGlob) {
-		if (typeof value === "string" && (value.startsWith("/") || value.split("/").includes(".."))) throw fail("bad_scope");
-	} else if (Array.isArray(value)) {
-		if (schema.items) for (const item of value) refuseEscape(schema.items, item);
-	} else if (typeof value === "object" && value !== null && schema.properties) {
-		const properties = schema.properties;
-		for (const [key, child] of Object.entries(value)) if (Object.hasOwn(properties, key)) refuseEscape(properties[key], child);
-	}
-}
-/** The params the method runs with: every `path` and `pathGlob` value under the scope; an absent root `path` is the scope. */
 function scopeParams(method, params, scope) {
-	const given = under(method.params, params, scope);
-	if (method.rootPath && given.path === void 0) given.path = scope;
-	return given;
+	const folders = scope.split("/");
+	let top = folders.length;
+	const resolve = (value) => {
+		const segments = value.split("/");
+		let up = 0;
+		while (segments[up] === "..") up++;
+		if (value.startsWith("/") || segments.slice(up).includes("..") || up > 0 && method.effect !== "read" || up > folders.length) throw fail("bad_scope");
+		if (up === 0) return {
+			checked: value,
+			given: `${scope}/${value}`
+		};
+		top = Math.min(top, folders.length - up);
+		const resolved = [...folders.slice(0, folders.length - up), ...segments.slice(up)].join("/");
+		if (resolved.startsWith("/")) throw fail("bad_scope");
+		return {
+			checked: resolved,
+			given: resolved
+		};
+	};
+	const checked = under(method.params, params, (value) => resolve(value).checked);
+	const given = under(method.params, params, (value) => resolve(value).given);
+	if (given.path === "" && !method.params.required?.includes("path")) {
+		delete checked.path;
+		delete given.path;
+	} else if (method.rootPath && params.path === void 0 && top > 0) given.path = folders.slice(0, top).join("/");
+	return {
+		checked,
+		given,
+		reaches: top < folders.length
+	};
 }
-function under(schema, value, scope) {
-	if (schema === path || schema === pathGlob) return typeof value === "string" ? `${scope}/${value}` : value;
-	if (Array.isArray(value)) return schema.items ? value.map((item) => under(schema.items, item, scope)) : value;
+function under(schema, value, one) {
+	if (schema === path || schema === pathGlob) return typeof value === "string" ? one(value) : value;
+	if (Array.isArray(value)) return schema.items ? value.map((item) => under(schema.items, item, one)) : value;
 	if (typeof value === "object" && value !== null && schema.properties) {
 		const properties = schema.properties;
-		return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, Object.hasOwn(properties, key) ? under(properties[key], child, scope) : child]));
+		return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, Object.hasOwn(properties, key) ? under(properties[key], child, one) : child]));
 	}
 	return value;
 }
 const OUTSIDE = Symbol("outside the scope");
-/** The result the page gets: each repository path counted from the scope; one outside dropped, with the list item holding it. */
-function scopeResult(method, result, scope) {
-	const kept = within(method.result, result, `${scope}/`, false);
+/** The result the page gets: each repository path counted from the scope; one outside dropped, with the list item holding it, unless the call reached out with `../`. */
+function scopeResult(method, result, scope, reaches = false) {
+	const prefix = `${scope}/`;
+	const folders = scope.split("/");
+	const climb = (value) => {
+		for (let k = folders.length - 1; k > 0; k--) {
+			const at = `${folders.slice(0, k).join("/")}/`;
+			if (value.startsWith(at)) return `${"../".repeat(folders.length - k)}${value.slice(at.length)}`;
+		}
+		return `${"../".repeat(folders.length)}${value}`;
+	};
+	const count = (value) => value.startsWith(prefix) ? value.slice(prefix.length) : reaches ? climb(value) : OUTSIDE;
+	const kept = within(method.result, result, count, false);
 	if (kept === OUTSIDE) throw new SynsError("handler_error", { log: `${method.name} answered a path outside the call's scope` });
 	return kept;
 }
-function within(schema, value, prefix, item) {
-	if (schema === repoPath) return typeof value !== "string" ? value : value.startsWith(prefix) ? value.slice(prefix.length) : OUTSIDE;
-	if (Array.isArray(value)) return schema.items ? value.map((one) => within(schema.items, one, prefix, true)).filter((one) => one !== OUTSIDE) : value;
+function within(schema, value, count, item) {
+	if (schema === repoPath) return typeof value !== "string" ? value : count(value);
+	if (Array.isArray(value)) return schema.items ? value.map((one) => within(schema.items, one, count, true)).filter((one) => one !== OUTSIDE) : value;
 	if (typeof value === "object" && value !== null && schema.properties) {
 		const properties = schema.properties;
 		const kept = {};
 		for (const [key, child] of Object.entries(value)) {
-			const one = Object.hasOwn(properties, key) ? within(properties[key], child, prefix, false) : child;
+			const one = Object.hasOwn(properties, key) ? within(properties[key], child, count, false) : child;
 			if (one === OUTSIDE) return OUTSIDE;
 			if (item && properties[key]?.items === repoPath && Array.isArray(one) && one.length === 0) return OUTSIDE;
 			kept[key] = one;
@@ -3087,10 +3129,10 @@ function createDispatch({ table = METHODS, cli, log, held = createHeld(), now = 
 		return ran;
 	}
 	async function run(method, params, folder, sessionId, scope, workspace, deadline, signal) {
-		if (folder !== null) refuseEscape(method.params, params);
-		const problem = validate(method.params, params);
+		const scoped = folder === null ? null : scopeParams(method, params, folder);
+		const problem = validate(method.params, scoped?.checked ?? params);
 		if (problem) throw new SynsError("invalid_params", { message: `Invalid parameters for ${method.name} at ${problem}` });
-		method.check?.(params);
+		method.check?.(scoped?.given ?? params);
 		if (sessionId === null) throw fail("no_repo");
 		const session = sessionWhere(workspace);
 		if (!session) throw fail("no_repo");
@@ -3104,7 +3146,7 @@ function createDispatch({ table = METHODS, cli, log, held = createHeld(), now = 
 			...where,
 			scope: folder
 		};
-		const given = folder === null ? params : scopeParams(method, params, folder);
+		const given = scoped?.given ?? params;
 		const declared = method.reasons ?? [];
 		let repoCheck = checked && Promise.resolve(checked);
 		let whoamiCheck;
@@ -3143,9 +3185,9 @@ function createDispatch({ table = METHODS, cli, log, held = createHeld(), now = 
 				if (dropped.length > 0) log.warn(`${method.name} session=${sessionId} dropped from the CLI's output: ${dropped.join(", ").slice(0, 500)}`);
 			}
 		}
-		if (folder !== null) {
-			if (method.scoped) result = method.scoped(result, (path) => typeof path === "string" && path.startsWith(`${folder}/`));
-			result = scopeResult(method, result, folder);
+		if (scoped) {
+			if (method.scoped) result = method.scoped(result, (path) => scoped.reaches || typeof path === "string" && path.startsWith(`${folder}/`));
+			result = scopeResult(method, result, folder, scoped.reaches);
 		}
 		const hole = validate(method.result, result);
 		if (hole) throw new SynsError("handler_error", { log: `exit=0 the result lacks what the specification requires at ${hole}` });
@@ -3370,8 +3412,9 @@ const PAGEHOST = String.raw`/*
   const local = function (ref) { return !!ref && !/^([a-z][a-z0-9+.-]*:|\/\/|#|\/)/i.test(ref); };
   const join = function (dir, ref) {
     const out = [];
-    (dir + "/" + ref.split(/[?#]/)[0]).split("/").forEach(function (s) { if (s === "..") out.pop(); else if (s && s !== ".") out.push(s); });
-    return out.join("/");
+    let above = false; // a ../ past the session's folder names nothing (Q-0025)
+    (dir + "/" + ref.split(/[?#]/)[0]).split("/").forEach(function (s) { if (s === "..") above = above || !out.pop(); else if (s && s !== ".") out.push(s); });
+    return above ? "" : out.join("/");
   };
 
   const live = new Set();
@@ -3442,7 +3485,7 @@ const PAGEHOST = String.raw`/*
         const refs = this.src.kind === "page" ? [] : Array.from(doc.querySelectorAll('link[rel="stylesheet"][href], script[src]'))
           .filter((el) => local(el.getAttribute("href") || el.getAttribute("src")));
         const want = refs.map((el) => join(dir, el.getAttribute("href") || el.getAttribute("src")));
-        const got = await this.readAll(want, version);
+        const got = await this.readAll(want.filter(Boolean), version);
         refs.forEach((el, i) => {
           const t = got[want[i]] || "";
           if (el.tagName === "LINK") { const s = doc.createElement("style"); s.textContent = t; el.replaceWith(s); }

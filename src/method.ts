@@ -129,8 +129,19 @@ export const repoPath: Schema = { type: "string" };
 
 /** A call's scope (S1.25, D85), declared on every method beside its own params; the dispatch takes it out before they are checked. */
 export const scope: Schema = { type: "string", maxLength: 1024 };
-/** A method's params as declared to the host: its own and `scope`. */
-export const declaredParams = (method: Method): Schema => ({ ...method.params, properties: { ...(method.params.properties as Record<string, Schema>), scope } });
+/**
+ * A read's path as declared to the host, which checks a call against it before the plugin sees it: a path, or one
+ * beginning with `../` segments (S1.25, B-0083). The dispatch resolves those against the call's scope and checks the
+ * result as a path (S2.9); without a scope it is checked as given.
+ */
+export const readPath: Schema = { ...path, pattern: "^(?:\\.\\.(?:/\\.\\.)*$|(?:\\.\\./)*" + (path.pattern as string).slice(1) + ")" };
+const reaching = (schema: Schema): Schema => schema === path ? readPath : schema.items === path ? { ...schema, items: readPath } : schema;
+/** A method's params as declared to the host: its own, a read's paths as `readPath`, and `scope`. */
+export const declaredParams = (method: Method): Schema => {
+  const own = method.params.properties as Record<string, Schema>;
+  const properties = method.effect === "read" ? Object.fromEntries(Object.entries(own).map(([name, schema]) => [name, reaching(schema)])) : own;
+  return { ...method.params, properties: { ...properties, scope } };
+};
 
 /** A commit SHA, opaque to the page (D12). */
 export const version: Schema = { type: "string", pattern: "^[0-9a-f]{40}$", maxLength: 40 };

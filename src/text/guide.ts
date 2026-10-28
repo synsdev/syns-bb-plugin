@@ -24,7 +24,7 @@ A folder placed in a repository (a tool) is all the page sees: every \`path\` is
 
 ## Apps in the workspace
 
-An app is a folder holding an \`index.html\`, its CSS and JS beside it, named relatively. The workspace runs it in a sandboxed frame with its own \`threadPage\`: \`invoke\`, \`watch\`, \`scope\`. It may call what a Thread Page may, confirmed or granted as there, and \`syns.*\` but \`syns.place\` and those of *Sharing and people* other than \`syns.users\` (\`bad_scope\`); \`storage.*\` is its own. Its paths count from its folder; nothing outside it is reachable. A \`<form>\` messages the agent unless the app's script handles the submit. When someone else changes a file in its folder, the app reloads, keeping typed text and scroll; its own saves don't.
+An app is a folder holding an \`index.html\`, its CSS and JS beside it, named relatively. The workspace runs it in a sandboxed frame with its own \`threadPage\`: \`invoke\`, \`watch\`, \`scope\`. It may call what a Thread Page may, confirmed or granted as there, and \`syns.*\` but \`syns.place\` and those of *Sharing and people* other than \`syns.users\` (\`bad_scope\`); \`storage.*\` is its own. Its paths count from its folder; \`../\` reaches the rest of the session's folder for reading (its CSS and JS links and \`syns.*\` reads), and its writes stay inside its folder. A \`<form>\` messages the agent unless the app's script handles the submit. When someone else changes a file in its folder, the app reloads, keeping typed text and scroll; its own saves don't.
 
 ## Versions
 
