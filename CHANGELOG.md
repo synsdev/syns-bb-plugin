@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.11.1
+
+0.11.0's code under a new number, so every Claude Code that took the withdrawn `eb3cc58` bundle as 0.11.0 fetches the
+release, and Unife Pages serves its page script; nothing else changed (Syns B-0093).
+
 ## 0.11.0
 
 The fragment and the guide changed, with one new method, `syns.changes`. No field or reason of an existing method
