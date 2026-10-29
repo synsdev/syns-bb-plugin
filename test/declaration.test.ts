@@ -235,10 +235,10 @@ describe("what agents are told", () => {
     expect(declaration.instruction).toBe(readFileSync(new URL("./fixtures/fragment-0.11.0.md", import.meta.url), "utf8").trim());
   });
 
-  it("§ Apps in the workspace keeps its paragraph, then Working beside the person, the owner's words byte for byte (D95 point 2); the frame sentence waits for B-0102 to B-0104 (D97)", () => {
+  it("§ Apps in the workspace keeps its paragraph, then Working beside the person, the owner's words byte for byte (D95 point 2); the kept paragraph ends with his frame sentence, which ships with B-0102 to B-0104 (D95 point 4, D97)", () => {
     const guide = declaration.guide;
     const section = guide.slice(guide.indexOf("## Apps in the workspace"), guide.indexOf("## Versions"));
-    expect(section.endsWith("When someone else changes a file in its folder, the app reloads, keeping typed text and scroll; its own saves don't.\n\n**Working beside the person.** The app holds the data, in files in its folder; you edit the same files, and your page stays the conversation. After each of your turns the app marks what you changed, where it sits, until the person has seen it (`syns.changes` since the version they last saw, kept in `storage`). A question about a record goes on that record. The app starts you only from its composer, never on an edit, a timer or a load.\n\n")).toBe(true);
+    expect(section.endsWith("When someone else changes a file in its folder, the app reloads, keeping typed text and scroll; its own saves don't. An app is a page frame: what works on your page works in it.\n\n**Working beside the person.** The app holds the data, in files in its folder; you edit the same files, and your page stays the conversation. After each of your turns the app marks what you changed, where it sits, until the person has seen it (`syns.changes` since the version they last saw, kept in `storage`). A question about a record goes on that record. The app starts you only from its composer, never on an edit, a timer or a load.\n\n")).toBe(true);
     expect(section.split("\n\n")).toHaveLength(4); // heading, the kept paragraph, Working beside, the gap before Versions
   });
 

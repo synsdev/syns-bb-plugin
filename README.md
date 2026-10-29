@@ -17,8 +17,9 @@ Syns CLI → Syns API      the only thing that touches the repository
 
 ## Install
 
-On bb: bb 0.43 or later and Thread Pages 1.11.0 or later; on Claude Code: Unife Pages 0.3.0 or later (see *On Claude
-Code* below): the first that take a contributor's page script. Both need
+On bb: bb 0.43 or later and Thread Pages 1.13.4 or later; on Claude Code: Unife Pages 0.5.4 or later (see *On Claude
+Code* below): the first that show a document a page holds as a frame of the page held in its folder, which the
+workspace runs each app in. Both need
 the Syns CLI, 0.3.25 or later — installed and logged in (`syns login`) on every machine whose
 sessions should reach a repository (`syns upgrade`). An older CLI's refusal comes back in its own words.
 

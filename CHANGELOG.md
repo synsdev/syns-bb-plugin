@@ -1,5 +1,47 @@
 # Changelog
 
+## 0.12.0
+
+The page script, how a call from an app's frame is scoped, and one sentence of the guide changed; no method, result,
+reason or fragment changed. Needs Thread Pages 1.13.4 (bb) or Unife Pages 0.5.4 (Claude Code), the first that hold a frame in the
+folder it is given: on an older host an app shows "showing a page in a frame needs Thread Pages 1.13.4 or Unife Pages
+0.5.4" in place of the app.
+
+- **An app is a frame of the page.** The workspace shows each app, and the agent's own page, through the host's own
+  frame (`threadPage.embed { html, scope, title }`, Unife Pages IN-0020), with the host's kernel and every plugin's
+  page script in it. What works on the page works in the app: its forms answer the agent as the page's own, naming the
+  app; its text areas offer Dictate and Attach; its file inputs upload to `uploads/`, a voice note with its transcript
+  where the host transcribes; its calls, `{ files }` included, go under the host's confirmations. The page host's own
+  copy of these (the call relay, the form serializer, the drafts and scroll keeping, the `embed` stub, the kernel
+  strip) is gone (Syns B-0103, B-0102, B-0104, D92, D96).
+- **An app stays in its folder.** The host binds an app's frame to its folder: its `threadPage.setScope` takes only
+  that folder or one below it, and a call outside it is refused (Unife Pages IN-0029). A call from an app carries the
+  host's frame mark (`caller.frame`), and the plugin reads its scope as the call's `scope` parameter, as the page host
+  sent it until now: the app's paths count from its folder, a read's `../` reaches the rest of the session's folder,
+  its writes stay inside, and a method acting on the whole repository (`syns.place`, `syns.share`,
+  `syns.enableChecks`, those of *Sharing and people*) is `bad_scope`. A placed template shown as an app is bound the
+  same way. A call from the agent's own page in the workspace, a frame with no folder, is the page's. Before showing
+  the first app, the page host checks once, in a hidden frame, that the host refuses a wider scope; on a host that does
+  not, it shows no app.
+- **The guide** ends § *Apps in the workspace*'s first paragraph with the owner's sentence "An app is a page frame: what
+  works on your page works in it." (D95 point 4, D97). 15,567 of 15,872 bytes.
+- **What the page host still does.** It reads the app's document, carries its relative CSS and JS inside it (bb serves
+  a page's files inside the page, not by URL), and opens its links (B-0105). When the workspace clears the page for
+  itself it now keeps every plugin's page script, which the host carries into each frame. A new version of the app's
+  document (another's change to its folder) is shown in the same frame, which keeps typed text and scroll (Unife Pages
+  IN-0027, 0.5.3); a link to another of its documents shows a fresh one.
+- **What is lost, against 0.10.x.**
+  - An app's `storage.*` is kept under its folder's scope by the host, not under the page host's per-app keys: values
+    an app stored under 0.10.x are not found.
+  - The page host's shared cache (`syns.repo` 4 s, `syns.whoami` 60 s, `context.get` 10 s) and its two retries of a
+    transient read failure (`handler_error`, `timeout`, `rate_limited`) are gone: an app's calls go out as the page's
+    own, on the page's budget (120 a minute, 8 at once), so several apps watching `syns.repo` can meet `rate_limited`.
+  - `onState` no longer lists an app's failed calls (`failures` is always empty).
+  - The hash-only `history.pushState` and `replaceState` an app could call are gone (the host's guide forbids them).
+  - An app's links are taken before its own click handlers (the capture phase, as the kernel takes them on a page):
+    an app that routes its own relative links with `preventDefault` now also gets the workspace's navigation.
+    `mailto:` links stay with the kernel.
+
 ## 0.11.1
 
 0.11.0's code under a new number, so every Claude Code that took the withdrawn `eb3cc58` bundle as 0.11.0 fetches the

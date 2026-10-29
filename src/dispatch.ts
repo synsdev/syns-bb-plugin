@@ -17,8 +17,12 @@ export interface Workspace {
 export interface Call {
   method: string;
   params: unknown;
-  /** `scope`: a placed folder inside the session's folder that the calling document set (D43); null for the folder itself. */
-  caller: { sessionId: string | null; scope: string | null; workspace: Workspace | null };
+  /**
+   * `scope`: a placed folder inside the session's folder that the calling document set (D43); null for the folder itself.
+   * `frame`: present on a call from an `html` frame of the page, an app (Unife Pages 0.5.4, 07 R5.84c), with the folder
+   * the page bound it to; such a call's scope is its folder (B-0103).
+   */
+  caller: { sessionId: string | null; scope: string | null; frame?: { scope: string | null; title?: string } | null; workspace: Workspace | null };
   requestId: string;
 }
 
@@ -166,17 +170,30 @@ export function createDispatch({ table = METHODS, cli, log, held = createHeld(),
     const method = byName.get(call.method);
     if (!method) return toAnswer(new SynsError("unknown_method"));
     const sessionId = call.caller?.sessionId ?? null;
-    const rawScope = call.caller?.scope;
     // Absent, null or empty: the session's folder. Anything else must be a relative folder inside it.
     // Anything but absent, null or a string fails closed: a host that changed the field's shape must not widen a document to the whole repository (D46).
-    if (rawScope !== undefined && rawScope !== null && typeof rawScope !== "string") return toAnswer(fail("bad_scope"));
-    const scope = typeof rawScope === "string" && rawScope !== "" ? (rawScope.startsWith("/") ? rawScope : rawScope.replace(/\/+$/, "")) : null;
-    if (scope !== null && validate(pathSchema, scope)) return toAnswer(fail("bad_scope"));
+    const documentScope = folderOf(call.caller?.scope);
+    if (documentScope === false) return toAnswer(fail("bad_scope"));
     // A call's scope parameter (S1.25, D85): absent or empty, none; a trailing `/` dropped; else a relative folder by
     // the path rule, which the host half then checks on disk. A method acting on the whole repository takes none.
     const { scope: asked, ...params } = (call.params ?? {}) as Record<string, unknown>;
     if (asked !== undefined && (typeof asked !== "string" || asked.startsWith("/"))) return toAnswer(fail("bad_scope"));
-    const folder = typeof asked === "string" && asked.replace(/\/+$/, "") !== "" ? asked.replace(/\/+$/, "") : null;
+    let folder = typeof asked === "string" && asked.replace(/\/+$/, "") !== "" ? asked.replace(/\/+$/, "") : null;
+    let scope = documentScope;
+    // A call from an app, an `html` frame the page bound to a folder (caller.frame, Unife Pages 0.5.4): its scope is the
+    // call's scope parameter whether or not a placed folder is there, so paths count from it, a read's `../` reaches the
+    // session's folder and its writes stay inside (A88, B-0103, review F2). The host keeps the call's scope in the bound;
+    // so does this. A frame the page bound to no folder (the agent's own page in the workspace) calls as the page does.
+    const frame = call.caller?.frame;
+    if (frame !== undefined && frame !== null) {
+      const bound = typeof frame === "object" ? folderOf((frame as { scope?: unknown }).scope) : false;
+      if (bound === false) return toAnswer(fail("bad_scope"));
+      if (bound !== null) {
+        if (scope === null || (scope !== bound && !scope.startsWith(`${bound}/`))) return toAnswer(fail("bad_scope"));
+        folder = folder === null ? scope : `${scope}/${folder}`;
+        scope = null;
+      }
+    }
     if (folder !== null && (method.unscoped || validate(pathSchema, folder))) return toAnswer(fail("bad_scope"));
 
     // One controller per call: the limit aborts it, and so does the call's end, for anything still running (S2.14, D83).
@@ -207,6 +224,14 @@ export function createDispatch({ table = METHODS, cli, log, held = createHeld(),
       }
     }
   };
+}
+
+/** A folder a host gave: null for none (absent, null or empty), false for one that is no relative folder inside the session's. */
+function folderOf(raw: unknown): string | null | false {
+  if (raw === undefined || raw === null || raw === "") return null;
+  if (typeof raw !== "string") return false;
+  const folder = raw.startsWith("/") ? raw : raw.replace(/\/+$/, "");
+  return folder === "" || validate(pathSchema, folder) ? false : folder;
 }
 
 /** Of parameters that may not have passed their schema. */

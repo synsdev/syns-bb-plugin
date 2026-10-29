@@ -255,3 +255,65 @@ describe("syns.place records the page's provenance through the environment (D44)
     expect(input.safeParse({ ...base, env: { LD_PRELOAD: "x" } }).success).toBe(false);
   });
 });
+
+describe("a call from an app: an html frame the page bound to a folder (caller.frame, Unife Pages 0.5.4; B-0103, A88)", () => {
+  /** A call from a frame the workspace showed with `scope: bound`, now at `scope` (its setScope narrows only). */
+  const fromFrame = (h: ReturnType<typeof harness>, bound: unknown, scope: string | null, method = "syns.ls", params: Record<string, unknown> = {}) =>
+    h.invoke({ method, params, caller: { sessionId: "thr_page", scope, frame: { scope: bound, title: "board" } } as never, requestId: "r" });
+
+  it("is the call's scope parameter: the CLI runs at the session's folder with the folder as scope, no placed-folder check, its paths counted from it", async () => {
+    const h = harness({ ls: rec("ls.ok"), cat: rec("cat.ok") });
+    expect((await fromFrame(h, "apps/board", "apps/board")).ok).toBe(true);
+    await fromFrame(h, "apps/board", "apps/board", "syns.read", { path: "notes/a.md" });
+    expect(h.runner.calls.map((call) => [call.cwd, call.scope, call.args[0]])).toEqual([["/work/checkout", "apps/board", "ls"], ["/work/checkout", "apps/board", "read"]]);
+    expect(h.runner.calls[1].args).toEqual(expect.arrayContaining(["apps/board/notes/a.md"]));
+  });
+  it("reads ../ beyond the folder; a write's ../ and a whole-repository method are bad_scope, running nothing", async () => {
+    const h = harness({ cat: rec("cat.ok"), place: rec("place.ok"), status: rec("status.clean") });
+    await fromFrame(h, "apps/board", "apps/board", "syns.read", { path: "../shared/theme.css" });
+    expect(h.runner.calls.at(-1)).toMatchObject({ cwd: "/work/checkout", scope: "apps/board", args: expect.arrayContaining(["apps/shared/theme.css"]) });
+    const runs = h.runner.calls.length;
+    expect(failureOf(await fromFrame(h, "apps/board", "apps/board", "syns.write", { path: "../x.md", text: "a", base: "7ca9bc78ba047d9e7798b8d2733c254e24cfc837" }))).toMatchObject({ reason: "bad_scope" });
+    for (const method of ["syns.place", "syns.share", "syns.enableChecks", "syns.collaboratorAdd"]) {
+      expect(failureOf(await fromFrame(h, "apps/board", "apps/board", method, { template: "acme/whiteboard-template", path: "a", name: "a", user: "u", role: "editor" })), method).toMatchObject({ reason: "bad_scope" });
+    }
+    expect(h.runner.calls).toHaveLength(runs);
+  });
+  it("a placed template shown as an app is bounded as an app: syns.place and syns.enableChecks are bad_scope, its ../ reads work (review F2)", async () => {
+    const h = harness({ repo: repoBy({ [SCOPE]: PLACED }), cat: rec("cat.ok"), place: rec("place.ok"), status: rec("status.clean") });
+    for (const method of ["syns.place", "syns.enableChecks"]) {
+      expect(failureOf(await fromFrame(h, "clients/vela/q3-board", "clients/vela/q3-board", method, { template: "acme/whiteboard-template", path: "a" })), method).toMatchObject({ reason: "bad_scope" });
+    }
+    expect(h.runner.calls).toHaveLength(0);
+    await fromFrame(h, "clients/vela/q3-board", "clients/vela/q3-board", "syns.read", { path: "../shared/theme.css" });
+    expect(h.runner.calls).toEqual([expect.objectContaining({ cwd: "/work/checkout", scope: "clients/vela/q3-board", args: expect.arrayContaining(["clients/vela/shared/theme.css"]) })]);
+  });
+  it("a narrower scope the frame set counts from it; a scope parameter counts from the call's scope", async () => {
+    const h = harness({ ls: rec("ls.ok") });
+    await fromFrame(h, "apps/board", "apps/board/lists");
+    await fromFrame(h, "apps/board", "apps/board", "syns.ls", { scope: "lists/2026" });
+    expect(h.runner.calls.map((call) => call.scope)).toEqual(["apps/board/lists", "apps/board/lists/2026"]);
+  });
+  it("a call whose scope is outside its frame's bound, or none under a bound, is bad_scope and runs nothing: the host holds that, and so does this", async () => {
+    const h = harness({ ls: rec("ls.ok") });
+    for (const scope of [null, "", "apps", "apps/other", "apps/boardroom", "notes"]) expect(failureOf(await fromFrame(h, "apps/board", scope)), String(scope)).toMatchObject({ reason: "bad_scope" });
+    expect(h.runner.calls).toHaveLength(0);
+  });
+  it("a frame mark of another shape fails closed (D46)", async () => {
+    const h = harness({ ls: rec("ls.ok") });
+    for (const frame of [true, "apps/board", { scope: 3 }, { scope: "/abs" }, { scope: "../up" }]) {
+      expect(failureOf(await h.invoke({ method: "syns.ls", params: {}, caller: { sessionId: "thr_page", scope: "apps/board", frame } as never, requestId: "r" })), JSON.stringify(frame)).toMatchObject({ reason: "bad_scope" });
+    }
+    expect(h.runner.calls).toHaveLength(0);
+  });
+  it("a frame the page bound to no folder (the agent's own page in the workspace) calls as the page does", async () => {
+    const h = harness({ ls: rec("ls.ok"), place: rec("place.ok"), status: rec("status.clean") });
+    expect((await fromFrame(h, null, null)).ok).toBe(true);
+    expect((await fromFrame(h, null, null, "syns.place", { template: "acme/whiteboard-template", path: "clients/acme/roadmap" })).ok).toBe(true);
+    expect(h.runner.calls.every((call) => call.cwd === "/work/checkout" && call.scope === undefined)).toBe(true);
+  });
+  it("without the frame mark, a plain folder as the document's scope is bad_scope, as before (D43)", async () => {
+    const h = harness({ repo: repoBy({}), ls: rec("ls.ok") });
+    expect(failureOf(await scoped(h, "apps/board", "syns.ls", {}))).toMatchObject({ reason: "bad_scope" });
+  });
+});

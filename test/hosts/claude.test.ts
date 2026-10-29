@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { execFileSync, spawn } from "node:child_process";
 import http from "node:http";
 import { tmpdir } from "node:os";
@@ -166,6 +166,25 @@ describe("Claude Code: the process against a daemon's control socket (R-X5)", ()
     expect(await post(served.endpoint, { method: "syns.repo", params: {}, caller: { sessionId: SESSION, scope: "../elsewhere", workspace: { id: "ws", path: checkout, machine: null } }, requestId: "r4" })).toMatchObject({ body: { ok: false, error: { reason: "bad_scope" } } });
     expect(await post(served.endpoint, { method: "syns.repo", params: {}, caller: { sessionId: "bbbbbbbb-0000-0000-0000-000000000000", scope: null, workspace: null }, requestId: "r5" })).toMatchObject({ body: { ok: false, error: { reason: "no_repo" } } });
     expect(await post(served.endpoint, { method: "syns.repo", params: {}, caller: { sessionId: null, scope: null, workspace: null }, requestId: "r6" })).toMatchObject({ body: { ok: false, error: { reason: "no_repo" } } });
+  });
+
+  it("a call from an app's frame runs at the session's folder with its folder as scope, checked on this machine: a link out of the folder is bad_scope, one not on disk yet is judged by its parent (B-0103, review F6)", async () => {
+    const { checkout, synsPath, runs } = machine();
+    const outside = mkdtempSync(join(tmpdir(), "syns-outside-"));
+    symlinkSync(outside, join(checkout, "escape"));
+    daemon = fakeDaemon(join(dir, "control.sock"));
+    await daemon.listen();
+    served = await serve({ socket: join(dir, "control.sock"), synsPath, agentInstructions: true, log: { info: () => undefined, warn: () => undefined }, everyMs: 50 });
+    await vi.waitFor(() => expect(daemon!.seen.registrations).toHaveLength(1));
+    const fromFrame = (scope: string, requestId: string) => post(served!.endpoint, { method: "syns.repo", params: {}, caller: { sessionId: SESSION, scope, frame: { scope, title: "app" }, workspace: { id: "ws", path: checkout, machine: null } }, requestId });
+
+    expect(await fromFrame("notes", "f1")).toMatchObject({ status: 200, body: { ok: true } });
+    expect(runs()).toEqual([`${realpathSync(checkout)} repo --json`]);
+    expect(await fromFrame("notes/not-yet", "f2")).toMatchObject({ status: 200, body: { ok: true } });
+    expect(await fromFrame("escape", "f3")).toMatchObject({ body: { ok: false, error: { reason: "bad_scope" } } });
+    expect(await fromFrame("escape/deeper", "f4")).toMatchObject({ body: { ok: false, error: { reason: "bad_scope" } } });
+    expect(runs()).toHaveLength(2);
+    rmSync(outside, { recursive: true, force: true });
   });
 
   it("answers a page-script ask on the same endpoint: the script for a session whose folder is a Syns repository, none without a folder (S2.27)", async () => {

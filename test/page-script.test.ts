@@ -16,12 +16,18 @@ describe("the page script's text (S2.28)", () => {
     expect(Buffer.byteLength(PAGEHOST)).toBeLessThanOrEqual(256 * 1024);
   });
 
-  it("is the page host and its bootstrap: it leaves the kernel and every contributor's page script to run, and strips them from a page it frames", () => {
+  it("is the page host and its bootstrap: it leaves the kernel and every contributor's page script to run, and shows a page through the host's own frame", () => {
     expect(PAGEHOST).toContain('if (window.SynsPages && window.SynsPages.frame) return;');
     expect(PAGEHOST).toContain('s.hasAttribute("data-thread-page-kernel") || s.hasAttribute("data-thread-page-contributor")');
-    expect(PAGEHOST).toContain('doc.querySelectorAll("script[data-thread-page-kernel], script[data-thread-page-contributor], base")');
+    expect(PAGEHOST).toContain("this.stop = window.threadPage.embed(this.frame, {");
     expect(PAGEHOST).toContain('const entry = ".page/index.html"');
     expect(PAGEHOST).not.toContain("data-app");
+  });
+
+  it("does nothing in a frame of a page: the bootstrap returns when the kernel's config says embedded (B-0103)", () => {
+    const boot = PAGEHOST.slice(PAGEHOST.lastIndexOf("(function () {"));
+    expect(boot.indexOf('.embedded === true) return;')).toBeGreaterThan(-1);
+    expect(boot.indexOf('.embedded === true) return;')).toBeLessThan(boot.indexOf("const observer = new MutationObserver"));
   });
 
   it("with no workspace to read, leaves the page as written and runs its scripts once: any failure of the first read, or no .page/index.html (S2.29)", () => {
@@ -39,6 +45,18 @@ describe("the page script's text (S2.28)", () => {
     expect(load.indexOf("if (!app.version) { clear(); listen(); }")).toBeGreaterThan(load.indexOf("if (!index || index.text === undefined)"));
   });
 
+  it("clearing the document for the workspace keeps the kernel and every plugin's page script, which the host carries into each frame it shows, so an app's links open (B-0103 verify F2)", () => {
+    const boot = PAGEHOST.slice(PAGEHOST.lastIndexOf("(function () {"));
+    const code = /const served = .*?;\n/.exec(boot)![0] + boot.slice(boot.indexOf("function clear()"), boot.indexOf("function say("));
+    const el = (tagName: string, attrs: string[] = []) => ({ tagName, hasAttribute: (a: string) => attrs.includes(a), remove() { head.splice(head.indexOf(this), 1); } });
+    const kernel = el("SCRIPT", ["data-thread-page-kernel"]), syns = el("SCRIPT", ["data-thread-page-contributor"]), other = el("SCRIPT", ["data-thread-page-contributor"]);
+    const head: any[] = [el("META"), kernel, syns, other, el("SCRIPT"), el("STYLE"), el("LINK"), el("TITLE")];
+    const doc = { head: { get children() { return head.slice(); }, appendChild: (n: unknown) => head.push(n) }, body: { attributes: [] }, createElement: (tag: string) => el(tag.toUpperCase()) };
+    runInContext(code + "clear();", createContext({ document: doc, me: syns, say() {}, Array }));
+    expect(head.map((n) => n.tagName)).toEqual(["META", "SCRIPT", "SCRIPT", "SCRIPT", "STYLE"]);
+    expect(head.slice(1, 4)).toEqual([kernel, syns, other]);
+  });
+
   it("once the workspace is shown, takes a saved page through threadPage.onPageUpdate where the host offers it: SynsPages.page and only its frames change, no new boot (S2.30)", () => {
     const load = PAGEHOST.slice(PAGEHOST.indexOf("async function load()"));
     expect(load).toContain("if (!app.version) { clear(); listen(); }");
@@ -52,61 +70,143 @@ describe("the page script's text (S2.28)", () => {
   });
 });
 
-describe("the page host's app calls (S1.25, D85)", () => {
-  it("passes an app's folder as scope with every syns.* call, and rewrites no path in the call or the answer", () => {
-    const call = PAGEHOST.slice(PAGEHOST.indexOf("async call(method, params)"), PAGEHOST.indexOf("// Where a link goes"));
-    expect(call).toContain("const p = Object.assign({}, params, { scope: this.folder });");
-    expect(call).toContain("try { return await this.invoke(method, p); }");
-    for (const gone of ["inF", "strip", "F + \"/\"", "p.paths", "p.pattern", "p.glob", "p.deletions"]) expect(call, gone).not.toContain(gone);
-    expect(PAGEHOST).not.toContain("strip(v)");
+/**
+ * The page host run in a stand-in window whose host offers threadPage.embed: a frame of `src`, what it read through
+ * `call`, and what it handed the host's embed. The document parser is a stand-in that keeps the text as given.
+ */
+const settle = async () => { for (let i = 0; i < 4; i++) await new Promise((settled) => setTimeout(settled, 0)); };
+const hosted = async (src: Record<string, unknown>, files: Record<string, string> = {}, embed: unknown = true, holds: boolean | "silent" = true) => {
+  const calls: [string, Record<string, unknown>][] = [];
+  const embeds: { target: unknown; options: Record<string, any>; stopped: boolean }[] = [];
+  const probes: { scope: unknown; html: string; stopped: boolean }[] = [];
+  const listeners: ((e: unknown) => void)[] = [];
+  const el = (tag: string) => ({ tag, style: {}, attrs: {} as Record<string, string>, setAttribute(k: string, v: string) { this.attrs[k] = v; }, remove() {}, contentWindow: { tag: "frame-window", n: Math.random() } });
+  const parsed = (text: string) => {
+    const head: unknown[] = [];
+    return { querySelectorAll: () => [], createElement: el, head: { prepend: (n: unknown) => head.unshift(n) },
+      documentElement: { get outerHTML() { return head.map((n: any) => `<meta name="${n.attrs.name}">`).join("") + text; } } };
+  };
+  const win: Record<string, unknown> = { setTimeout, clearTimeout, setInterval, clearInterval, console, removeEventListener() {},
+    addEventListener: (type: string, fn: (e: unknown) => void) => { if (type === "message") listeners.push(fn); } };
+  win.window = win;
+  win.parent = win;
+  win.document = { createElement: el, querySelector: () => null, visibilityState: "visible" };
+  win.DOMParser = class { parseFromString(text: string) { return parsed(text); } };
+  // The host's embed; the page host's hidden check of the frame's bound (title "Syns check") answers `holds` from its frame.
+  const hostEmbed = (target: { contentWindow: unknown }, options: Record<string, any>) => {
+    if (options.title === "Syns check") {
+      const probe = { scope: options.scope, html: options.html as string, stopped: false };
+      probes.push(probe);
+      if (holds !== "silent") setTimeout(() => listeners.forEach((fn) => fn({ source: target.contentWindow, data: { __tool: "bound", bound: holds } })), 0);
+      return () => { probe.stopped = true; };
+    }
+    const one = { target, options, stopped: false };
+    embeds.push(one);
+    return () => { one.stopped = true; };
+  };
+  win.threadPage = { invoke: () => Promise.reject(new Error("not this one")), ...(typeof embed === "function" ? { embed } : embed ? { embed: hostEmbed } : {}) };
+  runInContext(PAGEHOST, createContext(win));
+  const call = (method: string, params: Record<string, unknown>) => {
+    calls.push([method, params]);
+    if (method === "syns.readMany") return Promise.resolve({ version: "v1", files: (params.paths as string[]).map((path) => ({ path, text: files[path] })) });
+    return Promise.resolve({});
+  };
+  const states: Record<string, unknown>[] = [];
+  const f = (win.SynsPages as { frame: (c: unknown, s: unknown, o: unknown) => any }).frame({ appendChild() {} }, src, { call, sessionId: "thr_1", onState: (s: Record<string, unknown>) => states.push(s) });
+  await settle();
+  const fromFrame = (data: unknown) => listeners.forEach((fn) => fn({ source: f.frame.contentWindow, data }));
+  return { f, calls, embeds, probes, states, fromFrame };
+};
+
+describe("an app is a frame of the page, the host's own (B-0103, B-0102, B-0104; Unife Pages IN-0020)", () => {
+  it("hands the host the app's document with its folder as scope and its name as title, reading only the document", async () => {
+    const { f, calls, embeds, states } = await hosted({ kind: "repo", folder: "apps/board/" }, { "apps/board/index.html": "<p>board</p>" });
+    expect(calls).toEqual([["syns.readMany", { paths: ["apps/board/index.html", "apps/board/.page/index.html"] }], ["syns.readMany", { paths: ["apps/board/index.html"] }]]);
+    expect(embeds).toHaveLength(1);
+    expect(embeds[0].target).toBe(f.frame);
+    expect(embeds[0].options).toMatchObject({ scope: "apps/board", title: "board" });
+    expect(embeds[0].options.html).toBe('<!doctype html>\n<meta name="syns-pages-frame"><p>board</p>');
+    embeds[0].options.onState({ status: "shown" });
+    expect(states.at(-1)).toEqual({ status: "shown", message: "", failures: [] });
+    embeds[0].options.onState({ status: "too_large" });
+    expect(states.at(-1)).toMatchObject({ status: "failed", message: "apps/board/index.html: too large to show in a frame" });
   });
 
-  /** The page host run in a stand-in window: a frame of `src`, whose calls reach `invoke`, and `ask` as the frame asks. */
-  const framed = async (src: Record<string, unknown>) => {
-    const calls: [string, Record<string, unknown>][] = [];
-    const el = () => ({ style: {}, setAttribute() {}, remove() {}, contentWindow: { postMessage() {} } as { postMessage: (m: unknown) => void } });
-    const win: Record<string, unknown> = { addEventListener() {}, removeEventListener() {}, setTimeout, clearTimeout, setInterval, clearInterval, console };
-    win.window = win;
-    win.document = { createElement: el };
-    const ctx = createContext(win);
-    runInContext(PAGEHOST, ctx);
-    const invoke = (method: string, params: Record<string, unknown>) => { calls.push([method, params]); return Promise.resolve({ method }); };
-    const f = (win.SynsPages as { frame: (c: unknown, s: unknown, o: unknown) => any }).frame({ appendChild() {} }, src, { call: invoke, sessionId: "thr_1" });
-    await new Promise((settled) => setTimeout(settled, 0)); // its own first reads (state, the app's index.html) are not the app's calls
-    calls.length = 0;
-    const ask = (method: string, params: Record<string, unknown> = {}) => new Promise<any>((done) => {
-      f.frame.contentWindow.postMessage = done;
-      f.answer({ source: f.frame.contentWindow, data: { __tool: "invoke", id: 1, method, params } });
-    });
-    return { ask, calls: () => calls };
-  };
-  // Every built-in Thread Page method but storage.* (the host's confirmations and grants stay its own), and one another plugin added.
-  const THREAD_PAGE = ["context.get", "session.reply", "session.messages", "session.activity", "session.usage", "session.respond",
-    "sessions.snapshot", "sessions.messages", "sessions.markRead", "sessions.start", "sessions.send", "sessions.stop", "sessions.archive",
-    "sessions.respond", "sessions.openHost", "pages.open", "pages.read", "pages.answer", "providers.list", "workspaces.list",
-    "workspaces.create", "workspaces.browse", "navigation.openExternal", "voice.captureAndTranscribe", "other.plugin.method"];
+  it("shows the agent's own page with no scope, as the page shown as written (S2.32)", async () => {
+    const { embeds } = await hosted({ kind: "page", path: "notes/plan.html", html: "<h1>Plan</h1>" });
+    expect(embeds[0].options).toMatchObject({ scope: null, title: "plan" });
+    expect(embeds[0].options.html).toContain("<h1>Plan</h1>");
+  });
 
-  it("passes an app's every Thread Page call to the app's invoke as given, so the host confirms or grants it as on a Thread Page (D91)", async () => {
-    for (const method of THREAD_PAGE) {
-      const { ask, calls } = await framed({ kind: "repo", folder: "apps/board" });
-      const params = { sessionId: "thr_2", text: "hi", files: [{ name: "a.png" }] };
-      const answer = await ask(method, params);
-      expect(answer, method).toMatchObject({ ok: true });
-      expect(calls(), method).toEqual([[method, params]]);
+  it("relays nothing of the frame's but its links: no call, no form answer, no drafts, no storage of its own", async () => {
+    const { calls, fromFrame } = await hosted({ kind: "repo", folder: "apps/board" }, { "apps/board/index.html": "<form></form>" });
+    const before = calls.length;
+    fromFrame({ __tool: "invoke", id: 1, method: "session.reply", params: { text: "hi" } });
+    fromFrame({ __tool: "form", title: "T", answers: [{ label: "a", value: "b" }] });
+    fromFrame({ __tool: "draft", values: { a: 1 } });
+    await new Promise((settled) => setTimeout(settled, 0));
+    expect(calls.slice(before)).toEqual([]);
+    for (const gone of ["const SHIM", "formdone", "session.reply", "storage.get", "storage.set", "nsKey", "stateKey", "CACHED", "data-thread-page-kernel], script[data-thread-page-contributor], base"]) expect(PAGEHOST, gone).not.toContain(gone);
+  });
+
+  it("a reload hands the host the document again on the same frame, not stopping it, so the reader's drafts and scroll stay (Unife Pages 0.5.3, IN-0027)", async () => {
+    const { f, embeds } = await hosted({ kind: "repo", folder: "apps/board" }, { "apps/board/index.html": "<p>1</p>" });
+    f.changed(["apps/board/style.css"]);
+    await settle();
+    expect(embeds.map((e) => [e.target === f.frame, e.options.scope, e.stopped])).toEqual([[true, "apps/board", false], [true, "apps/board", false]]);
+    f.changed(["apps/other/x.css"]);
+    await settle();
+    expect(embeds).toHaveLength(2);
+  });
+
+  it("another document of the app, by a link, is a fresh frame: the one shown is stopped first", async () => {
+    const { f, embeds, fromFrame } = await hosted({ kind: "repo", folder: "apps/board" }, { "apps/board/index.html": "<a href=\"other.html\">o</a>", "apps/board/other.html": "<p>other</p>" });
+    fromFrame({ __tool: "link", href: "other.html", newTab: false });
+    await settle();
+    expect(embeds.map((e) => e.stopped)).toEqual([true, false]);
+    expect(embeds[1].options.html).toContain("<p>other</p>");
+    f.reload();
+    await settle();
+    expect(embeds.map((e) => e.stopped)).toEqual([true, false, false]);
+  });
+
+  it("checks once, in a hidden frame of the app's folder, that the host holds a frame in its folder; on a host that does not (before Thread Pages 1.13.4, Unife Pages 0.5.4) it shows no app (review F1)", async () => {
+    const held = await hosted({ kind: "repo", folder: "apps/board" }, { "apps/board/index.html": "<p>1</p>" });
+    expect(held.probes).toEqual([{ scope: "apps/board", html: expect.stringContaining("threadPage.setScope(null)"), stopped: true }]);
+    held.f.reload();
+    await settle();
+    expect(held.probes).toHaveLength(1);
+    expect(held.embeds).toHaveLength(2);
+
+    const older = await hosted({ kind: "repo", folder: "apps/board" }, { "apps/board/index.html": "<p>1</p>" }, true, false);
+    expect(older.embeds).toEqual([]);
+    expect(older.states.at(-1)).toMatchObject({ status: "failed", message: "showing a page in a frame needs Thread Pages 1.13.4 or Unife Pages 0.5.4" });
+    // The agent's own page is shown with no folder, so it needs no check.
+    const page = await hosted({ kind: "page", path: "plan.html", html: "<h1>Plan</h1>" }, {}, true, false);
+    expect([page.probes, page.embeds.length]).toEqual([[], 1]);
+  });
+
+  it("the check's frame says what its setScope(null) did: a TypeError is a held frame, a null answer an older host", () => {
+    const probe = /const PROBE = (".*?" \+ ".*?");/.exec(PAGEHOST)![1];
+    const html = runInContext(probe, createContext({})) as string;
+    const script = html.slice(html.indexOf("<script>") + 8, html.lastIndexOf("</" + "script>"));
+    for (const [thrown, holds] of [["TypeError", true], [null, false], ["Error", false]] as const) {
+      const posted: unknown[] = [];
+      const frame = createContext({ parent: { postMessage: (data: unknown) => posted.push(data) } });
+      // The frame's kernel throws its own realm's TypeError.
+      frame.threadPage = { setScope: () => { if (thrown) throw new (runInContext(thrown, frame))("outside"); return null; } };
+      runInContext(script, frame);
+      expect(posted).toEqual([{ __tool: "bound", bound: holds }]);
     }
   });
 
-  it("gives an app's every syns.* call its folder as scope, keeping no list of methods; storage.* stays its own (D85, D92, D93)", async () => {
-    const { ask, calls } = await framed({ kind: "repo", folder: "apps/board/" });
-    for (const method of ["syns.read", "syns.write", "syns.place", "syns.share", "syns.collaborators", "syns.enableChecks"]) await ask(method, { path: "a.md" });
-    for (const method of ["syns.explore", "syns.users"]) await ask(method, { query: "x" });
-    await ask("storage.set", { key: "k", value: 1 });
-    expect(calls()).toEqual([
-      ...["syns.read", "syns.write", "syns.place", "syns.share", "syns.collaborators", "syns.enableChecks"].map((m) => [m, { path: "a.md", scope: "apps/board" }]),
-      ["syns.explore", { query: "x", scope: "apps/board" }], ["syns.users", { query: "x", scope: "apps/board" }],
-      ["storage.set", { key: expect.stringMatching(/^f\.[a-z0-9]+:k$/), value: 1 }],
-    ]);
-    for (const gone of ["isn't available here", "const SYNS", "const PASS", "const OPEN"]) expect(PAGEHOST, gone).not.toContain(gone);
+  it("on a host without the frame call, says which it needs and shows nothing", async () => {
+    const { embeds, states } = await hosted({ kind: "repo", folder: "apps/board" }, { "apps/board/index.html": "<p>1</p>" }, false);
+    expect(embeds).toEqual([]);
+    expect(states.at(-1)).toMatchObject({ status: "failed", message: "showing a page in a frame needs Thread Pages 1.13.4 or Unife Pages 0.5.4" });
+    // Thread Pages 1.12 and Unife Pages 0.4 have the call, for another session's page alone
+    const older = await hosted({ kind: "repo", folder: "apps/board" }, { "apps/board/index.html": "<p>1</p>" }, (() => { throw new TypeError("threadPage.embed needs { sessionId }"); }) as unknown);
+    expect(older.states.at(-1)).toMatchObject({ status: "failed", message: "showing a page in a frame needs Thread Pages 1.13.4 or Unife Pages 0.5.4" });
   });
 
   it("follows an app's ../ links as far as the session's folder; one climbing above it loads nothing (S1.25, Q-0025, B-0083)", () => {
@@ -120,61 +220,30 @@ describe("the page host's app calls (S1.25, D85)", () => {
     expect(PAGEHOST).toContain("await this.readAll(want.filter(Boolean), version)");
   });
 
-  it("keeps the frame's drafts and scroll under a key no app's storage.set can name, \"state\" included", () => {
-    const keys = PAGEHOST.slice(PAGEHOST.indexOf("const hash = function"), PAGEHOST.indexOf("// ---"));
-    const stateKey = /this\.stateKey = ([^;]+);/.exec(PAGEHOST)![1];
-    const host = new Function(keys + "return { nsKey, stateKey: function () { return " + stateKey + "; } };")();
-    for (const id of ["repo:board", "page:index.html"]) {
-      const own = host.stateKey.call({ id });
-      for (const key of ["state", ".state", "_state", ""]) expect(own).not.toBe(host.nsKey(id, key));
-      expect(own).not.toContain(":");
-      expect(host.nsKey(id, "state")).toContain(":");
-    }
-  });
-});
-
-describe("the agent's own page in a frame (S2.32, D91 point 2)", () => {
-  // The frame's call(), run against a fake host invoke: what reaches the host, per frame kind.
-  const lists = PAGEHOST.slice(PAGEHOST.indexOf("const CACHED = "), PAGEHOST.indexOf("// ---"));
-  const body = PAGEHOST.slice(PAGEHOST.indexOf("async call(method, params)"), PAGEHOST.indexOf("// Where a link goes"));
-  const host = new Function(lists + "return { " + body + " };")() as { call(this: unknown, m: string, p: Record<string, unknown>): Promise<unknown> };
-  const frame = (src: Record<string, unknown>) => {
-    const seen: [string, Record<string, unknown>][] = [];
-    const f = { src, id: src.kind === "repo" ? "repo:" + src.folder : "page:" + src.path, folder: src.kind === "repo" ? src.folder : "",
-      invoke: async (m: string, p: Record<string, unknown>) => { seen.push([m, p]); return { ok: m }; } };
-    return { seen, call: (m: string, p: Record<string, unknown>) => host.call.call(f, m, p) };
-  };
-  const methods = ["session.usage", "sessions.messages", "sessions.send", "sessions.markRead", "pages.answer", "syns.shareInfo", "syns.collaborators",
-    "syns.place", "syns.explore", "syns.users", "syns.enableChecks", "syns.read", "context.get", "syns.repo"];
-
-  it("passes every call of the agent's page to the host as the page shown as written makes it: no list, no scope, no cache", async () => {
-    const page = frame({ kind: "page", path: "index.html" });
-    for (const m of methods) {
-      const params = { path: "a.md", version: undefined };
-      await expect(page.call(m, params), m).resolves.toEqual({ ok: m });
-      expect(page.seen.at(-1), m).toEqual([m, params]);
-    }
-    await page.call("syns.repo", {});
-    expect(page.seen.filter(([m]) => m === "syns.repo")).toHaveLength(2);
-  });
-
-  it("keeps the agent's page's storage keys as written, so a value saved in one view is read in the other; an app's stay its own", async () => {
-    const page = frame({ kind: "page", path: "index.html" });
-    await page.call("storage.set", { key: "draft", value: 1 });
-    await page.call("storage.get", { key: "draft" });
-    await page.call("storage.setMany", { entries: [{ key: "a", value: 2 }] });
-    expect(page.seen).toEqual([["storage.set", { key: "draft", value: 1 }], ["storage.get", { key: "draft" }], ["storage.setMany", { entries: [{ key: "a", value: 2 }] }]]);
-    const app = frame({ kind: "repo", folder: "board" });
-    await app.call("storage.get", { key: "draft" });
-    expect(app.seen[0][1].key).not.toBe("draft");
-  });
-
-  it("an app's frame differs only in its syns.* scope and its storage keys (B-0084, D91 point 1)", async () => {
-    const app = frame({ kind: "repo", folder: "board" });
-    await expect(app.call("session.usage", {})).resolves.toEqual({ ok: "session.usage" });
-    expect(app.seen.at(-1)).toEqual(["session.usage", {}]);
-    await app.call("syns.read", { path: "a.md" });
-    expect(app.seen.at(-1)).toEqual(["syns.read", { path: "a.md", scope: "board" }]);
+  it("inside a frame it made, hands a link to the page host that made it; the kernel keeps #, mailto: and download links, and any link of a frame it did not make", () => {
+    const posted: unknown[] = [];
+    let click: ((e: unknown) => void) | null = null;
+    const marked = { value: true };
+    const kernel = { getAttribute: () => JSON.stringify({ embedded: true }) };
+    const win: Record<string, unknown> = { console, addEventListener: (type: string, fn: (e: unknown) => void) => { if (type === "click") click = fn; } };
+    win.window = win;
+    win.parent = { postMessage: (m: unknown) => posted.push(m) };
+    win.document = { querySelector: (q: string) => (q.startsWith("script[data-thread-page-kernel]") ? kernel : q.includes("syns-pages-frame") && marked.value ? {} : null), readyState: "complete" };
+    runInContext(PAGEHOST, createContext(win));
+    const press = (href: string, more: Record<string, unknown> = {}) => {
+      let prevented = false;
+      const a = { getAttribute: () => href, hasAttribute: (n: string) => n === "download" && !!more.download, target: more.target ?? "" };
+      click!({ target: { closest: () => a }, button: 0, defaultPrevented: false, metaKey: !!more.meta, ctrlKey: false, preventDefault: () => { prevented = true; } });
+      return prevented;
+    };
+    expect(press("page2.html")).toBe(true);
+    expect(press("https://example.com", { meta: true })).toBe(true);
+    expect(posted).toEqual([{ __tool: "link", href: "page2.html", newTab: false }, { __tool: "link", href: "https://example.com", newTab: true }]);
+    for (const href of ["#top", "mailto:a@b.c", "javascript:void 0"]) expect(press(href), href).toBe(false);
+    expect(press("a.pdf", { download: true })).toBe(false);
+    marked.value = false;
+    expect(press("page2.html")).toBe(false);
+    expect(posted).toHaveLength(2);
   });
 });
 
