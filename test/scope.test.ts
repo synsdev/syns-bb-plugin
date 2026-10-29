@@ -301,7 +301,7 @@ describe("a call from an app: an html frame the page bound to a folder (caller.f
   });
   it("a frame mark of another shape fails closed (D46)", async () => {
     const h = harness({ ls: rec("ls.ok") });
-    for (const frame of [true, "apps/board", { scope: 3 }, { scope: "/abs" }, { scope: "../up" }]) {
+    for (const frame of [true, "apps/board", {}, [], { bound: "apps/board" }, { scope: 3 }, { scope: "/abs" }, { scope: "../up" }]) {
       expect(failureOf(await h.invoke({ method: "syns.ls", params: {}, caller: { sessionId: "thr_page", scope: "apps/board", frame } as never, requestId: "r" })), JSON.stringify(frame)).toMatchObject({ reason: "bad_scope" });
     }
     expect(h.runner.calls).toHaveLength(0);

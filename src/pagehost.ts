@@ -20,7 +20,10 @@ export const PAGEHOST = String.raw`/*
  *              onLink(target)          { kind: "external" | "repo" | "page", path | url, newTab }; default: external only
  *                                      (a page address …/page?session= goes to navigation.openExternal itself, and reaches onLink as "page" only when the host refuses it as its own)
  *              onState(state)          { status: "loading" | "shown" | "failed", message, failures: [] }
- *     f.reload()   f.changed(paths)   f.destroy()   f.frame (the iframe)   f.title()
+ *     f.reload()   the app started again, in a fresh frame
+ *     f.changed(paths)   a new version where a path is in its folder, in the same frame: drafts and scroll kept, and
+ *                        nothing loaded when its text is unchanged (Unife Pages 0.5.3)
+ *     f.destroy()   f.frame (the iframe)   f.title()
  *
  *   SynsPages.page            the Thread Page this document is, taken before the app loaded (the bootstrap, at the end of this file)
  *   SynsPages.showPage(page)  a new version of SynsPages.page: the frames showing it take it
@@ -67,11 +70,14 @@ export const PAGEHOST = String.raw`/*
   const NEEDS = "showing a page in a frame needs Thread Pages 1.13.4 or Unife Pages 0.5.4";
   // Whether this host holds an app's frame in the folder it is given (Unife Pages 0.5.4: its setScope then refuses a
   // wider one). The API names no version, so a hidden frame asks once; on an older host an app could widen its own scope
-  // to the whole session, so none is shown (B-0103, review F1). True, false, or null when no answer came (asked again).
+  // to the whole session, so none is shown (B-0103, review F1). True or false, kept for the page's life; null when no
+  // answer came, or { error } when the host refused the check's frame itself (that folder, or an older embed): neither
+  // is kept, so the next app asks again.
   const PROBE = "<!doctype html><script>var b;try{threadPage.setScope(null);b=false}catch(e){b=e instanceof TypeError}parent.postMessage({__tool:\"bound\",bound:b},\"*\")<" + "/script>";
   let bound = null;
   const holdsFrames = function (container, folder) {
-    return bound || (bound = new Promise(function (ok) {
+    if (bound) return bound;
+    const asked = bound = new Promise(function (ok) {
       const f = document.createElement("iframe");
       f.setAttribute("sandbox", "allow-scripts");
       f.style.display = "none";
@@ -82,15 +88,19 @@ export const PAGEHOST = String.raw`/*
         window.removeEventListener("message", on); clearTimeout(timer);
         try { if (stop) stop(); } catch (x) { /* gone already */ }
         f.remove();
-        if (v === null) bound = null;
         ok(v);
       };
       window.addEventListener("message", on);
       timer = setTimeout(function () { done(null); }, 10000);
-      try { stop = window.threadPage.embed(f, { html: PROBE, scope: folder, title: "Syns check" }); } catch (x) { done(false); }
-    }));
+      try { stop = window.threadPage.embed(f, { html: PROBE, scope: folder, title: "Syns check" }); } catch (x) { done({ error: x }); }
+    });
+    asked.then(function (v) { if (v !== true && v !== false && bound === asked) bound = null; });
+    return asked;
   };
   const STATES = { too_large: "too large to show in a frame", unavailable: "not shown", not_found: "not found", no_page: "not written yet" };
+
+  // The host's refusal of an embed: an older one takes { sessionId } alone (a TypeError).
+  const refused = function (x) { return new Error(x && x.name === "TypeError" ? NEEDS + " (" + x.message + ")" : String(x && x.message || x)); };
 
   const live = new Set();
   class PageFrame {
@@ -115,7 +125,8 @@ export const PAGEHOST = String.raw`/*
     title() { return this.src.title || (this.src.kind === "repo" ? baseOf(this.folder) : baseOf(this.src.path).replace(/\.html?$/i, "")); }
     entry() { return this.src.kind === "repo" ? this.folder + "/" + (this.src.doc || "index.html") : this.src.path; }
     destroy() { this.dead = true; live.delete(this); clearInterval(this.poll); window.removeEventListener("message", this.onMessage); if (this.stop) this.stop(); this.frame.remove(); }
-    reload() { return this.load(); }
+    /** The app started again, in a fresh frame; a new version of its document (changed, showPage) keeps the reader's work. */
+    reload() { this.fresh = true; return this.load(); }
     /** Repository paths that changed: a tool reloads when one is in its folder. */
     changed(paths) { if (this.src.kind === "repo" && !this.dead && (paths || []).some((p) => String(p).startsWith(this.folder + "/"))) this.load(); }
     report(status, message) { if (this.opts.onState) this.opts.onState({ status: status, message: message || "", failures: [] }); }
@@ -152,6 +163,7 @@ export const PAGEHOST = String.raw`/*
         if (this.src.kind === "repo") {
           const holds = await holdsFrames(this.container, this.folder);
           if (holds === null) throw new Error("the host did not say whether it holds an app in its folder; reload to try again");
+          if (holds && holds.error) throw refused(holds.error);
           if (!holds) throw new Error(NEEDS);
         }
         const doc = new DOMParser().parseFromString(text, "text/html");
@@ -171,7 +183,8 @@ export const PAGEHOST = String.raw`/*
         if (this.dead) return;
         // A new version of the document it shows is the same frame's (Unife Pages 0.5.3): the reader's drafts and scroll
         // stay, and the earlier call's stop would end it. Another document is a fresh frame.
-        if (this.stop && this.shown !== at) { this.stop(); this.stop = null; }
+        if (this.stop && (this.shown !== at || this.fresh)) { this.stop(); this.stop = null; }
+        this.fresh = false;
         this.shown = at;
         this.frame.style.display = "";
         try {
@@ -181,7 +194,7 @@ export const PAGEHOST = String.raw`/*
             title: this.title(),
             onState: (s) => { if (s.status === "shown" || s.status === "loading") this.report(s.status); else this.report("failed", at + ": " + (STATES[s.status] || s.status)); },
           });
-        } catch (x) { this.stop = null; this.shown = null; throw new Error(x && x.name === "TypeError" ? NEEDS + " (" + x.message + ")" : String(x && x.message || x)); } // an older host takes { sessionId } alone
+        } catch (x) { this.stop = null; this.shown = null; throw refused(x); }
       } catch (e) {
         this.frame.style.display = "none";
         this.report("failed", String(e && e.message || e));
@@ -225,7 +238,7 @@ export const PAGEHOST = String.raw`/*
   /** A new version of the page this document is: SynsPages.page becomes it, and only the frames showing it reload. */
   P.showPage = function (page) {
     P.page = page;
-    live.forEach(function (f) { if (f.src.kind === "page" && f.src.html !== undefined && f.src.path === page.path) { f.src.html = page.html || "<html></html>"; f.reload(); } });
+    live.forEach(function (f) { if (f.src.kind === "page" && f.src.html !== undefined && f.src.path === page.path) { f.src.html = page.html || "<html></html>"; f.load(); } });
   };
   /** The folders that open as pages: one holding an index.html (not under a dot folder, not inside another), or a placed template (.syns.yaml, its app in .page/). */
   P.tools = function (paths) {

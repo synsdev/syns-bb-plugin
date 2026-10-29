@@ -22,14 +22,15 @@ folder it is given: on an older host an app shows "showing a page in a frame nee
   `syns.enableChecks`, those of *Sharing and people*) is `bad_scope`. A placed template shown as an app is bound the
   same way. A call from the agent's own page in the workspace, a frame with no folder, is the page's. Before showing
   the first app, the page host checks once, in a hidden frame, that the host refuses a wider scope; on a host that does
-  not, it shows no app.
+  not, it shows no app. A frame mark of any other shape is `bad_scope`.
 - **The guide** ends § *Apps in the workspace*'s first paragraph with the owner's sentence "An app is a page frame: what
   works on your page works in it." (D95 point 4, D97). 15,567 of 15,872 bytes.
 - **What the page host still does.** It reads the app's document, carries its relative CSS and JS inside it (bb serves
   a page's files inside the page, not by URL), and opens its links (B-0105). When the workspace clears the page for
   itself it now keeps every plugin's page script, which the host carries into each frame. A new version of the app's
   document (another's change to its folder) is shown in the same frame, which keeps typed text and scroll (Unife Pages
-  IN-0027, 0.5.3); a link to another of its documents shows a fresh one.
+  IN-0027, 0.5.3), and one whose text is unchanged loads nothing; a link to another of its documents, or
+  `reload()` on the frame `SynsPages.frame` returns, starts it again in a fresh one.
 - **What is lost, against 0.10.x.**
   - An app's `storage.*` is kept under its folder's scope by the host, not under the page host's per-app keys: values
     an app stored under 0.10.x are not found.

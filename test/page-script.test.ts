@@ -1,5 +1,5 @@
 import { Script, createContext, runInContext } from "node:vm";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { VERSION, buildDeclaration } from "../src/declaration.js";
 import { METHODS } from "../src/methods/index.js";
 import { PAGEHOST } from "../src/pagehost.js";
@@ -64,7 +64,7 @@ describe("the page script's text (S2.28)", () => {
     const listen = PAGEHOST.slice(PAGEHOST.indexOf("function listen()"), PAGEHOST.indexOf("function clear()"));
     expect(listen).toContain('if (typeof window.threadPage.onPageUpdate !== "function") return;');
     expect(listen).toContain("P.showPage(describe(doc.documentElement, u.documentPath, doc.title));");
-    expect(PAGEHOST).toContain('if (f.src.kind === "page" && f.src.html !== undefined && f.src.path === page.path) { f.src.html = page.html || "<html></html>"; f.reload(); }');
+    expect(PAGEHOST).toContain('if (f.src.kind === "page" && f.src.html !== undefined && f.src.path === page.path) { f.src.html = page.html || "<html></html>"; f.load(); }');
     expect(PAGEHOST).toContain("live.add(this);");
     expect(PAGEHOST).toContain("live.delete(this);");
   });
@@ -167,7 +167,20 @@ describe("an app is a frame of the page, the host's own (B-0103, B-0102, B-0104;
     expect(embeds[1].options.html).toContain("<p>other</p>");
     f.reload();
     await settle();
-    expect(embeds.map((e) => e.stopped)).toEqual([true, false, false]);
+    expect(embeds.map((e) => e.stopped)).toEqual([true, true, false]);
+  });
+
+  it("f.reload() starts the app again in a fresh frame; a new version of the agent's page (showPage) is the same frame's (S2.30)", async () => {
+    const app = await hosted({ kind: "repo", folder: "apps/board" }, { "apps/board/index.html": "<p>1</p>" });
+    app.f.reload();
+    await settle();
+    expect(app.embeds.map((e) => e.stopped)).toEqual([true, false]);
+    const page = await hosted({ kind: "page", path: "index.html", html: "<h1>1</h1>" });
+    (page.f as { src: { html: string } }).src.html = "<h1>1</h1>";
+    expect(PAGEHOST).toContain("P.showPage = function (page) {");
+    page.f.load();
+    await settle();
+    expect(page.embeds.map((e) => [e.stopped, e.options.scope])).toEqual([[false, null], [false, null]]);
   });
 
   it("checks once, in a hidden frame of the app's folder, that the host holds a frame in its folder; on a host that does not (before Thread Pages 1.13.4, Unife Pages 0.5.4) it shows no app (review F1)", async () => {
@@ -206,7 +219,38 @@ describe("an app is a frame of the page, the host's own (B-0103, B-0102, B-0104;
     expect(states.at(-1)).toMatchObject({ status: "failed", message: "showing a page in a frame needs Thread Pages 1.13.4 or Unife Pages 0.5.4" });
     // Thread Pages 1.12 and Unife Pages 0.4 have the call, for another session's page alone
     const older = await hosted({ kind: "repo", folder: "apps/board" }, { "apps/board/index.html": "<p>1</p>" }, (() => { throw new TypeError("threadPage.embed needs { sessionId }"); }) as unknown);
-    expect(older.states.at(-1)).toMatchObject({ status: "failed", message: "showing a page in a frame needs Thread Pages 1.13.4 or Unife Pages 0.5.4" });
+    expect(older.states.at(-1)).toMatchObject({ status: "failed", message: "showing a page in a frame needs Thread Pages 1.13.4 or Unife Pages 0.5.4 (threadPage.embed needs { sessionId })" });
+  });
+
+  it("a host that refuses the check's frame for one folder says so for that app and asks again for the next (review 2 F2)", async () => {
+    let refuse = true;
+    const embed = (_target: unknown, options: Record<string, any>) => {
+      if (refuse && options.scope === "bad folder") throw new Error("scope is not a folder of this page");
+      return () => undefined;
+    };
+    const one = await hosted({ kind: "repo", folder: "bad folder" }, { "bad folder/index.html": "<p>1</p>" }, embed);
+    expect(one.states.at(-1)).toMatchObject({ status: "failed", message: "scope is not a folder of this page" });
+    refuse = false;
+    // Not kept: the next load asks again (here it gets no answer from the stand-in, so it waits on the check).
+    one.f.reload();
+    await settle();
+    expect(one.states.at(-1)).toMatchObject({ status: "loading" });
+  });
+
+  it("with no answer from the check's frame within 10 s, the load fails saying so and the next one asks again", async () => {
+    vi.useFakeTimers();
+    try {
+      const silent = hosted({ kind: "repo", folder: "apps/board" }, { "apps/board/index.html": "<p>1</p>" }, true, "silent");
+      await vi.advanceTimersByTimeAsync(9_000);
+      const { f, probes, embeds, states } = await (async () => { await vi.advanceTimersByTimeAsync(1_500); return silent; })();
+      expect(states.at(-1)).toMatchObject({ status: "failed", message: "the host did not say whether it holds an app in its folder; reload to try again" });
+      expect([probes.map((p) => p.stopped), embeds]).toEqual([[true], []]);
+      f.reload();
+      await vi.advanceTimersByTimeAsync(10);
+      expect(probes).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("follows an app's ../ links as far as the session's folder; one climbing above it loads nothing (S1.25, Q-0025, B-0083)", () => {
@@ -225,11 +269,14 @@ describe("an app is a frame of the page, the host's own (B-0103, B-0102, B-0104;
     let click: ((e: unknown) => void) | null = null;
     const marked = { value: true };
     const kernel = { getAttribute: () => JSON.stringify({ embedded: true }) };
-    const win: Record<string, unknown> = { console, addEventListener: (type: string, fn: (e: unknown) => void) => { if (type === "click") click = fn; } };
+    let capture: unknown = null;
+    const win: Record<string, unknown> = { console, addEventListener: (type: string, fn: (e: unknown) => void, phase: unknown) => { if (type === "click") { click = fn; capture = phase; } } };
     win.window = win;
     win.parent = { postMessage: (m: unknown) => posted.push(m) };
     win.document = { querySelector: (q: string) => (q.startsWith("script[data-thread-page-kernel]") ? kernel : q.includes("syns-pages-frame") && marked.value ? {} : null), readyState: "complete" };
     runInContext(PAGEHOST, createContext(win));
+    // On window, in the capture phase: before the kernel's own listener on document (D96 point 2, review F6).
+    expect(capture).toBe(true);
     const press = (href: string, more: Record<string, unknown> = {}) => {
       let prevented = false;
       const a = { getAttribute: () => href, hasAttribute: (n: string) => n === "download" && !!more.download, target: more.target ?? "" };

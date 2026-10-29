@@ -186,7 +186,8 @@ export function createDispatch({ table = METHODS, cli, log, held = createHeld(),
     // so does this. A frame the page bound to no folder (the agent's own page in the workspace) calls as the page does.
     const frame = call.caller?.frame;
     if (frame !== undefined && frame !== null) {
-      const bound = typeof frame === "object" ? folderOf((frame as { scope?: unknown }).scope) : false;
+      // Only an object with its own `scope` key is a frame's mark; any other shape fails closed (D46), never as no folder.
+      const bound = typeof frame === "object" && !Array.isArray(frame) && Object.hasOwn(frame, "scope") ? folderOf((frame as { scope: unknown }).scope) : false;
       if (bound === false) return toAnswer(fail("bad_scope"));
       if (bound !== null) {
         if (scope === null || (scope !== bound && !scope.startsWith(`${bound}/`))) return toAnswer(fail("bad_scope"));
