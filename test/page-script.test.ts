@@ -149,6 +149,13 @@ describe("an app is a frame of the page, the host's own (B-0103, B-0102, B-0104;
     for (const gone of ["const SHIM", "formdone", "session.reply", "storage.get", "storage.set", "nsKey", "stateKey", "CACHED", "data-thread-page-kernel], script[data-thread-page-contributor], base"]) expect(PAGEHOST, gone).not.toContain(gone);
   });
 
+  it("leaves an app's forms to the host, as a Thread Page's: a method=\"dialog\" form and one marked data-thread-page-manual reach the host as written, and nothing of the page host's hears a submit (B-0104, Q-0038)", async () => {
+    const forms = '<form method="dialog"><button>OK</button></form><form data-thread-page-manual><input name="q"></form><form><input name="a"></form>';
+    const { embeds } = await hosted({ kind: "repo", folder: "apps/board" }, { "apps/board/index.html": forms });
+    expect(embeds[0].options.html).toBe('<!doctype html>\n<meta name="syns-pages-frame">' + forms);
+    for (const gone of ['"submit"', '"dialog"', "data-thread-page-manual", "e.submitter", '__tool: "form"']) expect(PAGEHOST, gone).not.toContain(gone);
+  });
+
   it("a reload hands the host the document again on the same frame, not stopping it, so the reader's drafts and scroll stay (Unife Pages 0.5.3, IN-0027)", async () => {
     const { f, embeds } = await hosted({ kind: "repo", folder: "apps/board" }, { "apps/board/index.html": "<p>1</p>" });
     f.changed(["apps/board/style.css"]);
