@@ -267,8 +267,9 @@ export const PAGEHOST = String.raw`/*
  * The bootstrap. It keeps the page as the host served it (window.SynsPages.page), holds back the page's own scripts
  * (they run in the workspace's frame instead) and reads the repository's workspace (.page/index.html); only once it
  * is there does it clear the document and load the workspace into it. With no workspace to read (no such file, no
- * repository yet, or no syns.* here) the page stays as written and its scripts run; in a frame of a page (the kernel's
- * config says embedded) it does nothing, so a framed document runs as written. Once the workspace
+ * repository yet, or no syns.* here) the page stays as written and its scripts run; in a frame inside a page (the
+ * kernel's config says frame, or embedded where it does not say frame) it does nothing, so a framed document runs as
+ * written; a page shown whole (its own address, or the host's home view of its session) boots. Once the workspace
  * is shown, a saved page is taken through threadPage.onPageUpdate where the host offers it: only the agent's page
  * (SynsPages.page and its frame) changes, with no new boot; without it the host loads the saved page as before.
  *   SynsPages.app   { version, reload(), onStop(fn) }   an in-page reload: stop the app, read it again, start it.
@@ -277,8 +278,9 @@ export const PAGEHOST = String.raw`/*
   "use strict";
   const P = window.SynsPages;
   if (P.page || !document.currentScript || document.readyState !== "loading") return;
-  // In a frame of a page (an app, the agent's page, another session's) the document is the frame's own, as written.
-  try { if (JSON.parse(document.querySelector("script[data-thread-page-kernel]").getAttribute("data-config")).embedded === true) return; } catch (e) { /* no kernel config: a page */ }
+  // In a frame inside a page (an app, the agent's page, another session's) the document is the frame's own, as written;
+  // a host that does not say frame (Unife Pages before 0.6.0) counts every embed as one (D99).
+  try { const c = JSON.parse(document.querySelector("script[data-thread-page-kernel]").getAttribute("data-config")); if ("frame" in c ? c.frame === true : c.embedded === true) return; } catch (e) { /* no kernel config: a page */ }
   const me = document.currentScript;
   // The host's kernel and every contributor's page script run as served; only the page's own scripts are held.
   const served = function (s) { return s === me || s.hasAttribute("data-thread-page-kernel") || s.hasAttribute("data-thread-page-contributor"); };

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.12.2
+
+- **The workspace opens again in the home's view of a session.** 0.12.0's bootstrap did nothing in any embedded
+  document, so the Thread Pages home (bb and Claude Code), which shows a session's page as an embed, showed the agent's
+  page alone where its thread page shows the workspace. The bootstrap now does nothing only in a frame inside a page
+  (an app, the agent's page in the workspace, a page another page embeds), which the host's kernel config says with
+  `frame`. A page shown whole, at its own address or in the home's view, boots the workspace. A host that does not say
+  `frame` (Unife Pages before 0.6.0, Thread Pages before the release carrying it) counts every embed as a frame, as
+  0.12.1 did, so the home shows the workspace once that host is installed (Syns B-0119, D99; Unife Pages B-0189).
+  No method, result, reason, fragment or guide text changed.
+
 ## 0.12.1
 
 The first release of this code: 0.12.0 sat on `main` with earlier bundles under that number and was never

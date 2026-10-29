@@ -24,10 +24,30 @@ describe("the page script's text (S2.28)", () => {
     expect(PAGEHOST).not.toContain("data-app");
   });
 
-  it("does nothing in a frame of a page: the bootstrap returns when the kernel's config says embedded (B-0103)", () => {
+  it("does nothing in a frame inside a page and boots in a page shown whole, read from the kernel's frame field, else from embedded (B-0119, D99)", () => {
     const boot = PAGEHOST.slice(PAGEHOST.lastIndexOf("(function () {"));
-    expect(boot.indexOf('.embedded === true) return;')).toBeGreaterThan(-1);
-    expect(boot.indexOf('.embedded === true) return;')).toBeLessThan(boot.indexOf("const observer = new MutationObserver"));
+    /** Whether the bootstrap goes on past its frame check (it starts holding the page's scripts) for a kernel config. */
+    const boots = (config: unknown) => {
+      const kernel = config === undefined ? null : { getAttribute: () => JSON.stringify(config) };
+      const observe = vi.fn(() => { throw new Error("booted"); });
+      const win: Record<string, unknown> = { SynsPages: {}, Map, JSON, Array, MutationObserver: class { observe = observe; } };
+      win.window = win;
+      win.document = { currentScript: {}, readyState: "loading", querySelector: (q: string) => (q.startsWith("script[data-thread-page-kernel]") ? kernel : null) };
+      try { runInContext(boot, createContext(win)); } catch (e) { if ((e as Error).message !== "booted") throw e; }
+      return observe.mock.calls.length === 1;
+    };
+    // The host's home view of a session (an embed, shown whole) and a page at its own address boot the workspace.
+    expect(boots({ embedded: true, frame: false })).toBe(true);
+    expect(boots({ embedded: false, frame: false })).toBe(true);
+    // A frame inside a page (an app, the agent's page in the workspace, a page another page embeds) runs as written.
+    expect(boots({ embedded: true, frame: true })).toBe(false);
+    // A host that does not say frame (Unife Pages before 0.6.0): every embed is a frame, as in 0.12.1.
+    expect(boots({ embedded: true })).toBe(false);
+    expect(boots({ embedded: false })).toBe(true);
+    expect(boots({})).toBe(true);
+    // No kernel config, or one that is no object: a page.
+    expect(boots(undefined)).toBe(true);
+    expect(boots(null)).toBe(true);
   });
 
   it("with no workspace to read, leaves the page as written and runs its scripts once: any failure of the first read, or no .page/index.html (S2.29)", () => {
