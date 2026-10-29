@@ -747,7 +747,7 @@ function buildGuide(table) {
 //#endregion
 //#region src/declaration.ts
 /** The plugin's version, as declared to the host. A test holds it equal to package.json's. */
-const VERSION = "0.12.0";
+const VERSION = "0.12.1";
 /** threadPagesContributions, generated from the table. With `agentInstructions` off no fragment is declared (S4.5); the page script is declared either way (S2.27). */
 function buildDeclaration(table, settings) {
 	return {
@@ -3978,7 +3978,7 @@ async function answerPageScript(cli, ask, ms = PAGE_SCRIPT_MS) {
 		clearTimeout(timer);
 		controller.abort();
 	}
-	return ask.have === "0.12.0" ? { version: VERSION } : {
+	return ask.have === "0.12.1" ? { version: VERSION } : {
 		version: VERSION,
 		script: PAGEHOST
 	};

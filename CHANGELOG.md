@@ -1,8 +1,9 @@
 # Changelog
 
-## 0.12.0
+## 0.12.1
 
-The page script, how a call from an app's frame is scoped, and one sentence of the guide changed; no method, result,
+The first release of this code: 0.12.0 sat on `main` with earlier bundles under that number and was never
+released, so it takes the next one (Syns B-0093, B-0102). The page script, how a call from an app's frame is scoped, and one sentence of the guide changed; no method, result,
 reason or fragment changed. Needs Thread Pages 1.13.4 (bb) or Unife Pages 0.5.4 (Claude Code), the first that hold a frame in the
 folder it is given: on an older host an app shows "showing a page in a frame needs Thread Pages 1.13.4 or Unife Pages
 0.5.4" in place of the app.
