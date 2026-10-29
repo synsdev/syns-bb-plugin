@@ -1,5 +1,5 @@
 import { buildArgs } from "../cli.js";
-import { K64, M1, nullable, object, path, repoPath, version, type SimpleMethod } from "../method.js";
+import { BY, K64, M1, nullable, object, path, repoPath, version, type SimpleMethod } from "../method.js";
 
 const MAX_PATHS = 200;
 const record = (value: unknown): Record<string, unknown> => (typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {});
@@ -33,7 +33,7 @@ export const history: SimpleMethod = {
             pathsTruncated: { type: "boolean" },
             by: {
               type: "object",
-              properties: { integration: nullable("string"), run: nullable("string"), trigger: nullable("string") },
+              properties: BY,
               required: ["integration", "run", "trigger"],
             },
           },
@@ -50,8 +50,10 @@ export const history: SimpleMethod = {
     total: out.total,
     entries: Array.isArray(out.data)
       ? out.data.map(record).map((row) => {
-          // With --file the CLI's rows name no paths (and no parent): every row changed that file.
-          const paths = Array.isArray(row.filesChanged) ? (row.filesChanged as unknown[]) : typeof params.path === "string" ? [params.path] : undefined;
+          // With --file a row names no filesChanged: since CLI 0.3.25 it names the file's own path at that version, and
+          // where a move took it from, as filesChanged would ([movedFrom, path]); before, only the path asked for (S1.7).
+          const own = typeof row.path === "string" ? [...(typeof row.movedFrom === "string" ? [row.movedFrom] : []), row.path] : typeof params.path === "string" ? [params.path] : undefined;
+          const paths = Array.isArray(row.filesChanged) ? (row.filesChanged as unknown[]) : own;
           const provenance = record(row.provenance);
           return {
             version: row.sha,

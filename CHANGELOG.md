@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.11.0
+
+The fragment and the guide changed, with one new method, `syns.changes`. No field or reason of an existing method
+changed; three reasons' meanings are worded anew.
+
+- **What agents are told.** The fragment's third paragraph: something that must outlive a turn becomes an app, a
+  folder holding an `index.html` and its data, and the guide's *Apps in the workspace* is read before building one.
+  That section keeps its paragraph and gains **Working beside the person**: the app holds the data, marks what the
+  agent changed with `syns.changes` until the person has seen it, and starts the agent only from its composer.
+  *Staying current* reads changes with `syns.changes { since, content: true }`, and `stale_head` names `syns.changes {
+  since: base }`. To fit GUIDE_MAX with room for one more method (S6.34), the guide's own lines are tighter and drop
+  nothing: `str` for `string`, a `…by` group shared by `syns.history` and `syns.changes`, a bound of 2^32 − 1 shown as
+  `…`, the placed folder's stale rule stated as it stands since CLI 0.3.6, and sentences the roster already gives left
+  to it. 15,506 of 15,872 bytes; the fragment 1,063 of 2,048 (Syns B-0111).
+
+- **`syns.changes { since, to?, path?, content? }`.** What changed since a version, up to `to` (default the head), in
+  one CLI run (`syns diff --from … --provenance [--content] [--path] --json`, CLI 0.3.25, the minimum already). Each
+  changed path with its `status` (`renamed` with `oldPath`), `blob`, `size`, the newest change's `by` (`number`,
+  `author`, `integration`, `run`, `trigger`; null where none of the versions the CLI read names it) and, with `content:
+  true`, its text (`null` if not text). Texts fill the 1 MiB answer whole, in order, counted as JSON escapes them;
+  the rest, and every text the CLI sets aside past 8 MiB, come back in `deferred`, to read at `to.version`. A list of
+  paths past 1 MiB or the host's 10,000 nodes is `response_too_large`. In an app's folder the CLI gets `--path`, and a
+  move across its edge reads as an addition or a deletion (S1.25, S1.26, D87) (Syns B-0060, syns roadmap/224).
+
+- **`syns.history { path }` across a move.** Each version names the path the file had at that version, and the
+  version that moved it names both sides, as `syns.history {}` names that version, from CLI 0.3.25's own fields. Before,
+  every version named the path asked for, one the file may never have had. In an app, versions from before the file
+  came into its folder are left out, the move counted from the folder, so no author or message from outside it
+  reaches the app; `total` and `offset` still count the CLI's versions. No field, guide text or reason changed (Syns
+  B-0087, S1.7, S1.25).
+
+- **A scoped diff's patch counts from the folder.** Under a scope, `syns.diff { patch: true }` names every path in a
+  file's patch header from the folder, as its entries already do: `diff --git a/a.json b/old/a.json`, `rename from
+  a.json`, not `a/probe-app/a.json`. The `diff --git`, `---`, `+++`, `rename from` and `to`, `copy from` and `to` and
+  `Binary files … differ` lines change, a quoted path's quotes kept; a hunk's lines never do, and a call with no scope
+  gets the patch as before (Syns B-0080, S1.25).
+
 ## 0.10.3
 
 The page script changed; no method, result, reason, guide text or fragment changed.

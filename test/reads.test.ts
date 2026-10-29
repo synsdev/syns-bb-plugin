@@ -189,6 +189,12 @@ describe("syns.history", () => {
     expect(JSON.stringify(result)).not.toContain("FILE CONTENT");
     expect(h.log.join("\n")).not.toContain("FILE CONTENT");
   });
+  it("across a move names each version's own path, the moving version both sides as syns.history {} does, from CLI 0.3.25's rows (S1.7, B-0087)", async () => {
+    const paths = async (name: string, path: string) =>
+      resultOf<{ entries: { number: number; paths: string[] }[] }>(await harness({ history: rec(name) }).call("syns.history", { path })).entries.map((entry) => [entry.number, entry.paths]);
+    expect(await paths("history.file.moved-in.0325", "app/outside.md")).toEqual([[4, ["app/outside.md"]], [3, ["outside.md", "app/outside.md"]], [2, ["outside.md"]], [1, ["outside.md"]]]);
+    expect(await paths("history.file.moved-within.0325", "app/a.json")).toEqual([[6, ["app/a.json"]], [5, ["app/old/a.json", "app/a.json"]], [1, ["app/old/a.json"]]]);
+  });
 
   it("refuses a limit outside 1 to 200", async () => {
     const h = harness();

@@ -53,7 +53,7 @@ export const REASONS = {
   folder_out_of_place: {
     code: "unavailable",
     message: "This session's folder is not where its repository records it, so Syns will not use it.",
-    meaning: "A placed folder stands away from the path its identity file records; an operator moves it back.",
+    meaning: "A placed folder is not at the path its identity file records; an operator moves it back.",
   },
   folder_write_unsupported: {
     code: "unavailable",
@@ -78,7 +78,7 @@ export const REASONS = {
   stale_head: {
     code: "conflict",
     message: "The repository changed since this page last read it. Nothing was written.",
-    meaning: "The repository, or placed folder, changed after base; nothing written; detail.current is the head. Re-read, show what changed, never retry blindly.",
+    meaning: "The repository, or placed folder, changed after base; nothing written; detail.current is the head. syns.changes { since: base } says what changed; never retry blindly.",
     detail: { type: "object", properties: { current: SHA }, required: ["current"] },
   },
   checkout_dirty: {
@@ -137,7 +137,7 @@ export const REASONS = {
   not_permitted: {
     code: "unavailable",
     message: "Syns refused this for this account: it may need a higher role, or a limit was reached.",
-    meaning: "Syns answered 403 for this account: a role too low for it, or a server limit. The CLI says no more.",
+    meaning: "Syns answered 403: a role too low, or a server limit; the CLI says no more.",
   },
   no_such_user: {
     code: "not_found",

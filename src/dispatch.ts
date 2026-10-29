@@ -123,6 +123,8 @@ export function createDispatch({ table = METHODS, cli, log, held = createHeld(),
       limits: cli.limits,
       held,
       redact: (text) => redact(text, { folder: session.cwd }),
+      // Counted from the scope, a path outside climbs with one `../` per folder at most (scopeResult); one inside only shrinks.
+      pathGrowth: scoped?.reaches ? 3 * folder!.split("/").length : 0,
       async syns(args, stdin, options) {
         const mark = provenance(sessionId);
         const env = options?.provenanceEnv ? { SYNS_INTEGRATION: mark.integration!, SYNS_RUN: mark.run!, SYNS_TRIGGER: mark.trigger! } : undefined;
@@ -151,7 +153,7 @@ export function createDispatch({ table = METHODS, cli, log, held = createHeld(),
       }
     }
     if (scoped) {
-      if (method.scoped) result = method.scoped(result, (path) => scoped.reaches || (typeof path === "string" && path.startsWith(`${folder}/`)));
+      if (method.scoped) result = method.scoped(result, (path) => scoped.reaches || (typeof path === "string" && path.startsWith(`${folder}/`)), folder!);
       result = scopeResult(method, result, folder!, scoped.reaches);
     }
     // Never a result with a hole in it. S3.7

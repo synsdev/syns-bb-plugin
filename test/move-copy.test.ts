@@ -79,7 +79,7 @@ describe("syns.move and syns.copy", () => {
       expect(method.effect, name).toBe("contributed-write");
       for (const reason of ["stale_head", "checkout_dirty", "exists"]) expect(Object.keys(method.reasons), name).toContain(reason);
     }
-    expect(declaration.guide).toContain("- `syns.move` / `syns.copy` `{ from: path, to: path, base, message? }` → `{ version, number, from: string, to: string, files: int }`");
+    expect(declaration.guide).toContain("- `syns.move` / `syns.copy` `{ from: path, to: path, base, message? }` → `{ version, number, from: str, to: str, files: int }`");
   });
   it("the log names the method, the session, two paths and the outcome, never the message", async () => {
     const h = harness({ mv: rec("mv.file.0325") });

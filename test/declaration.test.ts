@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { VERSION, buildDeclaration } from "../src/declaration.js";
-import { K64, object, reasonsOf, type Method, type Schema } from "../src/method.js";
+import { BY, K64, object, reasonsOf, type Method, type Schema } from "../src/method.js";
 import { METHODS } from "../src/methods/index.js";
 import { REASONS } from "../src/errors.js";
 import { FRAGMENT } from "../src/text/fragment.js";
@@ -16,7 +16,9 @@ const SHARING_WRITES = ["syns.collaboratorAdd", "syns.collaboratorRemove", "syns
 const SIXTEEN = ["syns.commit", "syns.diff", "syns.edit", "syns.glob", "syns.grep", "syns.history", "syns.ls", "syns.read", "syns.readBinary", "syns.readMany", "syns.repo", "syns.revert", "syns.rm", "syns.whoami", "syns.write", "syns.writeBinary"];
 /** Syns roadmap/228, B-0062: syns mv and syns cp. */
 const PATH_WRITES = ["syns.copy", "syns.move"];
-const ALL = [...SIXTEEN, "syns.place", ...SURFACE, ...PATH_WRITES].sort();
+/** Syns B-0060, roadmap/224: syns diff --from --provenance --content. */
+const CHANGES = ["syns.changes"];
+const ALL = [...SIXTEEN, "syns.place", ...SURFACE, ...PATH_WRITES, ...CHANGES].sort();
 /** The keywords Thread Pages compiles; any other refuses the method (its contributed.ts). */
 const SUBSET = new Set(["type", "description", "properties", "required", "additionalProperties", "enum", "const", "minimum", "maximum", "minLength", "maxLength", "pattern", "items", "minItems", "maxItems"]);
 
@@ -31,7 +33,7 @@ const namesIn = (text: string): string[] => [...new Set(text.match(/(?<![.\w])sy
 const declaration = buildDeclaration(METHODS, { agentInstructions: true });
 
 describe("the table", () => {
-  it("holds the thirty-one methods: the sixteen of spec 01, syns.place, the twelve of spec 06 and syns.move and syns.copy (D23, D43, D59, B-0062)", () => {
+  it("holds the thirty-two methods: the sixteen of spec 01, syns.place, the twelve of spec 06, syns.move and syns.copy, and syns.changes (D23, D43, D59, B-0062, B-0060)", () => {
     expect(METHODS.map((method) => method.name).sort()).toEqual(ALL);
     expect(METHODS.filter((method) => method.effect === "contributed-write").map((method) => method.name).sort()).toEqual(["syns.commit", "syns.edit", "syns.enableChecks", "syns.place", "syns.revert", "syns.rm", "syns.write", "syns.writeBinary", ...SHARING_WRITES, ...PATH_WRITES].sort());
   });
@@ -73,6 +75,7 @@ describe("the declaration", () => {
       "syns.glob": "64/1024",
       "syns.grep": "64/1024",
       "syns.diff": "64/1024",
+      "syns.changes": "64/1024",
       "syns.write": "1024/64",
       "syns.edit": "128/64",
       "syns.rm": "64/64",
@@ -136,6 +139,7 @@ describe("the declaration", () => {
       "syns.glob": [...common, "bad_pattern"].sort(),
       "syns.grep": [...common, "bad_pattern"].sort(),
       "syns.diff": common,
+      "syns.changes": common,
       "syns.write": [...common, ...write, "exists"].sort(),
       "syns.edit": [...common, ...write, "many_matches", "no_match"].sort(),
       "syns.rm": [...common, ...write].sort(),
@@ -221,19 +225,26 @@ describe("what agents are told", () => {
     expect(text).not.toContain("nothing to add");
     expect(text).toContain("- No `.page/index.html`: `mkdir -p .page && syns cat .page/index.html --repo bartsoj/syns-workspace-light-template > .page/index.html`");
     expect(text).toContain("- No `.syns.yaml`: `syns push -n <a short name for this work> --visibility private`. If it asks for `syns login`: run that in the background, give the person the link it prints, and push again once it says `Login successful`.");
-    expect(text).toContain("Make what the person will keep using an app: a folder holding an `index.html`");
-    expect(text).toContain("Your page reports and asks; the app does the work.");
+    expect(text).toContain("\n\nWhen something must outlive a turn, make it an app: a folder holding an `index.html` and its data; the workspace runs it with `syns.*` counted from that folder. Read the guide's *Apps in the workspace* before you build one. Your page reports and asks; the app holds the data and does the work. The workspace itself is the repository's `.page/index.html`: change it as the person asks.\n\n");
+    expect(text).not.toContain("Make what the person will keep using an app");
     expect(text.endsWith("**Look.** The design and layout of your page and every app should fit its content and overall design of the workspace.")).toBe(true);
     for (const gone of ["Tool first", "bartsoj/syns-templates", "TOOLS.md", "syns explore", "syns-tools", "pagehost.js"]) expect(text, gone).not.toContain(gone);
   });
 
-  it("the fragment is the owner's text, verbatim (IN-0058, D90)", () => {
-    expect(declaration.instruction).toBe(readFileSync(new URL("./fixtures/fragment-0.10.1.md", import.meta.url), "utf8").trim());
+  it("the fragment is the owner's text, verbatim, its third paragraph IN-0070 §1 (IN-0058, D90, D95)", () => {
+    expect(declaration.instruction).toBe(readFileSync(new URL("./fixtures/fragment-0.11.0.md", import.meta.url), "utf8").trim());
+  });
+
+  it("§ Apps in the workspace keeps its paragraph, then Working beside the person, the owner's words byte for byte (D95 point 2); the frame sentence waits for B-0102 to B-0104 (D97)", () => {
+    const guide = declaration.guide;
+    const section = guide.slice(guide.indexOf("## Apps in the workspace"), guide.indexOf("## Versions"));
+    expect(section.endsWith("When someone else changes a file in its folder, the app reloads, keeping typed text and scroll; its own saves don't.\n\n**Working beside the person.** The app holds the data, in files in its folder; you edit the same files, and your page stays the conversation. After each of your turns the app marks what you changed, where it sits, until the person has seen it (`syns.changes` since the version they last saw, kept in `storage`). A question about a record goes on that record. The app starts you only from its composer, never on an edit, a timer or a load.\n\n")).toBe(true);
+    expect(section.split("\n\n")).toHaveLength(4); // heading, the kept paragraph, Working beside, the gap before Versions
   });
 
   it("the guide says the folder rule: a placed folder is what the page sees, paths counted from it (A57, S4.7, D36)", () => {
     expect(declaration.guide).toContain("## A placed folder");
-    for (const word of ["`holder`", "counted from it", "the holder's", "Once the CLI checks writes against the folder only, a write is `stale_head` only when the folder changed after `base`"]) expect(declaration.guide, word).toContain(word);
+    for (const word of ["`holder`", "every `path` counts from it", "the holder's", "a write is `stale_head` only if the folder changed after `base`"]) expect(declaration.guide, word).toContain(word);
     expect(declaration.guide).not.toContain("repository-relative");
     expect(declaration.guide).not.toContain("Choose a repository: it is the session's.");
   });
@@ -275,13 +286,19 @@ describe("what agents are told", () => {
 
   it("the guide makes no exception of syns.revert, and its recipes use the full set (D89, spec 04)", () => {
     expect(declaration.guide).not.toMatch(/but (for )?`syns\.revert`|syns\.revert` (records none|has no)/);
-    expect(declaration.guide).toContain("syns.diff { from }");
     expect(declaration.guide).toContain("create: true");
+  });
+
+  it("the guide keeps a page current with syns.changes, and a stale write says to ask it what changed (B-0060, held for the batch, D94)", () => {
+    expect(declaration.guide).toContain("`syns.changes { since, content: true }` gives each changed path's `status`, text and `by` up to `to.version`; read `deferred` with `syns.readMany` at `to.version`.");
+    expect(declaration.guide).not.toContain("syns.diff { from }");
+    expect(declaration.guide).toContain("`too_large` carries `size` when known (the bound counts the text as JSON escapes it): read it with `syns.read`.");
+    expect(REASONS.stale_head.meaning).toContain("syns.changes { since: base } says what changed; never retry blindly.");
   });
 
   it("the fragment says in words that it applies only when the session's folder is empty or a Syns repository, and where the rest is (S4.2)", () => {
     expect(declaration.instruction).toMatch(/When this session's folder is empty or a Syns repository/);
-    expect(declaration.instruction).toContain("(the guide's *Apps in the workspace*)");
+    expect(declaration.instruction).toContain("Read the guide's *Apps in the workspace* before you build one.");
     expect(declaration.guide).toContain("## Apps in the workspace");
   });
 
@@ -301,8 +318,18 @@ describe("what agents are told", () => {
     const section = declaration.guide.slice(declaration.guide.indexOf("## Every method"), declaration.guide.indexOf("## Errors"));
     expect(section).not.toMatch(/^### .*—/m);
     expect(section).not.toContain("- Reasons:");
-    expect(section).toContain("`…record` is `{ owner?: string");
+    expect(section).toContain("`…record` is `{ owner?: str");
+    expect(section).toContain("`…by` is `{ integration: str|null, run: str|null, trigger: str|null }`.");
+    expect(section).toContain("pathsTruncated: bool, by: { …by } }]");
+    expect(section).toContain("by: { …by, number, author: str|null }|null");
+    expect(section).toContain("- `syns.history` `{ path?, limit?: int(1–100), offset?: int(0–…) }`"); // 2^32 − 1 reads as no bound
+    expect(section).not.toContain("4294967295");
     expect(section).toContain("- `syns.repoVisibility` `{ visibility: \"public\"|\"private\" }` → `{ …record }`");
+  });
+
+  it("a group naming its required keys stands in only where they are required, so `?` is never lost (B-0111 review L1)", () => {
+    const loose = { ...METHODS[0]!, name: "syns.ping", result: { type: "object", properties: { by: { type: "object", properties: BY, required: ["integration"] } }, required: ["by"] } } as unknown as Method;
+    expect(buildGuide([...METHODS, loose])).toContain("- `syns.ping` `{}` → `{ by: { integration: str|null, run?: str|null, trigger?: str|null } }`");
   });
 
   it("the error section lists every declared reason under its own code, a code the guide does not name included (D79)", () => {
@@ -329,7 +356,7 @@ describe("what agents are told", () => {
     expect(declaration.guide).toContain("1–200"); // history's limit, from its schema
     expect(declaration.guide).toContain("1–64"); // readMany's paths, from its schema
     expect(declaration.guide).toContain("1–5000"); // read's limit, from its schema
-    expect(declaration.guide).toContain("string(≤32768)"); // edit's old and new, from its schema
+    expect(declaration.guide).toContain("str(≤32768)"); // edit's old and new, from its schema
   });
 
   it("with agentInstructions off no fragment is declared; methods and guide remain (A10, S4.5)", () => {

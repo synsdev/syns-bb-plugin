@@ -1,6 +1,7 @@
 import { buildArgs } from "../cli.js";
 import { SynsError } from "../errors.js";
 import { K64, M1, object, repoPath, version, type Context, type ProcedureMethod } from "../method.js";
+import { scopePatch } from "../scoped.js";
 
 interface Params {
   from: string;
@@ -54,10 +55,11 @@ export const diff: ProcedureMethod = {
 
   // A move across the scope's edge reads as the CLI's mask reads it (roadmap/228): the old side outside, an addition;
   // the new side outside, a deletion at the old path. Its patch names the outside path, so it goes. S1.26, D87
-  scoped(result: { files?: Record<string, unknown>[] }, inside: (path: unknown) => boolean) {
+  // A patch kept names its paths as its entry does, counted from the folder (S1.25, B-0080).
+  scoped(result: { files?: Record<string, unknown>[] }, inside: (path: unknown) => boolean, scope: string) {
     if (!Array.isArray(result.files)) return result;
     const files = result.files.map((file) => {
-      if (typeof file.oldPath !== "string" || inside(file.path) === inside(file.oldPath)) return file;
+      if (typeof file.oldPath !== "string" || inside(file.path) === inside(file.oldPath)) return typeof file.patch === "string" ? { ...file, patch: scopePatch(file.patch, scope) } : file;
       return inside(file.path) ? { path: file.path, status: "added" } : { path: file.oldPath, status: "deleted" };
     });
     return { ...result, files };

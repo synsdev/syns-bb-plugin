@@ -6,6 +6,7 @@ import { buildDeclaration } from "../src/declaration.js";
 import { METHODS } from "../src/methods/index.js";
 import { validate, type Schema } from "../src/method.js";
 import { scopeInside } from "../src/scope.js";
+import { scopePatch } from "../src/scoped.js";
 import { ok, rec, spawnFailed } from "./fake-runner.js";
 import { HEAD, OLD, SAMPLES, failureOf, harness, resultOf } from "./harness.js";
 
@@ -17,7 +18,7 @@ describe("the scope parameter in the server half (S1.25, D85)", () => {
   it("is declared on every method, and named once in the guide, not in each method's line", () => {
     const declaration = buildDeclaration(METHODS, { agentInstructions: true });
     for (const method of declaration.methods) expect((method.params.properties as Record<string, unknown>).scope, method.name).toEqual({ type: "string", maxLength: 1024 });
-    expect(declaration.guide).toContain("no other key is accepted but `scope`, a folder that paths and answers then count from.");
+    expect(declaration.guide).toContain("no other key is accepted but `scope`, a folder paths and answers then count from.");
     expect(declaration.guide).not.toMatch(/^- `syns\.[a-zA-Z]+` `\{[^`]*scope/m);
   });
   it("syns.ls {} lists only the folder: the CLI lists it at the session's folder, every run carries the scope, paths come back counted from it", async () => {
@@ -66,8 +67,34 @@ describe("the scope parameter in the server half (S1.25, D85)", () => {
   });
   it("syns.history with a path asks the CLI for that file inside the folder", async () => {
     const h = harness({ history: rec("history.file.ok") });
-    expect((await h.call("syns.history", { path: "n29.md", scope: "notes" })).ok).toBe(true);
+    expect(resultOf<{ entries: { paths: string[] }[] }>(await h.call("syns.history", { path: "n29.md", scope: "notes" })).entries.map((entry) => entry.paths)).toEqual([["n29.md"]]);
     expect(args(h)).toEqual(["history --file=notes/n29.md --limit=20 --json"]);
+  });
+  // Rows of CLI 0.3.25 for a file moved across or within the folder app/: each names its own path (B-0087).
+  const fileHistory = async (name: string, params: Record<string, unknown>) => {
+    const result = resultOf<{ total: number; entries: { number: number; message: string; paths: string[] }[] }>(await harness({ history: rec(name) }).call("syns.history", params));
+    return { total: result.total, rows: result.entries.map((entry) => [entry.number, entry.paths]), text: JSON.stringify(result) };
+  };
+  it("syns.history with a path leaves out the versions from before the file came into the folder: no author or message from outside it (B-0087)", async () => {
+    const answer = await fileHistory("history.file.moved-in.0325", { path: "outside.md", scope: "app" });
+    expect(answer.rows).toEqual([[4, ["outside.md"]], [3, ["outside.md"]]]);
+    expect(answer.text).not.toContain("at the root");
+    expect(answer.text).not.toContain("Scratch for");
+    expect(answer.total).toBe(4);
+  });
+  it("syns.history with a path keeps a move within the folder, both sides counted from it (B-0087)", async () => {
+    expect((await fileHistory("history.file.moved-within.0325", { path: "a.json", scope: "app" })).rows).toEqual([[6, ["a.json"]], [5, ["old/a.json", "a.json"]], [1, ["old/a.json"]]]);
+  });
+  it("syns.history with a path leaves out what the file went through outside the folder, keeping the moves out and back in (B-0087)", async () => {
+    const answer = await fileHistory("history.file.moved-out-back.0325", { path: "c.md", scope: "app" });
+    expect(answer.rows).toEqual([[9, ["c.md"]], [7, ["c.md"]], [1, ["c.md"]]]);
+    expect(answer.text).not.toContain("edit c.md at the root");
+  });
+  it("syns.history with a ../ path drops no version, counting each path from the folder (D92, B-0087)", async () => {
+    const h = harness({ history: rec("history.file.moved-within.0325") });
+    const result = resultOf<{ entries: { number: number; paths: string[] }[] }>(await h.call("syns.history", { path: "../a.json", scope: "app/old" }));
+    expect(result.entries.map((entry) => [entry.number, entry.paths])).toEqual([[6, ["../a.json"]], [5, ["a.json", "../a.json"]], [1, ["a.json"]]]);
+    expect(args(h)).toEqual(["history --file=app/a.json --limit=20 --json"]);
   });
   it("syns.history's offset counts the repository's versions, as total does: passed on unchanged under a scope (S1.27)", async () => {
     const h = harness({ history: rec("history.ok") });
@@ -85,6 +112,60 @@ describe("the scope parameter in the server half (S1.25, D85)", () => {
     const h = harness({ diff: ok({ from: { sha: OLD, version: 4 }, to: { sha: HEAD, version: 6 }, files }) });
     expect(resultOf(await h.call("syns.diff", { from: OLD, to: HEAD, patch: true, scope: APP })).files).toEqual([
       { path: "c.md", oldPath: "a.md", status: "renamed", patch: "rename" },
+      { path: "b.md", status: "deleted" },
+      { path: "o.md", status: "added" },
+    ]);
+  });
+  it("syns.diff's patch names every path as its entry does, counted from the folder; a hunk's text stays as written (S1.25, B-0080)", async () => {
+    const A = APP;
+    const files = [
+      { path: `${A}/a.md`, status: "modified", diff: `diff --git a/${A}/a.md b/${A}/a.md\n--- a/${A}/a.md\n+++ b/${A}/a.md\n@@ -1,2 +1 @@\n-# a\n--- a/${A}/kept\n+++ b/${A}/kept\n` },
+      { path: `${A}/b.md`, status: "deleted", diff: `diff --git a/${A}/b.md b/${A}/b.md\ndeleted file mode 100644\n--- a/${A}/b.md\n+++ /dev/null\n@@ -1 +0,0 @@\n-# b\n` },
+      { path: `${A}/c.md`, status: "added", diff: `diff --git a/${A}/c.md b/${A}/c.md\nnew file mode 100644\nindex 0000000..890bd8b\n--- /dev/null\n+++ b/${A}/c.md\n@@ -0,0 +1 @@\n+# c\n` },
+      { path: `${A}/old/a.json`, oldPath: `${A}/a.json`, status: "renamed", diff: `diff --git a/${A}/a.json b/${A}/old/a.json\nsimilarity index 100%\nrename from ${A}/a.json\nrename to ${A}/old/a.json\n` },
+      { path: `${A}/d.md`, oldPath: `${A}/c.md`, status: "copied", diff: `diff --git a/${A}/c.md b/${A}/d.md\nsimilarity index 100%\ncopy from ${A}/c.md\ncopy to ${A}/d.md\n` },
+      { path: `${A}/i.png`, status: "modified", diff: `diff --git a/${A}/i.png b/${A}/i.png\nindex 1..2 100644\nBinary files a/${A}/i.png and b/${A}/i.png differ\n` },
+      { path: `${A}/n.png`, status: "added", diff: `diff --git a/${A}/n.png b/${A}/n.png\nnew file mode 100644\nBinary files /dev/null and b/${A}/n.png differ\n` },
+      { path: `${A}/a b.md`, status: "modified", diff: `diff --git a/${A}/a b.md b/${A}/a b.md\n--- a/${A}/a b.md\n+++ b/${A}/a b.md\n@@ -1 +1 @@\n-x\n+y\n` },
+      { path: `${A}/x\tb`, status: "modified", diff: `diff --git "a/${A}/x\\tb" "b/${A}/x\\tb"\n--- "a/${A}/x\\tb"\n+++ "b/${A}/x\\tb"\n@@ -1 +1 @@\n-x\n+y\n` },
+    ];
+    const h = harness({ diff: ok({ from: { sha: OLD, version: 4 }, to: { sha: HEAD, version: 6 }, files }) });
+    const patches = (resultOf(await h.call("syns.diff", { from: OLD, to: HEAD, patch: true, scope: APP })).files as { patch: string }[]).map((file) => file.patch);
+    expect(patches).toEqual([
+      "diff --git a/a.md b/a.md\n--- a/a.md\n+++ b/a.md\n@@ -1,2 +1 @@\n-# a\n--- a/" + A + "/kept\n+++ b/" + A + "/kept\n",
+      "diff --git a/b.md b/b.md\ndeleted file mode 100644\n--- a/b.md\n+++ /dev/null\n@@ -1 +0,0 @@\n-# b\n",
+      "diff --git a/c.md b/c.md\nnew file mode 100644\nindex 0000000..890bd8b\n--- /dev/null\n+++ b/c.md\n@@ -0,0 +1 @@\n+# c\n",
+      "diff --git a/a.json b/old/a.json\nsimilarity index 100%\nrename from a.json\nrename to old/a.json\n",
+      "diff --git a/c.md b/d.md\nsimilarity index 100%\ncopy from c.md\ncopy to d.md\n",
+      "diff --git a/i.png b/i.png\nindex 1..2 100644\nBinary files a/i.png and b/i.png differ\n",
+      "diff --git a/n.png b/n.png\nnew file mode 100644\nBinary files /dev/null and b/n.png differ\n",
+      "diff --git a/a b.md b/a b.md\n--- a/a b.md\n+++ b/a b.md\n@@ -1 +1 @@\n-x\n+y\n",
+      'diff --git "a/x\\tb" "b/x\\tb"\n--- "a/x\\tb"\n+++ "b/x\\tb"\n@@ -1 +1 @@\n-x\n+y\n',
+    ]);
+    const plain = harness({ diff: ok({ from: { sha: OLD, version: 4 }, to: { sha: HEAD, version: 6 }, files }) });
+    expect((resultOf(await plain.call("syns.diff", { from: OLD, to: HEAD, patch: true })).files as { patch: string }[]).map((file) => file.patch)).toEqual(files.map((file) => file.diff));
+  });
+  it("scopePatch() reads each file's header in a patch of several, and leaves a path outside as served (B-0080, for a method whose patch spans files)", () => {
+    const two = `diff --git a/${APP}/a.md b/${APP}/a.md\n--- a/${APP}/a.md\n+++ b/${APP}/a.md\n@@ -1 +1 @@\n-x\n+y\ndiff --git a/${APP}/b.md b/${APP}/b.md\n--- a/${APP}/b.md\n+++ b/${APP}/b.md\n@@ -1 +1 @@\n--- a/${APP}/kept\n+y\n`;
+    expect(scopePatch(two, APP)).toBe("diff --git a/a.md b/a.md\n--- a/a.md\n+++ b/a.md\n@@ -1 +1 @@\n-x\n+y\ndiff --git a/b.md b/b.md\n--- a/b.md\n+++ b/b.md\n@@ -1 +1 @@\n--- a/" + APP + "/kept\n+y\n");
+    const outside = `diff --git a/o.md b/${APP}/o.md\nsimilarity index 100%\nrename from o.md\nrename to ${APP}/o.md\n--- a/o.md\n+++ b/${APP}/o.md\n`;
+    expect(scopePatch(outside, APP)).toBe(outside.replace(`rename to ${APP}/o.md`, "rename to o.md").replace(`+++ b/${APP}/o.md`, "+++ b/o.md"));
+  });
+  it("scopePatch() splits a diff --git or Binary files line where the header's other lines name its sides, though a path holds ' b/<scope>/' (B-0080, VERIFY F1)", () => {
+    const P = "probe-app", odd = `${P}/a b/${P}/c.md`;
+    const edit = `diff --git a/${odd} b/${odd}\nindex 1..2 100644\n--- a/${odd}\n+++ b/${odd}\n@@ -1 +1 @@\n-x\n+y\n`;
+    expect(scopePatch(edit, P)).toBe(`diff --git a/a b/${P}/c.md b/a b/${P}/c.md\nindex 1..2 100644\n--- a/a b/${P}/c.md\n+++ b/a b/${P}/c.md\n@@ -1 +1 @@\n-x\n+y\n`);
+    const move = `diff --git a/${odd} b/${P}/d.md\nsimilarity index 100%\nrename from ${odd}\nrename to ${P}/d.md\n`;
+    expect(scopePatch(move, P)).toBe(`diff --git a/a b/${P}/c.md b/d.md\nsimilarity index 100%\nrename from a b/${P}/c.md\nrename to d.md\n`);
+    const back = `diff --git a/${P}/d.md b/${odd}\nsimilarity index 100%\nrename from ${P}/d.md\nrename to ${odd}\n`;
+    expect(scopePatch(back, P)).toBe(`diff --git a/d.md b/a b/${P}/c.md\nsimilarity index 100%\nrename from d.md\nrename to a b/${P}/c.md\n`);
+    const binary = `diff --git a/${odd}.png b/${odd}.png\nindex 1..2 100644\nBinary files a/${odd}.png and b/${odd}.png differ\ndiff --git a/${odd}.png b/${odd}.png\nnew file mode 100644\nBinary files /dev/null and b/${odd}.png differ\n`;
+    expect(scopePatch(binary, P)).toBe(binary.replaceAll(`a/${odd}`, `a/a b/${P}/c.md`).replaceAll(`b/${odd}`, `b/a b/${P}/c.md`));
+  });
+  it("syns.diff's patch recorded from CLI 0.3.25 for a move inside an app reads from the app's folder (B-0080, B-0082 H-app-move-diff)", async () => {
+    const h = harness({ diff: rec("diff.renamed.0325") });
+    expect(resultOf(await h.call("syns.diff", { from: OLD, to: HEAD, patch: true, scope: "app" })).files).toEqual([
+      { path: "c.md", oldPath: "a.md", status: "renamed", patch: "diff --git a/a.md b/c.md\nsimilarity index 100%\nrename from a.md\nrename to c.md\n" },
       { path: "b.md", status: "deleted" },
       { path: "o.md", status: "added" },
     ]);

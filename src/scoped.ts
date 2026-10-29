@@ -94,3 +94,63 @@ function within(schema: Schema, value: unknown, count: (value: string) => string
   }
   return value;
 }
+
+/**
+ * A patch under a call's scope: every path its header lines name (`diff --git`, `---`, `+++`, `rename from` and `to`,
+ * `copy from` and `to`, `Binary files … differ`) counted from the scope, as the CLI counts a folder's (syns-cli
+ * `rebase_diff_headers`); `/dev/null`, the `a/` and `b/` prefixes, a quoted path's quotes and a path outside stay as
+ * they are. Only the lines ahead of a file's first hunk are headers, so a hunk's line reading `--- a/x` is never
+ * rewritten (S1.25, B-0080).
+ */
+export function scopePatch(patch: string, scope: string): string {
+  const prefix = `${scope}/`;
+  const lead = (text: string, ab: string) => (text.startsWith(`${ab}${prefix}`) ? "" : text.startsWith(`"${ab}${prefix}`) ? '"' : undefined);
+  const side = (text: string, ab: string) => {
+    const quote = lead(text, ab);
+    return quote === undefined ? text : `${quote}${ab}${text.slice(quote.length + ab.length + prefix.length)}`;
+  };
+  const maps = (text: string, ab: string) => text === "/dev/null" || lead(text, ab) !== undefined;
+  // A path may hold the separator itself (`a b/<scope>/c.md`), so of the splits where both sides map, the one is taken
+  // that names the sides the file's other header lines name, else one naming the same path twice, else the first.
+  // The CLI takes the first (VERIFY F1).
+  const pair = (text: string, between: string, known: (string | undefined)[]): [string, string] | undefined => {
+    const both: [string, string][] = [];
+    for (let at = text.indexOf(between); at >= 0; at = text.indexOf(between, at + 1)) {
+      const a = text.slice(0, at), b = text.slice(at + between.length);
+      if (maps(a, "a/") && maps(b, "b/")) both.push([a, b]);
+    }
+    const fits = (one: string, k: string | undefined) => k === undefined || one === k || one === "/dev/null";
+    const named = known.some((k) => k !== undefined) ? both.find(([a, b]) => fits(a, known[0]) && fits(b, known[1])) : undefined;
+    return named ?? both.find(([a, b]) => a.replace(/^("?)a\//, "$1") === b.replace(/^("?)b\//, "$1")) ?? both[0];
+  };
+  const joined = (split: [string, string] | undefined, text: string, between: string) => (split ? `${side(split[0], "a/")}${between}${side(split[1], "b/")}` : text);
+  // What a file's header lines after its `diff --git` say its two sides are, as that line writes them.
+  const sidesOf = (lines: string[], from: number): (string | undefined)[] => {
+    const known: (string | undefined)[] = [undefined, undefined];
+    const token = (path: string, ab: string) => (path.startsWith('"') ? `"${ab}${path.slice(1)}` : `${ab}${path}`);
+    for (let k = from; k < lines.length && !lines[k]!.startsWith("diff --git ") && !lines[k]!.startsWith("@@"); k++) {
+      const line = lines[k]!;
+      if (line.startsWith("--- ") && line !== "--- /dev/null") known[0] = line.slice(4);
+      else if (line.startsWith("+++ ") && line !== "+++ /dev/null") known[1] = line.slice(4);
+      else for (const [start, at, ab] of [["rename from ", 0, "a/"], ["copy from ", 0, "a/"], ["rename to ", 1, "b/"], ["copy to ", 1, "b/"]] as const) if (line.startsWith(start)) known[at] = token(line.slice(start.length), ab);
+    }
+    return known;
+  };
+  const sides: [string, string][] = [["--- ", "a/"], ["+++ ", "b/"], ["rename from ", ""], ["rename to ", ""], ["copy from ", ""], ["copy to ", ""]];
+  const lines = patch.split("\n");
+  let header = true;
+  let file: (string | undefined)[] = [];
+  return lines.map((line, n) => {
+    if (line.startsWith("diff --git ")) {
+      header = true;
+      const split = pair(line.slice(11), " ", sidesOf(lines, n + 1));
+      file = split ?? [];
+      return `diff --git ${joined(split, line.slice(11), " ")}`;
+    }
+    if (line.startsWith("@@")) header = false;
+    if (!header) return line;
+    for (const [start, ab] of sides) if (line.startsWith(start)) return `${start}${side(line.slice(start.length), ab)}`;
+    if (line.startsWith("Binary files ") && line.endsWith(" differ")) return `Binary files ${joined(pair(line.slice(13, -7), " and ", file), line.slice(13, -7), " and ")} differ`;
+    return line;
+  }).join("\n");
+}

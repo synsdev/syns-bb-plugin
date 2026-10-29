@@ -1,5 +1,5 @@
 import { REASONS } from "../errors.js";
-import { GROUPS, base, message, path, reasonsOf, version, type Method, type Schema } from "../method.js";
+import { GROUPS, GROUP_REQUIRED, base, message, path, reasonsOf, version, type Method, type Schema } from "../method.js";
 
 /**
  * The guide text (spec 04), within GUIDE_MAX. The prose is written for the
@@ -20,11 +20,13 @@ Only when the session's folder is a Syns repository, or a folder placed in one. 
 
 ## A placed folder
 
-A folder placed in a repository (a tool) is all the page sees: every \`path\` is counted from it; nothing outside is reachable. A document may also set a scope (\`threadPage.setScope\`): a placed folder of the session's own repository, holding its own identity file; its calls then answer for that folder alone. \`bad_scope\` refuses any other. \`syns.repo\` adds \`holder\` (OWNER/NAME) and \`path\`: show those. \`owner\`, \`name\`, \`role\`, \`visibility\` and \`fileCount\` are the holder's; build no path or link from them. \`version\` is the holder's head, so \`syns.diff\` may list nothing. Once the CLI checks writes against the folder only, a write is \`stale_head\` only when the folder changed after \`base\`; before, any change to the holder. Writes publish to all who share the holder. \`syns.place { template, path }\` places a template as a new folder, always at the session's folder.
+A folder placed in a repository (a tool) is all the page sees: every \`path\` counts from it; nothing outside is reachable. A document may also set a scope (\`threadPage.setScope\`): a placed folder of the session's own repository, holding its own identity file; its calls then answer for that folder alone. \`bad_scope\` refuses any other. \`syns.repo\` adds \`holder\` (OWNER/NAME) and \`path\`: show those. \`owner\`, \`name\`, \`role\`, \`visibility\` and \`fileCount\` are the holder's; build no path or link from them. \`version\` is the holder's head, so \`syns.diff\` may list nothing; a write is \`stale_head\` only if the folder changed after \`base\`. Writes publish to all who share the holder. \`syns.place { template, path }\` places a template as a new folder, always at the session's folder.
 
 ## Apps in the workspace
 
 An app is a folder holding an \`index.html\`, its CSS and JS beside it, named relatively. The workspace runs it in a sandboxed frame with its own \`threadPage\`: \`invoke\`, \`watch\`, \`scope\`. It may call what a Thread Page may, confirmed or granted as there, and \`syns.*\` but \`syns.place\` and those of *Sharing and people* other than \`syns.users\` (\`bad_scope\`); \`storage.*\` is its own. Its paths count from its folder; \`../\` reaches the rest of the session's folder for reading (its CSS and JS links and \`syns.*\` reads), and its writes stay inside its folder. A \`<form>\` messages the agent unless the app's script handles the submit. When someone else changes a file in its folder, the app reloads, keeping typed text and scroll; its own saves don't.
+
+**Working beside the person.** The app holds the data, in files in its folder; you edit the same files, and your page stays the conversation. After each of your turns the app marks what you changed, where it sits, until the person has seen it (\`syns.changes\` since the version they last saw, kept in \`storage\`). A question about a record goes on that record. The app starts you only from its composer, never on an edit, a timer or a load.
 
 ## Versions
 
@@ -39,18 +41,18 @@ An app is a folder holding an \`index.html\`, its CSS and JS beside it, named re
 
 ## Staying current
 
-Poll only \`syns.repo\`, with the host's \`watch\`. When its \`version\` differs from the one held, \`syns.diff { from }\` lists each changed path and \`status\` up to \`to.version\`; re-read those at \`to.version\`. There is no push.
+Poll only \`syns.repo\`, with the host's \`watch\`. When its \`version\` differs from the one held, \`syns.changes { since, content: true }\` gives each changed path's \`status\`, text and \`by\` up to \`to.version\`; read \`deferred\` with \`syns.readMany\` at \`to.version\`. There is no push.
 
-\`syns.history\` says who changed what. A page's write has \`by.integration\` \`syns-pages\` and \`by.trigger\` \`page\`; then \`by.run\` is the session whose page made it. Others set \`by.run\` too: never read it alone as a page's.
+A page's write has \`by.integration\` \`syns-pages\` and \`by.trigger\` \`page\`; then \`by.run\` is the session whose page made it. Others set \`by.run\` too: never read it alone as a page's.
 
 ## Writing
 
-Every file write carries \`base\`, the \`version\` last read; the returned \`version\` is the next \`base\`. A new file: \`syns.write\` with \`create: true\`, which refuses rather than overwrite. \`changed: 0\`: nothing differed, or the path was gone; no version made. A request past a method's bound comes back from the bridge as \`invalid_response\`: split it. A picture larger than 720 KiB goes in ordered pieces; \`bad_offset\`: send from \`detail.expected\`. Beside texts in one version: \`hold: true\`, then its \`upload\` in \`syns.commit\`.
+Every file write carries \`base\`, the \`version\` last read; the returned \`version\` is the next \`base\`. A new file: \`syns.write\` with \`create: true\`, which refuses rather than overwrite. \`changed: 0\`: nothing differed, or the path was gone; no version made. A request past a method's bound comes back from the bridge as \`invalid_response\`: split it. A picture larger than 720 KiB goes in ordered pieces. Beside texts in one version: \`hold: true\`, then its \`upload\` in \`syns.commit\`.
 `;
 
 const SHARING = `## Sharing and people
 
-Each method acts where the CLI acts, in the page's own scope. In a placed folder: \`syns.shareInfo\`, \`syns.share\`, \`syns.unshare\`, \`syns.folderVisibility\`, \`syns.enableChecks\`. At a repository's root: \`syns.repoVisibility\`. The collaborator methods act on the scope's people: in a shared placed folder its own (until shared, \`bad_scope\` saying to share first); at a root the **whole repository's**, so never offer root people for one folder. Elsewhere the CLI refuses: \`bad_scope\`; show controls only where they apply (\`syns.repo\`'s \`holder\`, \`syns.shareInfo\`'s \`shared\`). \`syns.collaboratorRole\` and \`syns.collaboratorRemove\` take the \`user.id\` that \`syns.collaborators\` answers; find someone with \`syns.users\`. Roles are the CLI's; a shared folder takes \`read\` or \`write\`.
+Each method acts where the CLI acts, in the page's own scope. In a placed folder: \`syns.shareInfo\`, \`syns.share\`, \`syns.unshare\`, \`syns.folderVisibility\`, \`syns.enableChecks\`. At a repository's root: \`syns.repoVisibility\`. The collaborator methods act on the scope's people: in a shared placed folder its own (none until shared); at a root the **whole repository's**, so never offer root people for one folder. Elsewhere: \`bad_scope\`; show controls only where they apply (\`syns.repo\`'s \`holder\`, \`syns.shareInfo\`'s \`shared\`). Roles are the CLI's; a shared folder takes \`read\` or \`write\`.
 
 They act at once, with no dialog, and reach other people. So:
 
@@ -59,7 +61,7 @@ They act at once, with no dialog, and reach other people. So:
 - **Public is labelled apart:** "anyone, signed in or not, can find and read this". Never a default; never one option in a list beside private. A public name beginning with a private holder's name shows that name: say so first.
 - **\`syns.unshare\`** removes everyone who reached the folder through it; its name stays reserved.
 
-Poll none of these with \`watch\`. Errors come back from the CLI: a refusal with no reason carries the CLI's own words as \`message\`.
+Poll none of these with \`watch\`. A refusal with no reason carries the CLI's own words as \`message\`.
 `;
 
 const CANNOT = `## What a page cannot do here
@@ -69,7 +71,10 @@ Choose a repository, or reach outside its scope. Read unpublished edits. Write a
 
 
 /** The guide's short names for JSON types, said once in the method section's opening. */
-const SHORT: Record<string, string> = { integer: "int", boolean: "bool" };
+const SHORT: Record<string, string> = { integer: "int", boolean: "bool", string: "str" };
+
+/** An int bound at or past 2^32 − 1 is none a page meets (an offset past four billion): it reads as `…`, as no bound does. */
+const UNBOUNDED = 2 ** 32 - 1;
 
 /** A schema in one line, from the same object the host is sent. */
 function render(schema: Schema, grouping = true): string {
@@ -83,7 +88,7 @@ function render(schema: Schema, grouping = true): string {
       const required = (schema.required ?? []) as string[];
       // A key whose type is its own name (version, path, base, number, message) is written once.
       // A shared group of keys is written once, by name (D56).
-      const grouped = [...GROUPS].filter(() => grouping).filter(([, keys]) => Object.entries(keys).every(([key, child]) => properties[key] === child));
+      const grouped = [...GROUPS].filter(() => grouping).filter(([name, keys]) => Object.entries(keys).every(([key, child]) => properties[key] === child) && (GROUP_REQUIRED.get(name) ?? []).every((key) => required.includes(key)));
       const inGroup = new Set(grouped.flatMap(([, keys]) => Object.keys(keys)));
       const fields = [...grouped.map(([name]) => `…${name}`), ...Object.entries(properties).filter(([key]) => !inGroup.has(key)).map(([key, child]) => { const type = (key === "base" && child === base) || (key === "number" && child.type === "integer" && Object.keys(child).length === 1) ? key : render(child, grouping); return `${key}${required.includes(key) ? "" : "?"}${type === key ? "" : `: ${type}`}`; })];
       return fields.length > 0 ? `{ ${fields.join(", ")} }` : "{}";
@@ -93,8 +98,8 @@ function render(schema: Schema, grouping = true): string {
       return `[${render(schema.items as Schema, grouping)}]${count}`;
     }
     if (Array.isArray(schema.enum)) return schema.enum.map((option) => JSON.stringify(option)).join("|");
-    if (type === "string") return schema.maxLength !== undefined ? `string(≤${schema.maxLength})` : "string";
-    if (type === "integer" && (schema.minimum !== undefined || schema.maximum !== undefined)) return `int(${schema.minimum ?? "…"}–${schema.maximum ?? "…"})`;
+    if (type === "string") return schema.maxLength !== undefined ? `str(≤${schema.maxLength})` : "str";
+    if (type === "integer" && (schema.minimum !== undefined || schema.maximum !== undefined)) return `int(${schema.minimum ?? "…"}–${schema.maximum === undefined || (typeof schema.maximum === "number" && schema.maximum >= UNBOUNDED) ? "…" : schema.maximum})`;
     return SHORT[type] ?? type;
   };
   return types.map(one).join("|");
@@ -110,14 +115,14 @@ function methodSection(table: readonly Method[]): string {
     else lines.push(`- \`${method.name}\` ${shape}`);
     last = shape;
   }
-  return `## Every method\n\nThe host's roster above (*Registered now*) gives each method's effect, bounds, description and every reason it may answer. Each line: the method, its params → its result. \`path\` is counted from the repository's root, or the placed folder, with \`/\` separators, at most 1,024 characters; no leading \`/\` or \`-\`, no \`\\\` or control character, no \`.\` or \`..\` segment. A \`?\` marks an optional key; a bare \`version\` or \`path\` key has that type, \`base\` is a \`version\`, \`number\` an int, \`message\` a string(≤500); no other key is accepted but \`scope\`, a folder that paths and answers then count from. ${[...GROUPS].map(([name, keys]) => `\`…${name}\` is \`${render({ type: "object", properties: keys }, false)}\`.`).join(" ")}\n\n${lines.join("\n")}\n`;
+  return `## Every method\n\nThe host's roster above (*Registered now*) gives each method's effect, bounds, description and all its reasons. Each line: a method, its params → its result. \`path\` counts from the repository's root or the placed folder, \`/\`-separated, at most 1,024 characters; no leading \`/\` or \`-\`, no \`\\\` or control character, no \`.\` or \`..\` segment. A \`?\` marks an optional key; a bare \`version\` or \`path\` key has that type, \`base\` is a \`version\`, \`number\` an int, \`message\` a str(≤500); no other key is accepted but \`scope\`, a folder paths and answers then count from. ${[...GROUPS].map(([name, keys]) => `\`…${name}\` is \`${render({ type: "object", properties: keys, required: [...(GROUP_REQUIRED.get(name) ?? [])] }, false)}\`.`).join(" ")}\n\n${lines.join("\n")}\n`;
 }
 
 /** The codes a reason may carry, in the order the guide lists them, with what each means for the page. */
 const CODES = [
   ["unavailable", "not now or not here"],
   ["conflict", "re-read"],
-  ["invalid_params", "fix the page; with no reason, the parameters do not fit the method"],
+  ["invalid_params", "fix the page; with no reason, the params do not fit the method"],
   ["not_found", "it is not there; with no reason, the path, the `version`, or what was named"],
 ] as const;
 

@@ -33,6 +33,8 @@ export interface Context {
   readonly held: Held;
   /** The CLI's words with the machine's paths taken out, as a refusal reaches a page (D60, D61). */
   redact(text: string): string;
+  /** The most bytes a repository path may grow by in the answer: a reaching call's `../` segments (S1.25, D92), else 0. */
+  readonly pathGrowth?: number;
 }
 
 export interface RunOptions {
@@ -74,8 +76,8 @@ interface Common {
   rootPath?: true;
   /** Acts on the repository, its people or Syns as a whole, never on paths: a call with a scope is `bad_scope` and runs nothing (S1.25). */
   unscoped?: true;
-  /** Under a call's scope, what the result becomes before its paths are cut back to the folder (S1.26). */
-  scoped?(result: any, inside: (path: unknown) => boolean): unknown;
+  /** Under a call's scope, what the result becomes before its paths are cut back to the folder (S1.26); `scope` is the folder, for a text naming paths. */
+  scoped?(result: any, inside: (path: unknown) => boolean, scope: string): unknown;
   /** How many paths a write names, for the plugin's log. Defaults to one when there is a `path`. S2.19 */
   pathCount?(params: any): number;
 }
@@ -229,10 +231,16 @@ export function validate(schema: Schema, value: unknown, at = "$"): string | nul
 export const NOT_FOUND = "Syns answered that what this asked for is not there.";
 
 export const GROUPS = new Map<string, Record<string, Schema>>();
-export const group = (name: string, properties: Record<string, Schema>): Record<string, Schema> => {
+/** A group's keys every result holding it requires, where it names them: the guide then prints them without `?`. */
+export const GROUP_REQUIRED = new Map<string, readonly string[]>();
+export const group = (name: string, properties: Record<string, Schema>, required?: readonly string[]): Record<string, Schema> => {
   GROUPS.set(name, properties);
+  if (required) GROUP_REQUIRED.set(name, required);
   return properties;
 };
+
+/** The provenance a version carries, as `syns.history` and `syns.changes` answer it (`by`). */
+export const BY = group("by", { integration: nullable("string"), run: nullable("string"), trigger: nullable("string") }, ["integration", "run", "trigger"]);
 
 /**
  * The CLI's own JSON, kept to what `schema` names (S1.7): each named key whose

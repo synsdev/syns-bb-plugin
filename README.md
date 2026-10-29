@@ -87,6 +87,7 @@ The full method reference is in `bb pages guide`.
 | `syns.glob` · `syns.grep` | read | Find files by path pattern · search their texts |
 | `syns.diff` | read | The paths, and optionally the patches, between two versions |
 | `syns.history` | read | Versions, their paths, and who or what made each |
+| `syns.changes` | read | What changed since a version, in one CLI run: each path's status, who made its newest change and, on request, its text |
 | `syns.commit` | write | Several files and deletions as one version, all or nothing |
 | `syns.write` · `syns.edit` · `syns.rm` | write | One file's text (optionally only if new) · a replacement in it · its removal |
 | `syns.move` · `syns.copy` | write | A file or folder moved, its history kept, or copied, as one version, no content sent |

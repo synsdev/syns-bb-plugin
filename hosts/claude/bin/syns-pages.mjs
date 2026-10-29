@@ -127,7 +127,7 @@ const REASONS = {
 	folder_out_of_place: {
 		code: "unavailable",
 		message: "This session's folder is not where its repository records it, so Syns will not use it.",
-		meaning: "A placed folder stands away from the path its identity file records; an operator moves it back."
+		meaning: "A placed folder is not at the path its identity file records; an operator moves it back."
 	},
 	folder_write_unsupported: {
 		code: "unavailable",
@@ -152,7 +152,7 @@ const REASONS = {
 	stale_head: {
 		code: "conflict",
 		message: "The repository changed since this page last read it. Nothing was written.",
-		meaning: "The repository, or placed folder, changed after base; nothing written; detail.current is the head. Re-read, show what changed, never retry blindly.",
+		meaning: "The repository, or placed folder, changed after base; nothing written; detail.current is the head. syns.changes { since: base } says what changed; never retry blindly.",
 		detail: {
 			type: "object",
 			properties: { current: SHA },
@@ -233,7 +233,7 @@ const REASONS = {
 	not_permitted: {
 		code: "unavailable",
 		message: "Syns refused this for this account: it may need a higher role, or a limit was reached.",
-		meaning: "Syns answered 403 for this account: a role too low for it, or a server limit. The CLI says no more."
+		meaning: "Syns answered 403: a role too low, or a server limit; the CLI says no more."
 	},
 	no_such_user: {
 		code: "not_found",
@@ -547,10 +547,23 @@ function validate(schema, value, at = "$") {
 /** The not_found sentence of the methods that name no path or version (fix round 1, finding 3). */
 const NOT_FOUND = "Syns answered that what this asked for is not there.";
 const GROUPS = /* @__PURE__ */ new Map();
-const group = (name, properties) => {
+/** A group's keys every result holding it requires, where it names them: the guide then prints them without `?`. */
+const GROUP_REQUIRED = /* @__PURE__ */ new Map();
+const group = (name, properties, required) => {
 	GROUPS.set(name, properties);
+	if (required) GROUP_REQUIRED.set(name, required);
 	return properties;
 };
+/** The provenance a version carries, as `syns.history` and `syns.changes` answer it (`by`). */
+const BY = group("by", {
+	integration: nullable("string"),
+	run: nullable("string"),
+	trigger: nullable("string")
+}, [
+	"integration",
+	"run",
+	"trigger"
+]);
 /**
 * The CLI's own JSON, kept to what `schema` names (S1.7): each named key whose
 * value has a type the schema allows, objects and lists kept the same way.
@@ -589,13 +602,13 @@ function keep$1(schema, value, at, dropped) {
 * the repository's workspace, which the plugin's page script brings (S2.27). Then the two steps an agent takes before
 * its first page, with the sign-in a push may ask for, where apps go, and the look. It is declared to the host with
 * the method list and injected nowhere else (S4.1). The declaration is the same on every host (07 R-X1), so the text
-* names no host's command. The owner's text (IN-0058, D90), verbatim; the protocol allows 2,048 bytes.
+* names no host's command. The owner's text (IN-0058, D90; its third paragraph IN-0070 §1, D95), verbatim; the protocol allows 2,048 bytes.
 */
 const FRAGMENT = `**Syns workspace.** When this session's folder is empty or a Syns repository, your page (the one you write every turn) opens inside the repository's workspace. Before your first page in a session:
 - No \`.page/index.html\`: \`mkdir -p .page && syns cat .page/index.html --repo bartsoj/syns-workspace-light-template > .page/index.html\`
 - No \`.syns.yaml\`: \`syns push -n <a short name for this work> --visibility private\`. If it asks for \`syns login\`: run that in the background, give the person the link it prints, and push again once it says \`Login successful\`.
 
-Make what the person will keep using an app: a folder holding an \`index.html\`; the workspace runs it with \`syns.*\` counted from that folder (the guide's *Apps in the workspace*). Your page reports and asks; the app does the work. The workspace itself is the repository's \`.page/index.html\`: change it as the person asks.
+When something must outlive a turn, make it an app: a folder holding an \`index.html\` and its data; the workspace runs it with \`syns.*\` counted from that folder. Read the guide's *Apps in the workspace* before you build one. Your page reports and asks; the app holds the data and does the work. The workspace itself is the repository's \`.page/index.html\`: change it as the person asks.
 
 **Look.** The design and layout of your page and every app should fit its content and overall design of the workspace.
 `;
@@ -609,11 +622,13 @@ Only when the session's folder is a Syns repository, or a folder placed in one. 
 
 ## A placed folder
 
-A folder placed in a repository (a tool) is all the page sees: every \`path\` is counted from it; nothing outside is reachable. A document may also set a scope (\`threadPage.setScope\`): a placed folder of the session's own repository, holding its own identity file; its calls then answer for that folder alone. \`bad_scope\` refuses any other. \`syns.repo\` adds \`holder\` (OWNER/NAME) and \`path\`: show those. \`owner\`, \`name\`, \`role\`, \`visibility\` and \`fileCount\` are the holder's; build no path or link from them. \`version\` is the holder's head, so \`syns.diff\` may list nothing. Once the CLI checks writes against the folder only, a write is \`stale_head\` only when the folder changed after \`base\`; before, any change to the holder. Writes publish to all who share the holder. \`syns.place { template, path }\` places a template as a new folder, always at the session's folder.
+A folder placed in a repository (a tool) is all the page sees: every \`path\` counts from it; nothing outside is reachable. A document may also set a scope (\`threadPage.setScope\`): a placed folder of the session's own repository, holding its own identity file; its calls then answer for that folder alone. \`bad_scope\` refuses any other. \`syns.repo\` adds \`holder\` (OWNER/NAME) and \`path\`: show those. \`owner\`, \`name\`, \`role\`, \`visibility\` and \`fileCount\` are the holder's; build no path or link from them. \`version\` is the holder's head, so \`syns.diff\` may list nothing; a write is \`stale_head\` only if the folder changed after \`base\`. Writes publish to all who share the holder. \`syns.place { template, path }\` places a template as a new folder, always at the session's folder.
 
 ## Apps in the workspace
 
 An app is a folder holding an \`index.html\`, its CSS and JS beside it, named relatively. The workspace runs it in a sandboxed frame with its own \`threadPage\`: \`invoke\`, \`watch\`, \`scope\`. It may call what a Thread Page may, confirmed or granted as there, and \`syns.*\` but \`syns.place\` and those of *Sharing and people* other than \`syns.users\` (\`bad_scope\`); \`storage.*\` is its own. Its paths count from its folder; \`../\` reaches the rest of the session's folder for reading (its CSS and JS links and \`syns.*\` reads), and its writes stay inside its folder. A \`<form>\` messages the agent unless the app's script handles the submit. When someone else changes a file in its folder, the app reloads, keeping typed text and scroll; its own saves don't.
+
+**Working beside the person.** The app holds the data, in files in its folder; you edit the same files, and your page stays the conversation. After each of your turns the app marks what you changed, where it sits, until the person has seen it (\`syns.changes\` since the version they last saw, kept in \`storage\`). A question about a record goes on that record. The app starts you only from its composer, never on an edit, a timer or a load.
 
 ## Versions
 
@@ -628,17 +643,17 @@ An app is a folder holding an \`index.html\`, its CSS and JS beside it, named re
 
 ## Staying current
 
-Poll only \`syns.repo\`, with the host's \`watch\`. When its \`version\` differs from the one held, \`syns.diff { from }\` lists each changed path and \`status\` up to \`to.version\`; re-read those at \`to.version\`. There is no push.
+Poll only \`syns.repo\`, with the host's \`watch\`. When its \`version\` differs from the one held, \`syns.changes { since, content: true }\` gives each changed path's \`status\`, text and \`by\` up to \`to.version\`; read \`deferred\` with \`syns.readMany\` at \`to.version\`. There is no push.
 
-\`syns.history\` says who changed what. A page's write has \`by.integration\` \`syns-pages\` and \`by.trigger\` \`page\`; then \`by.run\` is the session whose page made it. Others set \`by.run\` too: never read it alone as a page's.
+A page's write has \`by.integration\` \`syns-pages\` and \`by.trigger\` \`page\`; then \`by.run\` is the session whose page made it. Others set \`by.run\` too: never read it alone as a page's.
 
 ## Writing
 
-Every file write carries \`base\`, the \`version\` last read; the returned \`version\` is the next \`base\`. A new file: \`syns.write\` with \`create: true\`, which refuses rather than overwrite. \`changed: 0\`: nothing differed, or the path was gone; no version made. A request past a method's bound comes back from the bridge as \`invalid_response\`: split it. A picture larger than 720 KiB goes in ordered pieces; \`bad_offset\`: send from \`detail.expected\`. Beside texts in one version: \`hold: true\`, then its \`upload\` in \`syns.commit\`.
+Every file write carries \`base\`, the \`version\` last read; the returned \`version\` is the next \`base\`. A new file: \`syns.write\` with \`create: true\`, which refuses rather than overwrite. \`changed: 0\`: nothing differed, or the path was gone; no version made. A request past a method's bound comes back from the bridge as \`invalid_response\`: split it. A picture larger than 720 KiB goes in ordered pieces. Beside texts in one version: \`hold: true\`, then its \`upload\` in \`syns.commit\`.
 `;
 const SHARING = `## Sharing and people
 
-Each method acts where the CLI acts, in the page's own scope. In a placed folder: \`syns.shareInfo\`, \`syns.share\`, \`syns.unshare\`, \`syns.folderVisibility\`, \`syns.enableChecks\`. At a repository's root: \`syns.repoVisibility\`. The collaborator methods act on the scope's people: in a shared placed folder its own (until shared, \`bad_scope\` saying to share first); at a root the **whole repository's**, so never offer root people for one folder. Elsewhere the CLI refuses: \`bad_scope\`; show controls only where they apply (\`syns.repo\`'s \`holder\`, \`syns.shareInfo\`'s \`shared\`). \`syns.collaboratorRole\` and \`syns.collaboratorRemove\` take the \`user.id\` that \`syns.collaborators\` answers; find someone with \`syns.users\`. Roles are the CLI's; a shared folder takes \`read\` or \`write\`.
+Each method acts where the CLI acts, in the page's own scope. In a placed folder: \`syns.shareInfo\`, \`syns.share\`, \`syns.unshare\`, \`syns.folderVisibility\`, \`syns.enableChecks\`. At a repository's root: \`syns.repoVisibility\`. The collaborator methods act on the scope's people: in a shared placed folder its own (none until shared); at a root the **whole repository's**, so never offer root people for one folder. Elsewhere: \`bad_scope\`; show controls only where they apply (\`syns.repo\`'s \`holder\`, \`syns.shareInfo\`'s \`shared\`). Roles are the CLI's; a shared folder takes \`read\` or \`write\`.
 
 They act at once, with no dialog, and reach other people. So:
 
@@ -647,7 +662,7 @@ They act at once, with no dialog, and reach other people. So:
 - **Public is labelled apart:** "anyone, signed in or not, can find and read this". Never a default; never one option in a list beside private. A public name beginning with a private holder's name shows that name: say so first.
 - **\`syns.unshare\`** removes everyone who reached the folder through it; its name stays reserved.
 
-Poll none of these with \`watch\`. Errors come back from the CLI: a refusal with no reason carries the CLI's own words as \`message\`.
+Poll none of these with \`watch\`. A refusal with no reason carries the CLI's own words as \`message\`.
 `;
 const CANNOT = `## What a page cannot do here
 
@@ -656,8 +671,11 @@ Choose a repository, or reach outside its scope. Read unpublished edits. Write a
 /** The guide's short names for JSON types, said once in the method section's opening. */
 const SHORT = {
 	integer: "int",
-	boolean: "bool"
+	boolean: "bool",
+	string: "str"
 };
+/** An int bound at or past 2^32 − 1 is none a page meets (an offset past four billion): it reads as `…`, as no bound does. */
+const UNBOUNDED = 2 ** 32 - 1;
 /** A schema in one line, from the same object the host is sent. */
 function render(schema, grouping = true) {
 	if (schema === path) return "path";
@@ -668,7 +686,7 @@ function render(schema, grouping = true) {
 		if (type === "object") {
 			const properties = schema.properties ?? {};
 			const required = schema.required ?? [];
-			const grouped = [...GROUPS].filter(() => grouping).filter(([, keys]) => Object.entries(keys).every(([key, child]) => properties[key] === child));
+			const grouped = [...GROUPS].filter(() => grouping).filter(([name, keys]) => Object.entries(keys).every(([key, child]) => properties[key] === child) && (GROUP_REQUIRED.get(name) ?? []).every((key) => required.includes(key)));
 			const inGroup = new Set(grouped.flatMap(([, keys]) => Object.keys(keys)));
 			const fields = [...grouped.map(([name]) => `…${name}`), ...Object.entries(properties).filter(([key]) => !inGroup.has(key)).map(([key, child]) => {
 				const type = key === "base" && child === base || key === "number" && child.type === "integer" && Object.keys(child).length === 1 ? key : render(child, grouping);
@@ -681,8 +699,8 @@ function render(schema, grouping = true) {
 			return `[${render(schema.items, grouping)}]${count}`;
 		}
 		if (Array.isArray(schema.enum)) return schema.enum.map((option) => JSON.stringify(option)).join("|");
-		if (type === "string") return schema.maxLength !== void 0 ? `string(≤${schema.maxLength})` : "string";
-		if (type === "integer" && (schema.minimum !== void 0 || schema.maximum !== void 0)) return `int(${schema.minimum ?? "…"}–${schema.maximum ?? "…"})`;
+		if (type === "string") return schema.maxLength !== void 0 ? `str(≤${schema.maxLength})` : "str";
+		if (type === "integer" && (schema.minimum !== void 0 || schema.maximum !== void 0)) return `int(${schema.minimum ?? "…"}–${schema.maximum === void 0 || typeof schema.maximum === "number" && schema.maximum >= UNBOUNDED ? "…" : schema.maximum})`;
 		return SHORT[type] ?? type;
 	};
 	return types.map(one).join("|");
@@ -696,16 +714,17 @@ function methodSection(table) {
 		else lines.push(`- \`${method.name}\` ${shape}`);
 		last = shape;
 	}
-	return `## Every method\n\nThe host's roster above (*Registered now*) gives each method's effect, bounds, description and every reason it may answer. Each line: the method, its params → its result. \`path\` is counted from the repository's root, or the placed folder, with \`/\` separators, at most 1,024 characters; no leading \`/\` or \`-\`, no \`\\\` or control character, no \`.\` or \`..\` segment. A \`?\` marks an optional key; a bare \`version\` or \`path\` key has that type, \`base\` is a \`version\`, \`number\` an int, \`message\` a string(≤500); no other key is accepted but \`scope\`, a folder that paths and answers then count from. ${[...GROUPS].map(([name, keys]) => `\`…${name}\` is \`${render({
+	return `## Every method\n\nThe host's roster above (*Registered now*) gives each method's effect, bounds, description and all its reasons. Each line: a method, its params → its result. \`path\` counts from the repository's root or the placed folder, \`/\`-separated, at most 1,024 characters; no leading \`/\` or \`-\`, no \`\\\` or control character, no \`.\` or \`..\` segment. A \`?\` marks an optional key; a bare \`version\` or \`path\` key has that type, \`base\` is a \`version\`, \`number\` an int, \`message\` a str(≤500); no other key is accepted but \`scope\`, a folder paths and answers then count from. ${[...GROUPS].map(([name, keys]) => `\`…${name}\` is \`${render({
 		type: "object",
-		properties: keys
+		properties: keys,
+		required: [...GROUP_REQUIRED.get(name) ?? []]
 	}, false)}\`.`).join(" ")}\n\n${lines.join("\n")}\n`;
 }
 /** The codes a reason may carry, in the order the guide lists them, with what each means for the page. */
 const CODES = [
 	["unavailable", "not now or not here"],
 	["conflict", "re-read"],
-	["invalid_params", "fix the page; with no reason, the parameters do not fit the method"],
+	["invalid_params", "fix the page; with no reason, the params do not fit the method"],
 	["not_found", "it is not there; with no reason, the path, the `version`, or what was named"]
 ];
 function errorSection(table) {
@@ -728,7 +747,7 @@ function buildGuide(table) {
 //#endregion
 //#region src/declaration.ts
 /** The plugin's version, as declared to the host. A test holds it equal to package.json's. */
-const VERSION = "0.10.3";
+const VERSION = "0.11.0";
 /** threadPagesContributions, generated from the table. With `agentInstructions` off no fragment is declared (S4.5); the page script is declared either way (S2.27). */
 function buildDeclaration(table, settings) {
 	return {
@@ -826,7 +845,7 @@ const sha256 = {
 	maxLength: 64
 };
 const hash = (data) => createHash("sha256").update(data).digest("hex");
-const record$8 = (value) => typeof value === "object" && value !== null && !Array.isArray(value) ? value : {};
+const record$9 = (value) => typeof value === "object" && value !== null && !Array.isArray(value) ? value : {};
 /** Held keys: a picture read, one being gathered, one gathered whole and kept for syns.commit. */
 const readKey = (session, at, file) => `read|${session}|${at}|${file}`;
 const gatherKey = (session, file, parent, digest) => `gather|${session}|${file}|${parent}|${digest}`;
@@ -879,7 +898,7 @@ const readBinary = {
 	async procedure(params, context) {
 		let held = params.version === void 0 ? void 0 : context.held.get(readKey(context.sessionId, params.version, params.path));
 		if (!held) {
-			const out = record$8(await context.syns(buildArgs("cat", { version: params.version }, [params.path])));
+			const out = record$9(await context.syns(buildArgs("cat", { version: params.version }, [params.path])));
 			const data = typeof out.contentBase64 === "string" ? Buffer.from(out.contentBase64, "base64") : typeof out.content === "string" ? Buffer.from(out.content, "utf8") : null;
 			if (!data || typeof out.commitSha !== "string") throw new SynsError("handler_error", { log: "exit=0 cat carries neither content nor contentBase64" });
 			held = {
@@ -919,7 +938,7 @@ async function publish(params, data, context) {
 		message: params.message || `Write ${params.path} from a page`.slice(0, 500),
 		...provenance(context.sessionId)
 	}, [params.path]);
-	const out = record$8(await context.syns(args, data));
+	const out = record$9(await context.syns(args, data));
 	return {
 		complete: true,
 		received: data.length,
@@ -1053,6 +1072,174 @@ const writeBinary = {
 	}
 };
 //#endregion
+//#region src/methods/changes.ts
+const record$8 = (value) => typeof value === "object" && value !== null && !Array.isArray(value) ? value : {};
+const end$1 = {
+	type: "object",
+	properties: {
+		version,
+		number: { type: "integer" }
+	},
+	required: ["version", "number"]
+};
+/** The host refuses a result over 10,000 JSON nodes, every value one, its envelope `{ v, id, ok, result }` four of them (D19). */
+const NODES = 9996;
+const nodes = (value) => Array.isArray(value) ? value.reduce((sum, one) => sum + nodes(one), 1) : typeof value === "object" && value !== null ? Object.values(value).reduce((sum, one) => sum + (one === void 0 ? 0 : nodes(one)), 1) : 1;
+const changes = {
+	name: "syns.changes",
+	description: "What changed since a version, up to to (default the head): each path's status, who made its newest change (by), and with content: true its text (null if not text). deferred: texts that did not fit; read them at to.version.",
+	effect: "read",
+	params: object({
+		since: version,
+		to: version,
+		path,
+		content: { type: "boolean" }
+	}, ["since"]),
+	result: {
+		type: "object",
+		properties: {
+			from: end$1,
+			to: end$1,
+			entries: {
+				type: "array",
+				items: {
+					type: "object",
+					properties: {
+						path: repoPath,
+						status: { type: "string" },
+						oldPath: repoPath,
+						blob: nullable("string"),
+						size: { type: "integer" },
+						text: nullable("string"),
+						by: {
+							type: ["object", "null"],
+							properties: {
+								number: { type: "integer" },
+								author: nullable("string"),
+								...BY
+							},
+							required: [
+								"number",
+								"author",
+								"integration",
+								"run",
+								"trigger"
+							]
+						}
+					},
+					required: [
+						"path",
+						"status",
+						"blob",
+						"by"
+					]
+				}
+			},
+			deferred: {
+				type: "array",
+				items: repoPath
+			}
+		},
+		required: [
+			"from",
+			"to",
+			"entries",
+			"deferred"
+		]
+	},
+	maxRequestBytes: K64,
+	maxResponseBytes: M1,
+	rootPath: true,
+	async procedure(params, context) {
+		const out = record$8(await context.syns(buildArgs("diff", {
+			from: params.since,
+			to: params.to,
+			provenance: true,
+			content: params.content === true,
+			path: params.path
+		})));
+		const [from, to] = [record$8(out.from), record$8(out.to)].map((one) => ({
+			version: one.commit,
+			number: one.version
+		}));
+		const setAside = new Set(Array.isArray(out.deferred) ? out.deferred : []);
+		const texts = /* @__PURE__ */ new Map();
+		const withheld = /* @__PURE__ */ new Set();
+		const entries = Array.isArray(out.entries) ? out.entries.map(record$8).map((one) => {
+			const provenance = one.provenance === null ? null : record$8(one.provenance);
+			const entry = {
+				path: one.path,
+				status: one.status,
+				...one.status === "renamed" && typeof one.oldPath === "string" ? { oldPath: one.oldPath } : {},
+				blob: typeof one.newSha === "string" ? one.newSha : null,
+				...typeof one.size === "number" ? { size: one.size } : {},
+				by: provenance && {
+					number: provenance.version,
+					author: provenance.publisher ?? null,
+					integration: provenance.integration ?? null,
+					run: provenance.run ?? null,
+					trigger: provenance.trigger ?? null
+				}
+			};
+			if (params.content !== true || one.status === "deleted") return entry;
+			if (setAside.has(one.path)) withheld.add(entry);
+			else if (typeof one.text === "string") texts.set(entry, one.text);
+			else entry.text = null;
+			return entry;
+		}) : void 0;
+		if (!entries) return {
+			from,
+			to,
+			entries,
+			deferred: []
+		};
+		const room = changes.maxResponseBytes - ENVELOPE;
+		const listed = (served) => {
+			const kept = [...texts.keys()];
+			for (const [index, entry] of kept.entries()) if (index < served) entry.text = texts.get(entry);
+			const late = new Set(kept.slice(served));
+			return {
+				from,
+				to,
+				entries,
+				deferred: entries.filter((entry) => withheld.has(entry) || late.has(entry)).map((entry) => entry.path)
+			};
+		};
+		const bare = listed(0);
+		const paths = entries.length + entries.filter((entry) => entry.oldPath !== void 0).length + bare.deferred.length;
+		let used = bytes(bare) + paths * (context.pathGrowth ?? 0);
+		if (used > room || nodes(bare) > NODES) throw new SynsError("response_too_large");
+		let served = 0;
+		for (const text of texts.values()) {
+			const cost = bytes({ text }) - 1;
+			if (used + cost > room) break;
+			used += cost;
+			served += 1;
+		}
+		return listed(served);
+	},
+	scoped(result, inside) {
+		if (!Array.isArray(result.entries)) return result;
+		const entries = result.entries.map((entry) => {
+			if (typeof entry.oldPath !== "string" || inside(entry.path) === inside(entry.oldPath)) return entry;
+			const { oldPath, ...rest } = entry;
+			return inside(entry.path) ? {
+				...rest,
+				status: "added"
+			} : {
+				path: oldPath,
+				status: "deleted",
+				blob: null,
+				by: entry.by
+			};
+		});
+		return {
+			...result,
+			entries
+		};
+	}
+};
+//#endregion
 //#region src/methods/commit.ts
 const pathsOf = (params) => [...(params.files ?? []).map((file) => file.path), ...params.deletions ?? []];
 const record$7 = (value) => typeof value === "object" && value !== null && !Array.isArray(value) ? value : {};
@@ -1151,6 +1338,169 @@ const commit = {
 	}
 };
 //#endregion
+//#region src/scoped.ts
+/**
+* A read's path or pattern may begin with `../` segments, resolved against the scope; one climbing above the session's
+* folder is `bad_scope`. A write's `..`, a `..` after a path's start, a leading `/`: `bad_scope`, before the params are
+* checked (S1.25, D91 point 3 as amended by Q-0025).
+*/
+function scopeParams(method, params, scope) {
+	const folders = scope.split("/");
+	let top = folders.length;
+	const resolve = (value) => {
+		const segments = value.split("/");
+		let up = 0;
+		while (segments[up] === "..") up++;
+		if (value.startsWith("/") || segments.slice(up).includes("..") || up > 0 && method.effect !== "read" || up > folders.length) throw fail("bad_scope");
+		if (up === 0) return {
+			checked: value,
+			given: `${scope}/${value}`
+		};
+		top = Math.min(top, folders.length - up);
+		const resolved = [...folders.slice(0, folders.length - up), ...segments.slice(up)].join("/");
+		if (resolved.startsWith("/")) throw fail("bad_scope");
+		return {
+			checked: resolved,
+			given: resolved
+		};
+	};
+	const checked = under(method.params, params, (value) => resolve(value).checked);
+	const given = under(method.params, params, (value) => resolve(value).given);
+	if (given.path === "" && !method.params.required?.includes("path")) {
+		delete checked.path;
+		delete given.path;
+	} else if (method.rootPath && params.path === void 0 && top > 0) given.path = folders.slice(0, top).join("/");
+	return {
+		checked,
+		given,
+		reaches: top < folders.length
+	};
+}
+function under(schema, value, one) {
+	if (schema === path || schema === pathGlob) return typeof value === "string" ? one(value) : value;
+	if (Array.isArray(value)) return schema.items ? value.map((item) => under(schema.items, item, one)) : value;
+	if (typeof value === "object" && value !== null && schema.properties) {
+		const properties = schema.properties;
+		return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, Object.hasOwn(properties, key) ? under(properties[key], child, one) : child]));
+	}
+	return value;
+}
+const OUTSIDE = Symbol("outside the scope");
+/** The result the page gets: each repository path counted from the scope; one outside dropped, with the list item holding it, unless the call reached out with `../`. */
+function scopeResult(method, result, scope, reaches = false) {
+	const prefix = `${scope}/`;
+	const folders = scope.split("/");
+	const climb = (value) => {
+		for (let k = folders.length - 1; k > 0; k--) {
+			const at = `${folders.slice(0, k).join("/")}/`;
+			if (value.startsWith(at)) return `${"../".repeat(folders.length - k)}${value.slice(at.length)}`;
+		}
+		return `${"../".repeat(folders.length)}${value}`;
+	};
+	const count = (value) => value.startsWith(prefix) ? value.slice(prefix.length) : reaches ? climb(value) : OUTSIDE;
+	const kept = within(method.result, result, count, false);
+	if (kept === OUTSIDE) throw new SynsError("handler_error", { log: `${method.name} answered a path outside the call's scope` });
+	return kept;
+}
+function within(schema, value, count, item) {
+	if (schema === repoPath) return typeof value !== "string" ? value : count(value);
+	if (Array.isArray(value)) return schema.items ? value.map((one) => within(schema.items, one, count, true)).filter((one) => one !== OUTSIDE) : value;
+	if (typeof value === "object" && value !== null && schema.properties) {
+		const properties = schema.properties;
+		const kept = {};
+		for (const [key, child] of Object.entries(value)) {
+			const one = Object.hasOwn(properties, key) ? within(properties[key], child, count, false) : child;
+			if (one === OUTSIDE) return OUTSIDE;
+			if (item && properties[key]?.items === repoPath && Array.isArray(one) && one.length === 0) return OUTSIDE;
+			kept[key] = one;
+		}
+		return kept;
+	}
+	return value;
+}
+/**
+* A patch under a call's scope: every path its header lines name (`diff --git`, `---`, `+++`, `rename from` and `to`,
+* `copy from` and `to`, `Binary files … differ`) counted from the scope, as the CLI counts a folder's (syns-cli
+* `rebase_diff_headers`); `/dev/null`, the `a/` and `b/` prefixes, a quoted path's quotes and a path outside stay as
+* they are. Only the lines ahead of a file's first hunk are headers, so a hunk's line reading `--- a/x` is never
+* rewritten (S1.25, B-0080).
+*/
+function scopePatch(patch, scope) {
+	const prefix = `${scope}/`;
+	const lead = (text, ab) => text.startsWith(`${ab}${prefix}`) ? "" : text.startsWith(`"${ab}${prefix}`) ? "\"" : void 0;
+	const side = (text, ab) => {
+		const quote = lead(text, ab);
+		return quote === void 0 ? text : `${quote}${ab}${text.slice(quote.length + ab.length + prefix.length)}`;
+	};
+	const maps = (text, ab) => text === "/dev/null" || lead(text, ab) !== void 0;
+	const pair = (text, between, known) => {
+		const both = [];
+		for (let at = text.indexOf(between); at >= 0; at = text.indexOf(between, at + 1)) {
+			const a = text.slice(0, at), b = text.slice(at + between.length);
+			if (maps(a, "a/") && maps(b, "b/")) both.push([a, b]);
+		}
+		const fits = (one, k) => k === void 0 || one === k || one === "/dev/null";
+		return (known.some((k) => k !== void 0) ? both.find(([a, b]) => fits(a, known[0]) && fits(b, known[1])) : void 0) ?? both.find(([a, b]) => a.replace(/^("?)a\//, "$1") === b.replace(/^("?)b\//, "$1")) ?? both[0];
+	};
+	const joined = (split, text, between) => split ? `${side(split[0], "a/")}${between}${side(split[1], "b/")}` : text;
+	const sidesOf = (lines, from) => {
+		const known = [void 0, void 0];
+		const token = (path, ab) => path.startsWith("\"") ? `"${ab}${path.slice(1)}` : `${ab}${path}`;
+		for (let k = from; k < lines.length && !lines[k].startsWith("diff --git ") && !lines[k].startsWith("@@"); k++) {
+			const line = lines[k];
+			if (line.startsWith("--- ") && line !== "--- /dev/null") known[0] = line.slice(4);
+			else if (line.startsWith("+++ ") && line !== "+++ /dev/null") known[1] = line.slice(4);
+			else for (const [start, at, ab] of [
+				[
+					"rename from ",
+					0,
+					"a/"
+				],
+				[
+					"copy from ",
+					0,
+					"a/"
+				],
+				[
+					"rename to ",
+					1,
+					"b/"
+				],
+				[
+					"copy to ",
+					1,
+					"b/"
+				]
+			]) if (line.startsWith(start)) known[at] = token(line.slice(start.length), ab);
+		}
+		return known;
+	};
+	const sides = [
+		["--- ", "a/"],
+		["+++ ", "b/"],
+		["rename from ", ""],
+		["rename to ", ""],
+		["copy from ", ""],
+		["copy to ", ""]
+	];
+	const lines = patch.split("\n");
+	let header = true;
+	let file = [];
+	return lines.map((line, n) => {
+		if (line.startsWith("diff --git ")) {
+			header = true;
+			const split = pair(line.slice(11), " ", sidesOf(lines, n + 1));
+			file = split ?? [];
+			return `diff --git ${joined(split, line.slice(11), " ")}`;
+		}
+		if (line.startsWith("@@")) header = false;
+		if (!header) return line;
+		for (const [start, ab] of sides) if (line.startsWith(start)) return `${start}${side(line.slice(start.length), ab)}`;
+		if (line.startsWith("Binary files ") && line.endsWith(" differ")) return `Binary files ${joined(pair(line.slice(13, -7), " and ", file), line.slice(13, -7), " and ")} differ`;
+		return line;
+	}).join("\n");
+}
+//#endregion
 //#region src/methods/diff.ts
 const record$6 = (value) => typeof value === "object" && value !== null ? value : {};
 const end = {
@@ -1223,10 +1573,13 @@ const diff = {
 			})) : void 0
 		};
 	},
-	scoped(result, inside) {
+	scoped(result, inside, scope) {
 		if (!Array.isArray(result.files)) return result;
 		const files = result.files.map((file) => {
-			if (typeof file.oldPath !== "string" || inside(file.path) === inside(file.oldPath)) return file;
+			if (typeof file.oldPath !== "string" || inside(file.path) === inside(file.oldPath)) return typeof file.patch === "string" ? {
+				...file,
+				patch: scopePatch(file.patch, scope)
+			} : file;
 			return inside(file.path) ? {
 				path: file.path,
 				status: "added"
@@ -1633,11 +1986,7 @@ const history = {
 						pathsTruncated: { type: "boolean" },
 						by: {
 							type: "object",
-							properties: {
-								integration: nullable("string"),
-								run: nullable("string"),
-								trigger: nullable("string")
-							},
+							properties: BY,
 							required: [
 								"integration",
 								"run",
@@ -1671,7 +2020,8 @@ const history = {
 	shape: (out, params) => ({
 		total: out.total,
 		entries: Array.isArray(out.data) ? out.data.map(record$2).map((row) => {
-			const paths = Array.isArray(row.filesChanged) ? row.filesChanged : typeof params.path === "string" ? [params.path] : void 0;
+			const own = typeof row.path === "string" ? [...typeof row.movedFrom === "string" ? [row.movedFrom] : [], row.path] : typeof params.path === "string" ? [params.path] : void 0;
+			const paths = Array.isArray(row.filesChanged) ? row.filesChanged : own;
 			const provenance = record$2(row.provenance);
 			return {
 				version: row.sha,
@@ -2931,6 +3281,7 @@ const METHODS = [
 	glob,
 	grep,
 	diff,
+	changes,
 	{
 		name: "syns.write",
 		description: "One file's whole text as a new version, made against base. create: true refuses with exists when the path is already there at base. Published at once, with no confirmation.",
@@ -3005,87 +3356,6 @@ const METHODS = [
 	explore,
 	users
 ];
-//#endregion
-//#region src/scoped.ts
-/**
-* A read's path or pattern may begin with `../` segments, resolved against the scope; one climbing above the session's
-* folder is `bad_scope`. A write's `..`, a `..` after a path's start, a leading `/`: `bad_scope`, before the params are
-* checked (S1.25, D91 point 3 as amended by Q-0025).
-*/
-function scopeParams(method, params, scope) {
-	const folders = scope.split("/");
-	let top = folders.length;
-	const resolve = (value) => {
-		const segments = value.split("/");
-		let up = 0;
-		while (segments[up] === "..") up++;
-		if (value.startsWith("/") || segments.slice(up).includes("..") || up > 0 && method.effect !== "read" || up > folders.length) throw fail("bad_scope");
-		if (up === 0) return {
-			checked: value,
-			given: `${scope}/${value}`
-		};
-		top = Math.min(top, folders.length - up);
-		const resolved = [...folders.slice(0, folders.length - up), ...segments.slice(up)].join("/");
-		if (resolved.startsWith("/")) throw fail("bad_scope");
-		return {
-			checked: resolved,
-			given: resolved
-		};
-	};
-	const checked = under(method.params, params, (value) => resolve(value).checked);
-	const given = under(method.params, params, (value) => resolve(value).given);
-	if (given.path === "" && !method.params.required?.includes("path")) {
-		delete checked.path;
-		delete given.path;
-	} else if (method.rootPath && params.path === void 0 && top > 0) given.path = folders.slice(0, top).join("/");
-	return {
-		checked,
-		given,
-		reaches: top < folders.length
-	};
-}
-function under(schema, value, one) {
-	if (schema === path || schema === pathGlob) return typeof value === "string" ? one(value) : value;
-	if (Array.isArray(value)) return schema.items ? value.map((item) => under(schema.items, item, one)) : value;
-	if (typeof value === "object" && value !== null && schema.properties) {
-		const properties = schema.properties;
-		return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, Object.hasOwn(properties, key) ? under(properties[key], child, one) : child]));
-	}
-	return value;
-}
-const OUTSIDE = Symbol("outside the scope");
-/** The result the page gets: each repository path counted from the scope; one outside dropped, with the list item holding it, unless the call reached out with `../`. */
-function scopeResult(method, result, scope, reaches = false) {
-	const prefix = `${scope}/`;
-	const folders = scope.split("/");
-	const climb = (value) => {
-		for (let k = folders.length - 1; k > 0; k--) {
-			const at = `${folders.slice(0, k).join("/")}/`;
-			if (value.startsWith(at)) return `${"../".repeat(folders.length - k)}${value.slice(at.length)}`;
-		}
-		return `${"../".repeat(folders.length)}${value}`;
-	};
-	const count = (value) => value.startsWith(prefix) ? value.slice(prefix.length) : reaches ? climb(value) : OUTSIDE;
-	const kept = within(method.result, result, count, false);
-	if (kept === OUTSIDE) throw new SynsError("handler_error", { log: `${method.name} answered a path outside the call's scope` });
-	return kept;
-}
-function within(schema, value, count, item) {
-	if (schema === repoPath) return typeof value !== "string" ? value : count(value);
-	if (Array.isArray(value)) return schema.items ? value.map((one) => within(schema.items, one, count, true)).filter((one) => one !== OUTSIDE) : value;
-	if (typeof value === "object" && value !== null && schema.properties) {
-		const properties = schema.properties;
-		const kept = {};
-		for (const [key, child] of Object.entries(value)) {
-			const one = Object.hasOwn(properties, key) ? within(properties[key], child, count, false) : child;
-			if (one === OUTSIDE) return OUTSIDE;
-			if (item && properties[key]?.items === repoPath && Array.isArray(one) && one.length === 0) return OUTSIDE;
-			kept[key] = one;
-		}
-		return kept;
-	}
-	return value;
-}
 /** An absolute path on the session's machine, POSIX or Windows (a drive letter, or a UNC path). */
 const ABSOLUTE = /^(\/|[A-Za-z]:[\\/]|\\\\)/;
 /** Where the CLI runs for the session: the folder the host passed, on its machine. Null when there is none; a malformed one throws. */
@@ -3155,6 +3425,7 @@ function createDispatch({ table = METHODS, cli, log, held = createHeld(), now = 
 			limits: cli.limits,
 			held,
 			redact: (text) => redact(text, { folder: session.cwd }),
+			pathGrowth: scoped?.reaches ? 3 * folder.split("/").length : 0,
 			async syns(args, stdin, options) {
 				const mark = provenance(sessionId);
 				const env = options?.provenanceEnv ? {
@@ -3186,7 +3457,7 @@ function createDispatch({ table = METHODS, cli, log, held = createHeld(), now = 
 			}
 		}
 		if (scoped) {
-			if (method.scoped) result = method.scoped(result, (path) => scoped.reaches || typeof path === "string" && path.startsWith(`${folder}/`));
+			if (method.scoped) result = method.scoped(result, (path) => scoped.reaches || typeof path === "string" && path.startsWith(`${folder}/`), folder);
 			result = scopeResult(method, result, folder, scoped.reaches);
 		}
 		const hole = validate(method.result, result);
@@ -3786,7 +4057,7 @@ async function answerPageScript(cli, ask, ms = PAGE_SCRIPT_MS) {
 		clearTimeout(timer);
 		controller.abort();
 	}
-	return ask.have === "0.10.3" ? { version: VERSION } : {
+	return ask.have === "0.11.0" ? { version: VERSION } : {
 		version: VERSION,
 		script: PAGEHOST
 	};

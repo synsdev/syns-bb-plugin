@@ -42,6 +42,7 @@ export const SAMPLES: Record<string, Record<string, unknown>> = {
   "syns.glob": { pattern: "notes/*.md" },
   "syns.grep": { pattern: "Note", path: "notes" },
   "syns.diff": { from: OLD },
+  "syns.changes": { since: OLD },
   "syns.write": { path: "notes/a.md", text: "a", base: HEAD },
   "syns.edit": { path: "notes/a.md", old: "a", new: "b", base: HEAD },
   "syns.rm": { path: "notes/a.md", base: HEAD },
