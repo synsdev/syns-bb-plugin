@@ -38,6 +38,8 @@ folder it is given: on an older host an app shows "showing a page in a frame nee
     transient read failure (`handler_error`, `timeout`, `rate_limited`) are gone: an app's calls go out as the page's
     own, on the page's budget (120 a minute, 8 at once), so several apps watching `syns.repo` can meet `rate_limited`.
   - `onState` no longer lists an app's failed calls (`failures` is always empty).
+  - An app's `<form method="dialog">`, a local confirm box, now answers the agent, as on a Thread Page; 0.10.x skipped
+    it. A form meant to stay local carries `data-thread-page-manual` (Syns B-0104, Q-0038).
   - The hash-only `history.pushState` and `replaceState` an app could call are gone (the host's guide forbids them).
   - An app's links are taken before its own click handlers (the capture phase, as the kernel takes them on a page):
     an app that routes its own relative links with `preventDefault` now also gets the workspace's navigation.

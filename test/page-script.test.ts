@@ -80,10 +80,11 @@ const hosted = async (src: Record<string, unknown>, files: Record<string, string
   const embeds: { target: unknown; options: Record<string, any>; stopped: boolean }[] = [];
   const probes: { scope: unknown; html: string; stopped: boolean }[] = [];
   const listeners: ((e: unknown) => void)[] = [];
+  const queried: string[] = [];
   const el = (tag: string) => ({ tag, style: {}, attrs: {} as Record<string, string>, setAttribute(k: string, v: string) { this.attrs[k] = v; }, remove() {}, contentWindow: { tag: "frame-window", n: Math.random() } });
   const parsed = (text: string) => {
     const head: unknown[] = [];
-    return { querySelectorAll: () => [], createElement: el, head: { prepend: (n: unknown) => head.unshift(n) },
+    return { querySelectorAll: (q: string) => { queried.push(q); return []; }, querySelector: (q: string) => { queried.push(q); return null; }, createElement: el, head: { prepend: (n: unknown) => head.unshift(n) },
       documentElement: { get outerHTML() { return head.map((n: any) => `<meta name="${n.attrs.name}">`).join("") + text; } } };
   };
   const win: Record<string, unknown> = { setTimeout, clearTimeout, setInterval, clearInterval, console, removeEventListener() {},
@@ -115,7 +116,7 @@ const hosted = async (src: Record<string, unknown>, files: Record<string, string
   const f = (win.SynsPages as { frame: (c: unknown, s: unknown, o: unknown) => any }).frame({ appendChild() {} }, src, { call, sessionId: "thr_1", onState: (s: Record<string, unknown>) => states.push(s) });
   await settle();
   const fromFrame = (data: unknown) => listeners.forEach((fn) => fn({ source: f.frame.contentWindow, data }));
-  return { f, calls, embeds, probes, states, fromFrame };
+  return { f, calls, embeds, probes, states, fromFrame, queried };
 };
 
 describe("an app is a frame of the page, the host's own (B-0103, B-0102, B-0104; Unife Pages IN-0020)", () => {
@@ -151,9 +152,11 @@ describe("an app is a frame of the page, the host's own (B-0103, B-0102, B-0104;
 
   it("leaves an app's forms to the host, as a Thread Page's: a method=\"dialog\" form and one marked data-thread-page-manual reach the host as written, and nothing of the page host's hears a submit (B-0104, Q-0038)", async () => {
     const forms = '<form method="dialog"><button>OK</button></form><form data-thread-page-manual><input name="q"></form><form><input name="a"></form>';
-    const { embeds } = await hosted({ kind: "repo", folder: "apps/board" }, { "apps/board/index.html": forms });
+    const { embeds, queried } = await hosted({ kind: "repo", folder: "apps/board" }, { "apps/board/index.html": forms });
     expect(embeds[0].options.html).toBe('<!doctype html>\n<meta name="syns-pages-frame">' + forms);
-    for (const gone of ['"submit"', '"dialog"', "data-thread-page-manual", "e.submitter", '__tool: "form"']) expect(PAGEHOST, gone).not.toContain(gone);
+    // It looks for no form in the app's document, so none is taken out or changed before the host gets it.
+    expect(queried.filter((q) => /form|dialog|thread-page-manual/i.test(q))).toEqual([]);
+    expect(PAGEHOST).not.toMatch(/["'`](submit|dialog|form)["'`]|data-thread-page-manual|submitter|__tool:\s*["'`]form/);
   });
 
   it("a reload hands the host the document again on the same frame, not stopping it, so the reader's drafts and scroll stay (Unife Pages 0.5.3, IN-0027)", async () => {
