@@ -3695,8 +3695,8 @@ const PAGEHOST = String.raw`/*
         if (this.src.kind === "repo") {
           const holds = await holdsFrames(this.container, this.folder);
           if (holds === null) throw new Error("the host did not say whether it holds an app in its folder; reload to try again");
-          if (holds && holds.error) throw refused(holds.error);
-          if (!holds) throw new Error(NEEDS);
+          if (holds && typeof holds === "object") throw refused(holds.error);
+          if (holds !== true) throw new Error(NEEDS);
         }
         const doc = new DOMParser().parseFromString(text, "text/html");
         const refs = this.src.kind === "page" ? [] : Array.from(doc.querySelectorAll('link[rel="stylesheet"][href], script[src]'))
