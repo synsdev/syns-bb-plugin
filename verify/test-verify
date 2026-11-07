@@ -1,0 +1,341 @@
+#!/usr/bin/env python3
+"""test-verify — offline tests of verify/run, verify/run-scenarios and verify/scratch.py against stand-in `syns` and `bb`.
+
+What it does: puts small stand-in `syns` and `bb` programs first on PATH, before the system's programs but those
+`syspath.py` hides (a state file records every call and every repository made and deleted), then runs the real
+scripts through the failures a live run met: a scratch setup that fails after the repository was made, a start whose
+own delete failed, and a fresh session read before its first request. It also runs a whole scenario start on the
+stand-ins, the explicit inputs (the spec folder, the scenario log, the VERIFY file) and the checked delete. Nothing
+here talks to a server, a bb or the network.
+
+When it pays: whenever verify/run, verify/run-scenarios, verify/scratch.py or fragment-check change.
+When it does not: proving a release; that is verify/run itself.
+
+How to run (python3, standard library):
+  python3 verify/test-verify [-v]
+Exit codes: 0 every test passed · 1 a test failed.
+"""
+import glob
+import hashlib
+import json
+import os
+import runpy
+import shutil
+import subprocess
+import sys
+import tempfile
+import textwrap
+import unittest
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import syspath  # noqa: E402
+
+FAKE = "#!" + sys.executable + r'''
+import json, os, sys
+STATE = os.environ["FAKE_STATE"]
+st = json.load(open(STATE)) if os.path.exists(STATE) else {"repos": {}, "deleted": [], "calls": []}
+argv = sys.argv[1:]
+st["calls"].append([os.path.basename(sys.argv[0])] + argv)
+def done(out="", rc=0, err=""):
+    json.dump(st, open(STATE, "w"))
+    sys.stdout.write(out); sys.stderr.write(err); sys.exit(rc)
+fail = set(os.environ.get("FAKE_FAIL", "").split(","))
+if os.path.basename(sys.argv[0]) == "syns":
+    if argv[:1] == ["--version"]:
+        done("syns 0.3.30\n")
+    if argv[:1] == ["whoami"]:
+        done(json.dumps({"username": "tester"}))
+    if argv[:2] == ["repo", "create"]:
+        d = argv[argv.index("--description") + 1] if "--description" in argv else ""
+        st["repos"][argv[2]] = d
+        done("{}")
+    if argv[:1] == ["push"]:
+        done("pushed", 1 if "push" in fail else 0)
+    if argv[:1] == ["pull"]:
+        os.makedirs(argv[2]); done("pulled")
+    if argv[:2] == ["repo", "list"]:
+        q = argv[argv.index("--query") + 1] if "--query" in argv else ""
+        data = [{"name": n, "owner": "tester", "description": d} for n, d in st["repos"].items() if q in n]
+        done(json.dumps({"data": data, "total": len(data)}))
+    if argv[:1] == ["delete"] and "delete" in fail:
+        done("", 1, "server unreachable")
+    if argv[:1] == ["delete"]:
+        y = dict(l.split(": ", 1) for l in open(".syns.yaml").read().splitlines() if ": " in l)
+        st["repos"].pop(y["name"], None); st["deleted"].append(y["name"])
+        done("deleted")
+    done("", 0)
+# bb
+if argv[:2] == ["project", "create"]:
+    done("", 1, "project create refused") if "project" in fail else done(json.dumps({"id": "proj_fake"}))
+if argv[:2] == ["project", "delete"]:
+    st.setdefault("projects_deleted", []).append(argv[2]); done("")
+if argv[:2] == ["thread", "spawn"]:
+    if "spawn" in fail:
+        done("", 1, "spawn refused")
+    st.setdefault("prompts", []).append(open(argv[argv.index("--prompt-file") + 1]).read())
+    done(json.dumps({"id": "thr_fake%d" % len(st["prompts"])}))
+if argv[:2] == ["thread", "wait"]:
+    done("", 1, "timed out") if "wait" in fail else done(json.dumps({"matched": True}))
+if argv[:2] == ["thread", "show"]:
+    done(json.dumps({"thread": {"status": os.environ.get("FAKE_STATUS", "idle"),
+                                "activeBackgroundAgentCount": int(os.environ.get("FAKE_BG", "0"))}}))
+if argv[:2] == ["thread", "log"]:
+    done(json.dumps([{"data": {"providerThreadId": "sess-fake"}}]))
+if argv[:2] == ["plugin", "list"]:
+    done("syns@0.0.1\nthread-pages@0.0.1\n")
+done("", 0)
+'''
+
+
+def write(path, text):
+    with open(path, "w") as f:
+        f.write(text if isinstance(text, str) else json.dumps(text))
+
+
+def read(path):
+    with open(path) as f:
+        return f.read()
+
+
+class Fakes(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="test-verify-")
+        self.bin = os.path.join(self.tmp, "bin")
+        os.makedirs(self.bin)
+        for n in ("syns", "bb"):
+            p = os.path.join(self.bin, n)
+            write(p, FAKE)
+            os.chmod(p, 0o755)
+        self.state = os.path.join(self.tmp, "state.json")
+        self.code = os.path.join(self.tmp, "code")
+        os.makedirs(os.path.join(self.code, "src", "text"))
+        write(os.path.join(self.code, "package.json"), {"version": "0.0.1"})
+        write(os.path.join(self.code, "README.md"), "Needs the Syns CLI, 0.3.25 or later.\n")
+        for f in ("fragment.ts", "guide.ts"):
+            write(os.path.join(self.code, "src", "text", f), "export const FRAGMENT = `x`;\n")
+        self.spec = os.path.join(self.tmp, "spec")
+        os.makedirs(self.spec)
+        for f in ("01-methods.md", "05-acceptance.md"):
+            write(os.path.join(self.spec, f), f"# {f}\n")
+        self.home = os.path.join(self.tmp, "home")
+        os.makedirs(self.home)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def env(self, **kw):
+        return dict(os.environ, PATH=self.bin + os.pathsep + syspath.system_path(), FAKE_STATE=self.state,
+                    HOME=self.home, TMPDIR=self.tmp, **kw)
+
+    def run_script(self, args, timeout=60, **kw):
+        return subprocess.run([sys.executable, *args], capture_output=True, text=True, env=self.env(**kw),
+                              timeout=timeout, cwd=self.tmp)
+
+    def st(self):
+        with open(self.state) as f:
+            return json.load(f)
+
+    def calls(self, *prefix):
+        return [c for c in self.st()["calls"] if c[:len(prefix)] == list(prefix)]
+
+    def test_run_deletes_its_scratch_when_setup_fails_after_create(self):
+        p = self.run_script([os.path.join(HERE, "run"), "--fixtures", "--code", self.code], FAKE_FAIL="project")
+        st = self.st()
+        self.assertTrue(st["deleted"], f"nothing deleted; repos left {st['repos']}\n{p.stdout}{p.stderr}")
+        self.assertEqual(st["repos"], {}, f"left behind: {st['repos']}")
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+
+    def test_scenarios_start_deletes_its_scratch_when_start_fails_after_create(self):
+        out = os.path.join(self.tmp, "out")
+        p = self.run_script([os.path.join(HERE, "run-scenarios"), "start", "t-run", "--code", self.code,
+                             "--spec", self.spec, "--only", "01", "--out", out], FAKE_FAIL="project")
+        st = self.st()
+        self.assertTrue(st["deleted"], f"nothing deleted; repos left {st['repos']}\n{p.stdout}{p.stderr}")
+        self.assertEqual(st["repos"], {}, f"left behind: {st['repos']}")
+        self.assertNotEqual(p.returncode, 0)
+
+    def test_failed_discard_leaves_cleanup_to_retry(self):
+        """A start whose own delete failed is not marked done, so cleanup still deletes."""
+        out = os.path.join(self.tmp, "out")
+        start = [os.path.join(HERE, "run-scenarios"), "start", "t-run", "--code", self.code, "--spec", self.spec,
+                 "--only", "01", "--out", out]
+        p = self.run_script(start, FAKE_FAIL="spawn,delete")
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("NOT deleted", p.stderr)
+        with open(os.path.join(out, "run.json")) as f:
+            self.assertNotIn("discarded", json.load(f))
+        p = self.run_script([os.path.join(HERE, "run-scenarios"), "cleanup", out])
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(self.st()["repos"], {})
+        self.assertEqual(self.st()["projects_deleted"], ["proj_fake", "proj_fake"])
+
+    def test_scenarios_start_spawns_the_brief_verbatim_in_a_fresh_checkout(self):
+        out = os.path.join(self.tmp, "out")
+        p = self.run_script([os.path.join(HERE, "run-scenarios"), "start", "t-run", "--code", self.code,
+                             "--spec", self.spec, "--only", "01", "--out", out])
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        run = json.loads(read(os.path.join(out, "run.json")))
+        repo = run["repo"]
+        self.assertTrue(repo.startswith("tester/scratch-sbp-scn-"), repo)
+        brief = runpy.run_path(os.path.join(HERE, "run-scenarios"), run_name="t")["scenarios"]({"01"})[0]["brief"]
+        self.assertIn("reading.md", brief)
+        self.assertEqual(self.st()["prompts"], [brief], "the prompt is the brief, verbatim, and nothing else")
+        (pull,) = self.calls("syns", "pull")
+        self.assertEqual(pull[2], repo)
+        self.assertEqual(pull[3], os.path.join(run["checkouts"], "01-reading-list"))
+        self.assertFalse(pull[3].startswith(out + os.sep), "a checkout outside the run's packets")
+        (spawn,) = self.calls("bb", "thread", "spawn")
+        self.assertEqual(spawn[spawn.index("--environment") + 1], pull[3])
+        self.assertEqual(spawn[spawn.index("--project") + 1], "proj_fake")
+        self.assertEqual(spawn[spawn.index("--permission-mode") + 1], "full")
+        self.assertEqual([c[3] for c in self.calls("bb", "thread", "wait")], ["thr_fake1"])
+        meta = json.loads(read(os.path.join(out, "01-reading-list", "meta.json")))
+        self.assertEqual(meta["thread"], "thr_fake1")
+        self.assertTrue(os.path.exists(os.path.join(out, "01-reading-list", "rubric.md")))
+        self.assertTrue(os.path.exists(os.path.join(out, "01-reading-list", "seed", "reading.md")))
+        self.assertTrue(repo.split("/")[1] in self.st()["repos"], "a started run keeps its scratch for the graders")
+        p = self.run_script([os.path.join(HERE, "run-scenarios"), "cleanup", out])
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(self.st()["repos"], {})
+        self.assertFalse(os.path.exists(run["checkouts"]), "cleanup removes the sessions' checkouts")
+
+    def test_session_that_never_ends_is_a_stall(self):
+        out = os.path.join(self.tmp, "out")
+        p = self.run_script([os.path.join(HERE, "run-scenarios"), "start", "t-run", "--code", self.code,
+                             "--spec", self.spec, "--only", "01", "--out", out, "--timeout", "5s"], FAKE_FAIL="wait")
+        self.assertEqual(p.returncode, 3, p.stdout + p.stderr)
+        self.assertIn("thr_fake1 did not end its turn within 5s", p.stdout)
+
+    def test_session_in_error_fails_and_background_agents_stall(self):
+        for env, rc, words in (({"FAKE_FAIL": "wait", "FAKE_STATUS": "error"}, 1, "thr_fake1 ended in an error"),
+                               ({"FAKE_BG": "2"}, 3, "thr_fake2 is idle with background agents still running")):
+            out = os.path.join(self.tmp, "out-" + str(rc))
+            p = self.run_script([os.path.join(HERE, "run-scenarios"), "start", "t-run", "--code", self.code,
+                                 "--spec", self.spec, "--only", "01", "--out", out], **env)
+            self.assertEqual(p.returncode, rc, p.stdout + p.stderr)
+            self.assertIn(words, p.stdout)
+
+    def test_start_needs_the_spec(self):
+        out = os.path.join(self.tmp, "out")
+        p = self.run_script([os.path.join(HERE, "run-scenarios"), "start", "t-run", "--code", self.code,
+                             "--spec", os.path.join(self.tmp, "nope"), "--only", "01", "--out", out])
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertIn("--spec", p.stderr)
+        self.assertFalse(os.path.exists(self.state), "nothing was made before the inputs were read")
+
+    def test_contract_hash_names_the_spec_files_as_before(self):
+        """Over the spec's *.md, each named tree:spec/<file>, and the code's fragment and guide, so hashes in the
+        scenario log stay comparable."""
+        h = hashlib.sha256()
+        files = [(f"tree:spec/{os.path.basename(p)}", p) for p in glob.glob(os.path.join(self.spec, "*.md"))]
+        files += [(f"code:src/text/{f}", os.path.join(self.code, "src", "text", f)) for f in ("fragment.ts", "guide.ts")]
+        for name, path in sorted(files):
+            with open(path, "rb") as f:
+                h.update(name.encode() + b"\0" + f.read() + b"\0")
+        rs = runpy.run_path(os.path.join(HERE, "run-scenarios"), run_name="t")
+        self.assertEqual(rs["contract_hash"](self.code, self.spec), h.hexdigest()[:12])
+
+    def test_log_appends_newest_first_to_the_log_given(self):
+        out = os.path.join(self.tmp, "out")
+        os.makedirs(os.path.join(out, "01-reading-list"))
+        write(os.path.join(out, "run.json"), {
+            "run": "t-run", "started": "2026-11-07T10:00Z", "plugin": "0.0.1", "contract_hash": "abc", "code_head": "h",
+            "installed": "0.0.1", "thread_pages": "1", "cli": "syns 0.3.30", "bb": "bb 1",
+            "repo": "tester/scratch-sbp-scn-x", "scenarios": {"01-reading-list": {"thread": "thr_fake1"}}})
+        write(os.path.join(out, "01-reading-list", "grade.md"),
+              "scenario  : 01\nmust      : 4/4\nshould    : 5/6\nred flags : none\nverdict   : pass\n")
+        log = os.path.join(self.tmp, "LOG.md")
+        p = self.run_script([os.path.join(HERE, "run-scenarios"), "log", out, "--log", log])
+        self.assertEqual(p.returncode, 1, "a log that is not there is not made")
+        write(log, "# Log\n\n## 2026-10-01 — older\n")
+        p = self.run_script([os.path.join(HERE, "run-scenarios"), "log", out, "--log", log])
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        text = read(log)
+        self.assertLess(text.index("## 2026-11-07 — scenarios on 0.0.1 (contract `abc`): 1 of 1 pass"),
+                        text.index("## 2026-10-01 — older"))
+
+    def test_run_reads_e7_only_from_the_log_and_spec_given(self):
+        p = self.run_script([os.path.join(HERE, "run"), "--scenarios", "--code", self.code])
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn("E7 not covered: the scenario log and the spec were not given", p.stdout)
+        chash = runpy.run_path(os.path.join(HERE, "run-scenarios"), run_name="t")["contract_hash"](self.code, self.spec)
+        log = os.path.join(self.tmp, "LOG.md")
+        write(log, f"# Log\n\n## 2026-11-07 — scenarios on 0.0.1 (contract `{chash}`): 2 of 2 pass\n")
+        p = self.run_script([os.path.join(HERE, "run"), "--scenarios", "--code", self.code, "--spec", self.spec,
+                             "--log", log])
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn(f"E7 covered: the scenario log 2026-11-07: scenarios on 0.0.1, contract `{chash}`: 2 of 2 pass",
+                      p.stdout)
+
+    def test_a_cell_that_cannot_run_is_its_own_row(self):
+        dest = os.path.join(self.tmp, "VERIFY.md")
+        p = self.run_script([os.path.join(HERE, "run"), "--versions", "--scenarios", "--code", self.code,
+                             "--spec", os.path.join(self.tmp, "nope"), "--log", os.path.join(self.tmp, "LOG.md"),
+                             "--write", dest])
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertIn("E7 fail: verify/run could not run this cell", p.stdout)
+        self.assertIn("E5 partly covered", p.stdout)
+        self.assertIn("| E5 host and CLI versions | partly covered |", read(dest))
+
+    def test_a_write_target_that_cannot_be_written_is_refused_before_any_cell(self):
+        ro = os.path.join(self.tmp, "ro")
+        os.makedirs(ro)
+        os.chmod(ro, 0o500)
+        bad = [("", "is empty"), (".", "is a folder"), ("..", "is a folder"),
+               (os.path.join(self.tmp, "missing", "VERIFY.md"), "does not exist"),
+               (os.path.join(ro, "VERIFY.md"), "cannot be written")]
+        if sys.platform == "darwin":            # APFS refuses a name that is not UTF-8; Linux takes any bytes
+            bad.append((os.path.join(self.tmp, os.fsdecode(b"V\xff.md")), "cannot be written"))
+        try:
+            for target, words in bad:
+                p = self.run_script([os.path.join(HERE, "run"), "--versions", "--code", self.code, "--write", target])
+                self.assertEqual(p.returncode, 5, f"{target!r}: {p.stdout}{p.stderr}")
+                self.assertIn(words, p.stderr, repr(target))
+                self.assertNotIn("Traceback", p.stderr, repr(target))
+                self.assertFalse(os.path.exists(self.state), f"{target!r}: a cell ran before --write was checked")
+        finally:
+            os.chmod(ro, 0o700)
+        self.assertEqual(os.listdir(ro), [])
+
+    def test_run_writes_the_verify_file_given(self):
+        dest = os.path.join(self.tmp, "VERIFY.md")
+        p = self.run_script([os.path.join(HERE, "run"), "--versions", "--code", self.code, "--write", dest])
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        text = read(dest)
+        self.assertIn("version: 0.0.1", text)
+        self.assertRegex(text, r"\| E5 host and CLI versions \| partly covered \| installed syns 0\.0\.1 = code 0\.0\.1")
+        self.assertIn("| E1 loopback reader (fixture) | not covered | not run on this version yet |", text)
+        self.assertEqual(os.listdir(HERE).count("VERIFY.md"), 0, "nothing is written beside the tools")
+
+    def test_scratch_delete_refuses_what_it_did_not_make(self):
+        write(self.state, {"repos": {"scratch-by-hand": "a board", "keep-me": "x"}, "deleted": [], "calls": []})
+        for target, words in (("tester/scratch-by-hand", "this script did not make it"),
+                              ("tester/keep-me", "not a scratch repository")):
+            p = self.run_script([os.path.join(HERE, "scratch.py"), "delete", target])
+            self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+            self.assertIn(words, p.stderr)
+        self.assertEqual(self.st()["deleted"], [])
+
+    def test_limits_waits_for_the_first_request(self):
+        proj = os.path.join(self.home, ".claude", "projects", "x")
+        os.makedirs(proj)
+        jl = os.path.join(proj, "sess-fake.jsonl")
+        write(jl, json.dumps({"type": "user"}) + "\n")      # the session exists, its request does not yet
+        writer = subprocess.Popen([sys.executable, "-c", textwrap.dedent(f"""
+            import json, time
+            time.sleep(4)
+            open({jl!r}, "a").write(json.dumps({{"attachment": {{"type": "prompt_snapshot",
+                "systemPrompt": "## syns 0.0.1\\n\\nx"}}}}) + "\\n")""")])
+        try:
+            p = self.run_script([os.path.join(HERE, "run"), "--limits", "--thread", "thr_fake", "--code", self.code],
+                                timeout=150)
+        finally:
+            writer.wait()
+        text = p.stdout + p.stderr
+        self.assertNotIn("no prompt_snapshot", text)
+        self.assertNotIn("no Claude Code transcript", text)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2 if "-v" in sys.argv else 1, argv=[sys.argv[0]], warnings="ignore")

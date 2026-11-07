@@ -1,0 +1,127 @@
+#!/usr/bin/env python3
+"""served-check — does this bb serve the release's page script?
+
+What it does: fetches the document Thread Pages serves for a session over loopback (as the page's frame fetches it:
+the shell, then its `documentUrl`), cuts out the syns contributor script, and compares it byte for byte with the
+release's page script, `PAGEHOST` of `src/pagehost.ts` at HEAD of the release's checkout (read with Node's type
+stripping). It fetches again every few seconds, up to --wait, while bb may still serve the script it held before the
+update. One line out: `bb: page script b69d503e… = release ✓ (served to thr_x)`, or what differs.
+
+The session: --thread, else this bb thread's own ($BB_THREAD_ID), else the thread bb last updated (`bb thread list`);
+any session serves the plugin's page script, and reading its document changes nothing.
+
+When it pays: after every release of the plugin, after `bb plugin update syns`.
+When it does not: before the update: bb serves the installed plugin's script, not the release's.
+
+How to run (python3, standard library; calls `git`, `node`, `bb`):
+  python3 verify/served-check [--code .] [--thread thr_x] [--wait 60] [--out served.html]
+Exit codes: 0 equal · 1 different, or no syns script in the served document · 5 usage error (no session, no page
+script at HEAD, bb not answering).
+"""
+import argparse
+import hashlib
+import html
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.request
+
+EXIT_PASS, EXIT_FAIL, EXIT_USAGE = 0, 1, 5
+
+
+def release_script(code):
+    """PAGEHOST at HEAD, as UTF-8 bytes, or None."""
+    p = subprocess.run(["git", "-C", code, "show", "HEAD:src/pagehost.ts"], capture_output=True)
+    if p.returncode:
+        return None
+    tmp = tempfile.mkdtemp(prefix="served-check-")
+    try:
+        ts = os.path.join(tmp, "pagehost.ts")
+        open(ts, "wb").write(p.stdout)
+        js = "const m = await import(process.argv[1]); process.stdout.write(m.PAGEHOST);"
+        for flags in ([], ["--experimental-strip-types"]):
+            r = subprocess.run(["node", *flags, "--input-type=module", "-e", js, ts], capture_output=True, timeout=60)
+            if r.returncode == 0 and r.stdout:
+                return r.stdout
+        return None
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def session(given):
+    if given:
+        return given
+    if os.environ.get("BB_THREAD_ID"):
+        return os.environ["BB_THREAD_ID"]
+    p = subprocess.run(["bb", "thread", "list", "--json"], capture_output=True, text=True, timeout=60)
+    try:
+        threads = [t for t in json.loads(p.stdout) if not t.get("archivedAt")]
+    except ValueError:
+        return None
+    threads.sort(key=lambda t: t.get("updatedAt") or "", reverse=True)
+    return threads[0]["id"] if threads else None
+
+
+def served(base, thr):
+    """(script bytes or None, words, document bytes)."""
+    shell = urllib.request.urlopen(f"{base}/api/v1/plugins/thread-pages/http/page?session={thr}", timeout=30).read()
+    s = shell.decode("utf-8", "replace")
+    m = re.search(r'documentUrl&quot;:&quot;(.*?)&quot;', s) or re.search(r'"documentUrl":"(.*?)"', s)
+    if not m:
+        return None, f"no documentUrl in the page shell ({len(shell)} bytes)", shell
+    body = urllib.request.urlopen(base + html.unescape(m.group(1)), timeout=30).read()
+    cm = re.search(rb'<script[^>]*data-thread-page-contributor="syns"[^>]*>(.*?)</script>', body, re.S)
+    if not cm:
+        return None, f"no syns contributor script in the served document ({len(body)} bytes)", body
+    return cm.group(1), "", body
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--code", default=".", help="the release's checkout of synsdev/syns-bb-plugin (default .)")
+    ap.add_argument("--thread", help="a session of this bb (default $BB_THREAD_ID, else the last updated)")
+    ap.add_argument("--server", default=os.environ.get("BB_SERVER_URL", "http://127.0.0.1:38886"))
+    ap.add_argument("--wait", type=int, default=60, help="seconds to keep fetching while it differs (default 60)")
+    ap.add_argument("--out", help="write the last served document here")
+    a = ap.parse_args()
+    want = release_script(a.code)
+    if not want:
+        print(f"served-check: no PAGEHOST read from {a.code} HEAD:src/pagehost.ts (git and node needed)", file=sys.stderr)
+        return EXIT_USAGE
+    thr = session(a.thread)
+    if not thr:
+        print("served-check: no session to read (pass --thread)", file=sys.stderr)
+        return EXIT_USAGE
+    w = hashlib.sha256(want).hexdigest()
+    deadline = time.time() + a.wait
+    while True:
+        try:
+            got, why, body = served(a.server.rstrip("/"), thr)
+        except OSError as e:
+            print(f"served-check: {a.server} did not serve {thr}'s page: {e}", file=sys.stderr)
+            return EXIT_USAGE
+        if a.out:
+            open(a.out, "wb").write(body)
+        if got == want or time.time() >= deadline:
+            break
+        time.sleep(5)
+    if got == want:
+        print(f"bb: page script {w[:8]}… = release ✓ ({len(got)} bytes, served to {thr})")
+        return EXIT_PASS
+    if got is None:
+        print(f"bb: page script ✗ {why} (session {thr}; release {w[:8]}…)")
+        return EXIT_FAIL
+    g = hashlib.sha256(got).hexdigest()
+    i = next((k for k in range(min(len(got), len(want))) if got[k] != want[k]), min(len(got), len(want)))
+    print(f"bb: page script {g[:8]}… ≠ release {w[:8]}… ✗ ({len(got)} vs {len(want)} bytes, first difference at byte "
+          f"{i}, served to {thr} after {a.wait} s)")
+    return EXIT_FAIL
+
+
+if __name__ == "__main__":
+    sys.exit(main())

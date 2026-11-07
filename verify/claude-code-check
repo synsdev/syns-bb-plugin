@@ -1,0 +1,245 @@
+#!/usr/bin/env python3
+"""claude-code-check — does this machine's Claude Code run the release's syns-pages bundle?
+
+What it does, in the release's checkout of synsdev/syns-bb-plugin (the bundle to match is HEAD's
+`hosts/claude/bin/syns-pages.mjs`, the one the release's check built and found committed):
+  1. update: `claude plugin marketplace update syns`, then `claude plugin update syns-pages@syns` (skipped with
+     --no-update);
+  2. installed: the user-scope entry of `syns-pages@syns` in `$CLAUDE_CONFIG_DIR/plugins/installed_plugins.json`
+     (default `~/.claude`) states the version, and its `bin/syns-pages.mjs` has the release's sha256;
+  3. contributor: each running `syns-pages.mjs` under that config's plugin cache (from `ps`, read only) runs the
+     installed file, started after that file was written (a process started before it loaded something else), and
+     that file has the release's sha256. The Unife daemon restarts its contributor after an update (about 30 s), so
+     it waits up to --wait seconds for that. None running is said, and is not a failure;
+  4. fresh: a fresh install into an empty `HOME` and `CLAUDE_CONFIG_DIR` (`mktemp -d`, removed after), from the
+     marketplace source this config registers, gives a bundle with the release's sha256.
+One line out: `claude-code: bundle 04b2f5fc… = release ✓ (installed, contributor, fresh)`; on a mismatch each one
+that differs, named.
+
+Why: `claude plugin update` fetches only on a new version and keeps a same-version bundle, so a Claude Code can run
+another build than the release under the release's own number, and nothing said so.
+
+When it pays: after every release of the plugin, on the machine the release runs on.
+When it does not: before the release is pushed: the marketplace does not name it yet. It changes this machine's
+Claude Code install (step 1): run it against another config by setting CLAUDE_CONFIG_DIR.
+
+How to run (python3, standard library; calls `claude`, `git`, `ps`):
+  python3 verify/claude-code-check --version 0.11.1 [--code .] [--no-update] [--wait 90] [--no-fresh] [--json]
+Exit codes: 0 every check equals the release · 1 one differs or a step failed (named) · 5 usage error.
+"""
+import argparse
+import hashlib
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+
+PLUGIN, MARKET = "syns-pages", "syns"
+BUNDLE = "hosts/claude/bin/syns-pages.mjs"
+MANIFEST = "hosts/claude/.claude-plugin/plugin.json"
+EXIT_PASS, EXIT_FAIL, EXIT_USAGE = 0, 1, 5
+
+
+def sh(cmd, env=None, timeout=300, cwd=None):
+    try:
+        p = subprocess.run(cmd, capture_output=True, env=env, timeout=timeout, cwd=cwd)
+    except subprocess.TimeoutExpired:
+        return 124, b"", f"timed out after {timeout} s".encode()
+    except OSError as e:
+        return 127, b"", str(e).encode()
+    return p.returncode, p.stdout, p.stderr
+
+
+def last(b, n=2):
+    lines = [l.strip() for l in b.decode("utf-8", "replace").splitlines() if l.strip()]
+    return " | ".join(lines[-n:])
+
+
+def sha(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def claude_env(home=None, config=None):
+    """The caller's environment without a calling Claude Code session's variables; HOME and CLAUDE_CONFIG_DIR set
+    for the fresh install."""
+    env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE" and not k.startswith("CLAUDE_CODE_")}
+    if home:
+        env["HOME"] = home
+        env["TMPDIR"] = os.path.join(home, "tmp") + "/"
+        os.makedirs(env["TMPDIR"], exist_ok=True)
+    if config:
+        env["CLAUDE_CONFIG_DIR"] = config
+    return env
+
+
+def installed(config, plugin_id):
+    """(path of the installed bundle, version, entry) of the user-scope entry (else the only one), or (None, why)."""
+    p = os.path.join(config, "plugins", "installed_plugins.json")
+    try:
+        entries = json.load(open(p)).get("plugins", {}).get(plugin_id) or []
+    except (OSError, ValueError) as e:
+        return None, f"cannot read {p}: {e}", None
+    pick = [e for e in entries if e.get("scope") == "user"] or (entries if len(entries) == 1 else [])
+    if not pick:
+        return None, f"{plugin_id} is not installed for the user in {p}", None
+    e = pick[0]
+    return os.path.join(e["installPath"], "bin", "syns-pages.mjs"), e.get("version"), e
+
+
+def contributors(config):
+    """Running processes whose command runs a syns-pages.mjs under this config's plugin cache: [(pid, start, path)]."""
+    cache = os.path.realpath(os.path.join(config, "plugins", "cache")) + os.sep
+    rc, out, _ = sh(["ps", "-axww", "-o", "pid=,lstart=,command="], timeout=30)
+    found = []
+    for line in out.decode("utf-8", "replace").splitlines():
+        parts = line.split(None, 6)
+        if len(parts) < 7:
+            continue
+        pid, start_s, cmd = parts[0], " ".join(parts[1:6]), parts[6]
+        for arg in cmd.split():
+            if arg.endswith("/bin/syns-pages.mjs") and os.path.realpath(arg).startswith(cache):
+                try:
+                    start = time.mktime(time.strptime(start_s, "%a %b %d %H:%M:%S %Y"))
+                except ValueError:
+                    start = 0.0
+                found.append((int(pid), start, arg))
+                break
+    return found
+
+
+def check_contributors(config, path, want, wait):
+    """(ok, words): every contributor under this config runs `path`, started after it was written, with sha `want`."""
+    deadline = time.time() + wait
+    while True:
+        procs = contributors(config)
+        if not procs:
+            return True, "contributor: none running"
+        bad = []
+        mtime = os.path.getmtime(path) if os.path.exists(path) else float("inf")
+        for pid, start, arg in procs:
+            if os.path.realpath(arg) != os.path.realpath(path):
+                bad.append(f"pid {pid} runs {arg}, not the installed {path}")
+            elif start < int(mtime):
+                bad.append(f"pid {pid} started {time.strftime('%H:%M:%S', time.localtime(start))}, before the "
+                           f"install wrote {os.path.basename(path)} ({time.strftime('%H:%M:%S', time.localtime(mtime))}): "
+                           "it runs what was there before (restart the Unife daemon)")
+            elif sha(open(arg, "rb").read()) != want:
+                bad.append(f"pid {pid} runs {arg}, sha256 {sha(open(arg, 'rb').read())[:8]}…")
+        if not bad:
+            return True, "contributor: " + ", ".join(f"pid {p}" for p, _, _ in procs)
+        if time.time() >= deadline:
+            return False, "contributor ✗ " + "; ".join(bad)
+        time.sleep(3)
+
+
+def marketplace_source(config, name):
+    """What `claude plugin marketplace add` takes for this config's marketplace `name`, or (None, why)."""
+    p = os.path.join(config, "plugins", "known_marketplaces.json")
+    try:
+        src = (json.load(open(p)).get(name) or {}).get("source") or {}
+    except (OSError, ValueError) as e:
+        return None, f"cannot read {p}: {e}"
+    kind = src.get("source")
+    value = {"github": src.get("repo"), "git": src.get("url"), "directory": src.get("path"), "url": src.get("url")}.get(kind)
+    return (value, kind) if value else (None, f"marketplace {name} in {p} has a source this check cannot add: {src}")
+
+
+def fresh_install(claude, source, plugin_id, want):
+    """(ok, words, sha) of a fresh install into an empty HOME and CLAUDE_CONFIG_DIR, removed after."""
+    tmp = tempfile.mkdtemp(prefix="claude-code-check-")
+    try:
+        config = os.path.join(tmp, ".claude")
+        env = claude_env(home=tmp, config=config)
+        rc, out, err = sh([claude, "plugin", "marketplace", "add", source], env=env, cwd=tmp)
+        if rc:
+            return False, f"fresh ✗ marketplace add {source} (exit {rc}): {last(err or out)}", None
+        rc, out, err = sh([claude, "plugin", "install", plugin_id], env=env, cwd=tmp)
+        if rc:
+            return False, f"fresh ✗ install {plugin_id} (exit {rc}): {last(err or out)}", None
+        path, version, _ = installed(config, plugin_id)
+        if not path or not os.path.exists(path):
+            return False, f"fresh ✗ installed nothing: {version}", None
+        got = sha(open(path, "rb").read())
+        return got == want, (f"fresh {version}" if got == want else f"fresh ✗ {version} sha256 {got[:8]}…"), got
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--version", required=True, help="the version released")
+    ap.add_argument("--code", default=".", help="the release's checkout of synsdev/syns-bb-plugin (default .)")
+    ap.add_argument("--claude", help="the Claude Code CLI (default: claude on PATH, else ~/.local/bin/claude, where its "
+                                     "installer puts it and the runner's PATH does not reach)")
+    ap.add_argument("--no-update", action="store_true", help="skip step 1 (read what is installed)")
+    ap.add_argument("--no-fresh", action="store_true", help="skip step 4")
+    ap.add_argument("--wait", type=int, default=90, help="seconds to wait for the contributor's restart (default 90)")
+    ap.add_argument("--json", action="store_true")
+    a = ap.parse_args()
+    plugin_id = f"{PLUGIN}@{MARKET}"
+    a.claude = a.claude or shutil.which("claude") or os.path.expanduser("~/.local/bin/claude")
+    rc, release, err = sh(["git", "-C", a.code, "show", f"HEAD:{BUNDLE}"], timeout=60)
+    rc2, manifest, _ = sh(["git", "-C", a.code, "show", f"HEAD:{MANIFEST}"], timeout=60)
+    if rc or rc2:
+        print(f"claude-code-check: {a.code} at HEAD holds no {BUNDLE} or {MANIFEST}", file=sys.stderr)
+        return EXIT_USAGE
+    stated = json.loads(manifest).get("version")
+    if stated != a.version:
+        print(f"claude-code-check: HEAD states {stated} in {MANIFEST}, not {a.version}", file=sys.stderr)
+        return EXIT_USAGE
+    want = sha(release)
+    config = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")
+    res = {"release": want, "config": config, "checks": {}}
+    ok, words = True, []
+
+    if not a.no_update:
+        for cmd in (["plugin", "marketplace", "update", MARKET], ["plugin", "update", plugin_id]):
+            rc, out, err = sh([a.claude, *cmd], env=claude_env())
+            res["checks"][" ".join(cmd)] = {"exit": rc, "said": last(out + err)}
+            if rc:
+                ok = False
+                words.append(f"update ✗ claude {' '.join(cmd)} (exit {rc}): {last(err or out)}")
+                break
+
+    path, version, _ = installed(config, plugin_id)
+    if not path:
+        ok = False
+        words.append(f"installed ✗ {version}")
+    elif not os.path.exists(path):
+        ok = False
+        words.append(f"installed ✗ {path} is not there")
+    else:
+        got = sha(open(path, "rb").read())
+        good = got == want and version == a.version
+        res["checks"]["installed"] = {"path": path, "version": version, "sha256": got, "ok": good}
+        ok &= good
+        words.append("installed" if good else f"installed ✗ {version} sha256 {got[:8]}… at {path}")
+        c_ok, c_words = check_contributors(config, path, want, a.wait)
+        res["checks"]["contributor"] = {"ok": c_ok, "said": c_words}
+        ok &= c_ok
+        words.append(c_words.replace("contributor: none running", "no contributor running")
+                     .replace("contributor: pid", "contributor pid"))
+
+    if not a.no_fresh:
+        source, kind = marketplace_source(config, MARKET)
+        if not source:
+            ok = False
+            words.append(f"fresh ✗ {kind}")
+        else:
+            f_ok, f_words, f_sha = fresh_install(a.claude, source, plugin_id, want)
+            res["checks"]["fresh"] = {"source": source, "sha256": f_sha, "ok": f_ok}
+            ok &= f_ok
+            words.append(f_words)
+
+    line = (f"claude-code: bundle {want[:8]}… = release {a.version} ✓ ({', '.join(words)})" if ok else
+            f"claude-code: bundle ≠ release {a.version} ({want[:8]}…) ✗: {'; '.join(words)}")
+    res["ok"], res["line"] = ok, line
+    print(json.dumps(res, indent=1) if a.json else line)
+    return EXIT_PASS if ok else EXIT_FAIL
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,450 @@
+#!/usr/bin/env python3
+"""run — verify the installed release cell by cell of the environment matrix (E1–E8), and write its VERIFY table.
+
+What it does, per flag (each flag is one cell; a cell it cannot cover here is written as not covered, with why):
+  --fixtures  E1  a private scratch repository and bb project, a fresh session there whose page is replaced by
+                  `verify/fixture.html`, read in bb's own headless browser over loopback until the fixture's
+                  `FIXTURE-RESULT` line; then the scratch repository and project are deleted (unless --keep). The
+                  repository is made and deleted by `verify/scratch.py`, so a failure anywhere after its create still
+                  deletes it
+  --connect   E2  `verify/connect-probe` beside this script on that session's page
+  --webkit    E3  not run by a script: the plugin adds no page UI of its own; a round that changes a fixture's page
+                  surface asks the owner for the device check
+  --limits    E4  `verify/fragment-check` on the fresh session of --fixtures (or --thread): what it really received;
+                  first waits (bounded) until that session's transcript holds its `prompt_snapshot`
+  --versions  E5  installed plugin = code version, bb and Thread Pages, the current CLI against the code's minimum CLI
+  --modes     E6  the fixture again, its session in auto permission mode (E1 runs in full)
+  --scenarios E7  reads the scenario log (--log): covered when a scenario run on this version's contract hash (over
+                  --spec and the code's contract files) is logged (`verify/run-scenarios` runs them; it needs the
+                  grader subagent, so it is its own step)
+  --upgrade   E8  prints the upgrade path; never installs on this bb: install over N-1 changes the plugin every
+                  session here uses, so it runs only on a bb made for it
+  --all           every flag above
+  --write FILE    writes the rows into FILE, a VERIFY table (rows of cells not run this time are kept when the version
+                  is the same, else written as not run)
+
+When it pays: before every tag and in any round that touches a cell. Live checks done by hand happened when someone
+remembered: a remote-reader break and a fragment cut by the host's cap reached users because no step on the way to a
+release looked at those cells.
+When it does not: in the middle of an edit; the code's own tests come first.
+
+How to run (python3, standard library; calls `syns`, `bb`, and the scripts beside it), from a clone of
+synsdev/syns-bb-plugin:
+  python3 verify/run --all --code <code checkout> [--spec <spec folder> --log <scenario log>] [--write FILE] [--keep]
+                     [--json]
+  python3 verify/run --limits --thread <fresh thr_x> --code <path>
+Exit codes: 0 every cell run is covered or honestly not covered · 1 a cell failed (named) · 5 usage error.
+"""
+import argparse
+import glob
+import json
+import os
+import re
+import subprocess
+import sys
+import shutil
+import signal
+import tempfile
+import time
+from datetime import datetime, timezone
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+TAG = "sbp-verify"                          # scratch.py names the repository scratch-sbp-verify-<time>-<hex>
+SNAPSHOT_WAIT = 120                         # seconds a fresh session gets to send its first request
+CELLS = ["E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8"]
+NAMES = {"E1": "loopback reader (fixture)", "E2": "remote reader over bb Connect", "E3": "WebKit / iPhone Safari",
+         "E4": "host limits, fresh session", "E5": "host and CLI versions", "E6": "permission modes, sandbox",
+         "E7": "fresh agent, neutral project", "E8": "upgrade from N-1"}
+FIX_PROMPT = "Reply with the single word ready, and do nothing else."
+EXIT_OK, EXIT_FAIL, EXIT_USAGE = 0, 1, 5
+
+
+def sh(cmd, cwd=None):
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd)
+    except OSError as e:
+        return 127, "", str(e)
+    return p.returncode, p.stdout, p.stderr
+
+
+def must(cmd, cwd=None):
+    rc, out, err = sh(cmd, cwd)
+    if rc:
+        raise RuntimeError(f"`{' '.join(cmd[:4])}…` failed: {(err or out).strip()[:300]}")
+    return out
+
+
+def now():
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%MZ")
+
+
+def triple(s):
+    m = re.search(r"(\d+)\.(\d+)\.(\d+)", s or "")
+    return tuple(int(x) for x in m.groups()) if m else None
+
+
+# ---- the scratch session the fixture runs in -----------------------------------------------------------------------
+class Scratch:
+    """A private scratch repository (`verify/scratch.py`), its checkout, a bb project on it, and sessions there;
+    `close()` deletes whatever `open()` made, also when `open()` itself failed half-way."""
+
+    def __init__(self, keep):
+        self.keep, self.threads, self.repo, self.folder, self.project = keep, [], None, None, None
+        self.name = TAG
+
+    def open(self):
+        sys.path.insert(0, HERE)
+        import scratch
+        seed = tempfile.mkdtemp(prefix="verify-run-seed-")
+        open(os.path.join(seed, ".synsignore"), "w").write(".DS_Store\n.claude/\n")
+        open(os.path.join(seed, "README.md"), "w").write("Scratch repository of verify/run; deleted after.\n")
+        try:
+            self.repo, self.folder = scratch.create(TAG, seed)
+        except scratch.Failed as e:
+            raise RuntimeError(str(e))
+        finally:
+            shutil.rmtree(seed, ignore_errors=True)
+        self.name = self.repo.split("/", 1)[1]
+        proj = json.loads(must(["bb", "project", "create", "--name", self.name, "--root", self.folder, "--json"]))
+        self.project = proj.get("id") or (proj.get("project") or {}).get("id")
+        return self
+
+    def session(self, mode):
+        """A fresh session in the scratch folder: it answers one word; its page then becomes the fixture."""
+        out = must(["bb", "thread", "spawn", "--json", "--project", self.project, "--environment", self.folder,
+                    "--permission-mode", mode, "--reasoning-level", "low", "--title", f"verify/run fixture ({mode})",
+                    "--prompt", FIX_PROMPT])
+        thr = json.loads(out)["id"]
+        self.threads.append(thr)
+        for _ in range(60):                   # until its first turn ended
+            time.sleep(5)
+            st = json.loads(sh(["bb", "thread", "show", thr, "--json"])[1] or "{}")
+            st = st.get("thread", st)
+            if st.get("status") not in ("active", "pending") and not st.get("queuedMessageCount"):
+                break
+        return thr
+
+    def close(self):
+        if not self.repo:
+            return ""
+        if self.keep:
+            return f"kept: {self.name} at {self.folder}, project {self.project}"
+        import scratch
+        for t in self.threads:
+            sh(["bb", "thread", "stop", t])
+        rc, words = scratch.delete(self.repo, self.folder)
+        rc2, err2 = 0, ""
+        if self.project:
+            rc2, _, err2 = sh(["bb", "project", "delete", self.project, "--yes"])
+        return (f"deleted {self.name}: repository {'yes' if rc == 0 else 'NO: ' + words[:160]}, "
+                f"project {('yes' if rc2 == 0 else 'NO: ' + err2.strip()[:120]) if self.project else 'none made'}")
+
+
+def storage(thr):
+    base = os.path.dirname(os.environ.get("BB_THREAD_STORAGE", os.path.expanduser("~/.bb/thread-storage/x")))
+    return os.path.join(base, thr)
+
+
+def page_url(thr):
+    return f"{os.environ.get('BB_SERVER_URL', 'http://127.0.0.1:38886')}/api/v1/plugins/thread-pages/http/page?session={thr}"
+
+
+def read_fixture(thr):
+    """Opens the page over loopback in bb's headless browser and reads #verdict in its frames until the result."""
+    machines = json.loads(must(["bb", "machine", "list", "--json"]))
+    host = next(m["id"] for m in machines if m.get("status") == "connected")
+    sess = json.loads(must(["bb", "browser-automation", "open", "--backend", "local", "--headless", "--machine",
+                            host, "--json"]))["id"]
+    js_read = ("const p = await browser.getPage('main'); const out = [];"
+               "for (const f of p.frames()) { try { const t = await f.evaluate(() => {"
+               " const v = document.getElementById('verdict'); if (!v) return null;"
+               " const bad = Array.from(document.querySelectorAll('.row')).filter(r => r.querySelector('.pill.fail'))"
+               "  .map(r => 'ROW ' + r.querySelector('.id').textContent + ': ' + r.querySelector('.got').textContent);"
+               " const wait = Array.from(document.querySelectorAll('.row')).filter(r => r.querySelector('.pill').textContent === '…')"
+               "  .map(r => 'PENDING ' + r.querySelector('.id').textContent);"
+               " return [v.textContent].concat(bad, wait.slice(0, 1)).join('\\n'); });"
+               " if (t) out.push(t); } catch (e) {} } return out.join('\\n');")
+    try:
+        sh(["bb", "browser-automation", "run", sess, "--timeout", "60s", "--script",
+            f"const p = await browser.getPage('main'); await p.goto({json.dumps(page_url(thr))}); undefined"])
+        text = ""
+        for _ in range(12):
+            rc, out, _ = sh(["bb", "browser-automation", "run", sess, "--timeout", "30s", "--json", "--script",
+                             "await new Promise(r => setTimeout(r, 10000));" + js_read])
+            text = (json.loads(out).get("text") or "") if rc == 0 and out.strip().startswith("{") else text
+            if "FIXTURE-RESULT" in text:
+                break
+    finally:
+        sh(["bb", "browser-automation", "close", sess])
+    m = re.search(r"FIXTURE-RESULT (\{.*\})", text)
+    res = json.loads(m.group(1)) if m else None
+    if res is not None:
+        res["rows"] = [l[4:].strip()[:300] for l in text.splitlines() if l.startswith("ROW ")]
+    return res, text.strip()[-300:]
+
+
+def code_methods(code):
+    """The method names the code registers: one `name: "syns.x"` per entry of src/methods/, or a `pathWrite(…, "syns.x", …)`
+    call, as many as its METHODS table."""
+    names = []
+    for p in sorted(glob.glob(os.path.join(code, "src", "methods", "*.ts"))):
+        text = open(p).read()
+        names += re.findall(r'^\s*name:\s*"(syns\.\w+)",', text, re.M)
+        names += re.findall(r'\bpathWrite\(\s*"\w+",\s*"(syns\.\w+)"', text)   # syns.move, syns.copy
+    table = re.search(r"export const METHODS[^=]*=\s*\[([^\]]*)\]", open(os.path.join(code, "src", "methods", "index.ts")).read())
+    count = len([x for x in table.group(1).split(",") if x.strip()]) if table else -1
+    if not names or len(set(names)) != count:
+        raise RuntimeError(f"could not read the registered methods from {code}: {len(set(names))} names, METHODS has {count}")
+    return sorted(set(names))
+
+
+def fixture_cell(scratch, mode, code):
+    thr = scratch.session(mode)
+    with open(os.path.join(HERE, "fixture.html"), "rb") as src:
+        data = src.read()
+    marker = b"var EXPECTED_METHODS = null; // EXPECTED-METHODS"
+    if marker not in data:
+        raise RuntimeError("fixture.html lacks its EXPECTED-METHODS line")
+    data = data.replace(marker, b"var EXPECTED_METHODS = " + json.dumps(code_methods(code)).encode() + b"; // EXPECTED-METHODS")
+    os.makedirs(storage(thr), exist_ok=True)
+    with open(os.path.join(storage(thr), "index.html"), "wb") as dst:
+        dst.write(data)
+    res, tail = read_fixture(thr)
+    if not res:
+        return thr, ("fail", f"no FIXTURE-RESULT from session {thr} ({mode}); last read: {tail!r}")
+    ok = res.get("fail") == 0 and res.get("pass", 0) > 0
+    ev = (f"`verify/fixture.html` in session {thr} ({mode} mode), scratch `{scratch.name}`: {res.get('suite')}: "
+          f"{res.get('pass')} pass, {res.get('fail')} fail" + (f" ({', '.join(res.get('failed') or [])})" if res.get("failed") else "")
+          + ("; failing rows: " + " · ".join(res["rows"]) if res.get("rows") else "")
+          + "; the dirty-checkout rows (A29) need an outside edit and are not run by this script")
+    return thr, ("covered" if ok else "fail", ev)
+
+
+# ---- the other cells ----------------------------------------------------------------------------------------------
+def await_snapshot(thr, wait=None):
+    """None once the session's transcript holds its `prompt_snapshot`, else why not after `wait` seconds. A fresh
+    session can end its first turn in bb before Claude Code wrote its first request: read too early, the transcript
+    is absent or holds no snapshot, and a good release's E4 read as failed."""
+    import runpy
+    fc = runpy.run_path(os.path.join(HERE, "fragment-check"))
+    end, why = time.time() + (SNAPSHOT_WAIT if wait is None else wait), ""
+    while True:
+        try:
+            fc["system_prompt"](fc["transcript_of"](thr))
+            return None
+        except SystemExit as e:
+            why = str(e.code)
+        except (ValueError, OSError) as e:      # a snapshot line still being written, or a log that is not JSON yet
+            why = f"{type(e).__name__}: {e}"[:200]
+        if time.time() >= end:
+            return f"{why} (waited {SNAPSHOT_WAIT if wait is None else wait} s for the session's first request)"
+        time.sleep(3)
+
+
+def limits_cell(thr, code):
+    late = await_snapshot(thr)
+    if late:
+        return ("fail", f"`verify/fragment-check --thread {thr}` not run: {late}")
+    rc, out, err = sh([sys.executable, os.path.join(HERE, "fragment-check"), "--thread", thr, "--code", code])
+    line = " ".join(out.strip().splitlines())
+    return ("covered" if rc == 0 else "fail", f"`verify/fragment-check --thread {thr}`: {line or err.strip()[:200]}")
+
+
+def versions_cell(code):
+    pkg = json.load(open(os.path.join(code, "package.json")))
+    rc, out, _ = sh(["bb", "plugin", "list"])
+    inst = dict(re.findall(r"^(syns|thread-pages)@(\S+)", out, re.M))
+    cli = sh(["syns", "--version"])[1].strip()
+    bbv = sh(["bb", "--version"])[1].strip()
+    # Since 0.9.0 one minimum CLI for every method, stated in the code's README ("the Syns CLI, X.Y.Z or later");
+    # before it, each method's `minCli`.
+    readme = open(os.path.join(code, "README.md")).read() if os.path.exists(os.path.join(code, "README.md")) else ""
+    m = re.search(r"Syns CLI, (\d+\.\d+\.\d+) or later", readme)
+    mins = [m.group(1)] if m else []
+    for p in glob.glob(os.path.join(code, "src", "**", "*.ts"), recursive=True):
+        mins += re.findall(r"minCli:\s*[\"'](\d+\.\d+\.\d+)[\"']", open(p).read())
+    need = max(mins, key=triple) if mins else None
+    fails = []
+    if inst.get("syns") != pkg["version"]:
+        fails.append(f"installed syns {inst.get('syns')} is not the code's {pkg['version']}")
+    if not need:
+        fails.append("the code states no minimum CLI (README \"Syns CLI, X.Y.Z or later\", or a method's minCli)")
+    elif not triple(cli) or triple(cli) < triple(need):
+        fails.append(f"CLI {cli} is older than the minimum {need}")
+    ev = (f"installed syns {inst.get('syns')} = code {pkg['version']}; bb {bbv} (engines {pkg.get('engines', {}).get('bb')}); "
+          f"Thread Pages {inst.get('thread-pages')}; current {cli}, minimum CLI {need}. An older CLI's refusal is "
+          f"covered only by the code's tests: installing an older CLI on this machine is not done")
+    return ("fail" if fails else "partly covered", ev + ("; FAIL: " + "; ".join(fails) if fails else ""))
+
+
+def scenarios_cell(code, spec, log_path):
+    if not (spec and log_path):
+        return ("not covered", "the scenario log and the spec were not given (--log, --spec): E7 not read")
+    import runpy
+    rs = runpy.run_path(os.path.join(HERE, "run-scenarios"), run_name="run_scenarios")
+    chash, version = rs["contract_hash"](code, spec), json.load(open(os.path.join(code, "package.json")))["version"]
+    log = open(log_path).read()
+    m = re.search(r"^## (\S+) — scenarios on %s \(contract `%s`\): (\d+) of (\d+) pass$" % (re.escape(version), chash),
+                  log, re.M)
+    if not m:
+        return ("not covered", f"no scenario run is logged on {version} with contract `{chash}`: run "
+                               f"`verify/run-scenarios` (it needs the grader subagent, so it is its own step)")
+    st = "covered" if m.group(2) == m.group(3) else "fail"
+    return (st, f"the scenario log {m.group(1)}: scenarios on {version}, contract `{chash}`: {m.group(2)} of "
+                f"{m.group(3)} pass; the failing scenarios and why are in that entry")
+
+
+def connect_cell(thr):
+    """The probe beside this script, on the session's page through this bb's Connect origin."""
+    cmd = [sys.executable, os.path.join(HERE, "connect-probe"), "--json"] + (["--session", thr] if thr else [])
+    rc, out, err = sh(cmd)
+    try:
+        r = json.loads(out.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        return ("fail", f"`verify/connect-probe` (exit {rc}): {(err or out).strip()[:300]}")
+    st = "fail" if rc == 1 else r.get("coverage", "not covered").split(" (")[0]
+    return (st, f"`verify/connect-probe` (exit {rc}): {r.get('coverage')}: {r.get('summary')}")
+
+
+WEBKIT = ("not covered", "the plugin adds no page UI of its own; a round that changes a fixture's page surface asks the "
+          "owner for the iPhone check; no WebKit runner on this machine")
+UPGRADE_PATH = ("on a bb made for it, never this one: install syns at the previous tag "
+                "(`bb plugin install git:https://github.com/synsdev/syns-bb-plugin@v<N-1>`), run `verify/run --fixtures "
+                "--limits`, install the current tag over it, run them again and compare; a renamed method or reason "
+                "needs a migration note")
+UPGRADE = ("not covered", "installing over N-1 changes the plugin every session on this bb uses, so it is never run "
+           "here; path: " + UPGRADE_PATH)
+
+
+# ---- the VERIFY table ---------------------------------------------------------------------------------------------
+def old_rows(path, version):
+    if not os.path.exists(path):
+        return {}
+    text = open(path).read()
+    if f"version: {version}" not in text:
+        return {}
+    rows = {}
+    for line in text.splitlines():
+        m = re.match(r"^\| (E\d+) [^|]*\| ([^|]+) \| (.*) \|$", line)
+        if m:
+            rows[m.group(1)] = (m.group(2).strip(), m.group(3).strip())
+    return rows
+
+
+def shown(path):
+    """A path as it can be printed, whatever bytes its name holds."""
+    return repr(path.encode("utf-8", "surrogateescape").decode("utf-8", "backslashreplace"))
+
+
+def writable(path):
+    """None when `path` can be written as the VERIFY table, else why not. Checked before any cell runs, so a bad
+    --write never costs a run's rows. A file that was not there is made to prove it, and removed again."""
+    if not path:
+        return "is empty: name the VERIFY file to write"
+    if os.path.isdir(path):
+        return "is a folder: name the VERIFY file to write in it"
+    parent = os.path.dirname(os.path.abspath(path))
+    if not os.path.isdir(parent):
+        return f"its folder {shown(parent)} does not exist"
+    try:
+        if os.path.exists(path):
+            if not os.path.isfile(path):
+                return "is not a regular file"
+            with open(path, "a"):
+                pass
+        else:
+            with open(path, "x"):
+                pass
+            os.remove(path)
+    except (OSError, UnicodeError) as e:
+        return f"cannot be written: {e.strerror or e}" if isinstance(e, OSError) else f"cannot be written: {e}"
+    return None
+
+
+def write_verify(path, version, head, rows):
+    old = old_rows(path, version)
+    lines = ["---", f"version: {version}", f"head: {head}", f"updated: {now()}",
+             "source: \"verify/run in synsdev/syns-bb-plugin; one row per cell of the environment matrix\"", "---", "",
+             f"# VERIFY — syns-pages {version}", "",
+             "Written by `verify/run --write`; a row it did not run this time is kept from the last run on this "
+             "version. Evidence is what the script saw; a cell not covered says why.", "",
+             "| Cell | Status | Evidence |", "| --- | --- | --- |"]
+    for c in CELLS:
+        st, ev = rows.get(c) or old.get(c) or ("not covered", "not run on this version yet")
+        lines.append(f"| {c} {NAMES[c]} | {st} | {ev.replace('|', '/')} |")
+    open(path, "w").write("\n".join(lines) + "\n")
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    for f in ("fixtures", "connect", "webkit", "limits", "versions", "modes", "scenarios", "upgrade", "all"):
+        ap.add_argument("--" + f, action="store_true")
+    ap.add_argument("--code", required=True, help="checkout of the code repo")
+    ap.add_argument("--spec", help="the product's spec folder, for E7's contract hash")
+    ap.add_argument("--log", help="the scenario log `verify/run-scenarios log` appends to, for E7")
+    ap.add_argument("--thread", help="a fresh session for --limits when --fixtures is not run")
+    ap.add_argument("--write", metavar="FILE", help="write the rows into this VERIFY table")
+    ap.add_argument("--keep", action="store_true", help="keep the scratch repository and project")
+    ap.add_argument("--json", action="store_true")
+    a = ap.parse_args()
+    for sig in (signal.SIGTERM, signal.SIGHUP):    # a killed run still reaches its finally and deletes its scratch
+        signal.signal(sig, lambda n, _f: (_ for _ in ()).throw(KeyboardInterrupt()))
+    want = {f for f in ("fixtures", "connect", "webkit", "limits", "versions", "modes", "scenarios", "upgrade")
+            if getattr(a, f) or a.all}
+    if not want:
+        ap.error("name at least one cell flag, or --all")
+    if a.write is not None:
+        why = writable(a.write)
+        if why:
+            print(f"run: --write {shown(a.write)} {why}", file=sys.stderr)
+            return EXIT_USAGE
+    rows, thr, scratch, note = {}, a.thread, None, ""
+    try:
+        if want & {"fixtures", "modes", "connect"} or ("limits" in want and not thr):
+            scratch = Scratch(a.keep)
+            scratch.open()
+            if want & {"fixtures", "connect", "limits"}:
+                t, rows["E1"] = fixture_cell(scratch, "full", a.code)
+                thr = thr or t
+            if "modes" in want:
+                t, (st, ev) = fixture_cell(scratch, "auto", a.code)
+                rows["E6"] = (st if st == "fail" else "partly covered",
+                              ev + "; the agent's own command sandbox is not scripted: the plugin runs the CLI in its "
+                                   "server process, not through the agent's commands")
+                thr = thr or t
+            if "fixtures" not in want:
+                rows.pop("E1", None)
+        later = [("connect", "E2", lambda: connect_cell(thr)), ("webkit", "E3", lambda: WEBKIT),
+                 ("limits", "E4", lambda: limits_cell(thr, a.code)), ("versions", "E5", lambda: versions_cell(a.code)),
+                 ("scenarios", "E7", lambda: scenarios_cell(a.code, a.spec, a.log)), ("upgrade", "E8", lambda: UPGRADE)]
+        for flag, cell, fn in later:
+            if flag in want:
+                try:
+                    rows[cell] = fn()
+                except (Exception, SystemExit) as e:   # one cell's error is that cell's row, never the whole run's
+                    rows[cell] = ("fail", f"verify/run could not run this cell: {type(e).__name__}: {e}")
+    except RuntimeError as e:
+        print(f"run: {e}", file=sys.stderr)
+        rows.setdefault("E1", ("fail", f"setup failed: {e}"))
+    finally:
+        if scratch:
+            note = scratch.close()
+    version = json.load(open(os.path.join(a.code, "package.json")))["version"]
+    head = sh(["git", "-C", a.code, "rev-parse", "--short", "HEAD"])[1].strip()
+    if a.write:
+        write_verify(a.write, version, head, rows)
+    if a.json:
+        print(json.dumps({"version": version, "head": head, "cells": rows, "scratch": note}, indent=1))
+    else:
+        for c in CELLS:
+            if c in rows:
+                print(f"{c} {rows[c][0]}: {rows[c][1]}")
+        if note:
+            print(note)
+        if a.write:
+            print(f"wrote {shown(a.write)[1:-1]}")
+    return EXIT_FAIL if any(st == "fail" for st, _ in rows.values()) else EXIT_OK
+
+
+if __name__ == "__main__":
+    sys.exit(main())

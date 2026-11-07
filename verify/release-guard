@@ -1,0 +1,145 @@
+#!/usr/bin/env python3
+"""release-guard — refuse a release whose version main already carried with another Claude Code bundle.
+
+What it does: in a checkout of synsdev/syns-bb-plugin at the commit to tag, fetches `origin` and reads every commit
+`origin/main` reaches. Each commit stating the version asked for in `hosts/claude/.claude-plugin/plugin.json` with a
+`hosts/claude/bin/syns-pages.mjs` other than HEAD's (or none) is named, oldest first, and the guard fails with the
+next patch number main never carried. A commit carrying HEAD's own bundle under that version (HEAD itself on a
+retry, or a fix round that left the bundle alone) passes.
+
+Why: Claude Code fetches a plugin only when its version changes (`claude plugin update` keeps a same-version
+bundle), and Unife Pages holds a page script by version. Every commit main carried could have reached a Claude Code
+while the marketplace tracked main (0.10.0's b61203d, 0.11.0's eb3cc58), so a version once on main with one bundle
+never reaches that machine with another.
+
+When it pays: before every tag of the plugin: it is the check of the release's tag step.
+When it does not: anything that does not tag the plugin.
+
+How to run (python3, standard library; calls `git`):
+  python3 verify/release-guard --version 0.11.1 [--code <checkout, default .>] [--ref origin/main] [--no-fetch]
+Exit codes: 0 the version is new to main, or main carried it only with HEAD's bundle · 1 main carried it with another
+bundle (each commit named) · 5 usage error (not a checkout, a shallow one, no bundle at HEAD).
+"""
+import argparse
+import hashlib
+import json
+import subprocess
+import sys
+
+MANIFEST = "hosts/claude/.claude-plugin/plugin.json"
+BUNDLE = "hosts/claude/bin/syns-pages.mjs"
+EXIT_PASS, EXIT_FAIL, EXIT_USAGE = 0, 1, 5
+
+
+def git(code, *args, stdin=None):
+    p = subprocess.run(["git", "-C", code, *args], input=stdin, capture_output=True, text=True)
+    return p.returncode, p.stdout, p.stderr
+
+
+def objects(code, specs):
+    """`<rev>:<path>` -> blob id, or None where the path is not there (one `git cat-file --batch-check` run)."""
+    rc, out, err = git(code, "cat-file", "--batch-check=%(objectname) %(objecttype)", stdin="".join(s + "\n" for s in specs))
+    if rc:
+        raise SystemExit(f"release-guard: git cat-file failed: {err.strip()[:300]}")
+    res = {}
+    for spec, line in zip(specs, out.splitlines()):
+        parts = line.split()
+        res[spec] = parts[0] if len(parts) == 2 and parts[1] == "blob" else None
+    return res
+
+
+def version_of(code, blob, cache):
+    if blob not in cache:
+        rc, out, _ = git(code, "cat-file", "blob", blob)
+        try:
+            cache[blob] = str(json.loads(out).get("version")) if rc == 0 else None
+        except (ValueError, AttributeError):
+            cache[blob] = None
+    return cache[blob]
+
+
+def sha256_of(code, blob):
+    """The sha256 of a blob's bytes, as `shasum -a 256` prints it for the installed file (first 12 hex)."""
+    if not blob:
+        return "none"
+    p = subprocess.run(["git", "-C", code, "cat-file", "blob", blob], capture_output=True)
+    return hashlib.sha256(p.stdout).hexdigest()[:12] if p.returncode == 0 else blob[:12]
+
+
+def next_patch(version, seen):
+    parts = version.split(".")
+    if len(parts) != 3 or not all(p.isdigit() for p in parts):
+        return None
+    major, minor, patch = (int(p) for p in parts)
+    while True:
+        patch += 1
+        cand = f"{major}.{minor}.{patch}"
+        if cand not in seen:
+            return cand
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--version", required=True, help="the version to tag")
+    ap.add_argument("--code", default=".", help="checkout of synsdev/syns-bb-plugin at the commit to tag")
+    ap.add_argument("--ref", default="origin/main", help="what Claude Code could have taken (default origin/main)")
+    ap.add_argument("--no-fetch", action="store_true", help="read --ref as it is (tests)")
+    a = ap.parse_args()
+
+    rc, out, _ = git(a.code, "rev-parse", "--is-shallow-repository")
+    if rc:
+        print(f"release-guard: {a.code} is not a git checkout", file=sys.stderr)
+        return EXIT_USAGE
+    if out.strip() == "true":
+        print(f"release-guard: {a.code} is a shallow clone: main's whole history is needed (git fetch --unshallow)",
+              file=sys.stderr)
+        return EXIT_USAGE
+    if not a.no_fetch:
+        rc, _, err = git(a.code, "fetch", "-q", "origin")
+        if rc:
+            print(f"release-guard: git fetch origin failed: {err.strip()[:300]}", file=sys.stderr)
+            return EXIT_USAGE
+    head_bundle = objects(a.code, [f"HEAD:{BUNDLE}"])[f"HEAD:{BUNDLE}"]
+    if not head_bundle:
+        print(f"release-guard: HEAD has no {BUNDLE}", file=sys.stderr)
+        return EXIT_USAGE
+    rc, out, err = git(a.code, "rev-list", "--reverse", a.ref)
+    if rc:
+        print(f"release-guard: cannot read {a.ref}: {err.strip()[:300]}", file=sys.stderr)
+        return EXIT_USAGE
+    commits = out.split()
+    specs = [f"{c}:{p}" for c in commits for p in (MANIFEST, BUNDLE)]
+    blobs = objects(a.code, specs) if specs else {}
+    cache, seen, bad, same = {}, set(), [], 0
+    for c in commits:
+        mblob = blobs.get(f"{c}:{MANIFEST}")
+        v = version_of(a.code, mblob, cache) if mblob else None
+        if v:
+            seen.add(v)
+        if v != a.version:
+            continue
+        b = blobs.get(f"{c}:{BUNDLE}")
+        if b == head_bundle:
+            same += 1
+        else:
+            bad.append((c, b))
+    head = git(a.code, "rev-parse", "--short", "HEAD")[1].strip()
+    if not bad:
+        print(f"release-guard: {a.version} pass: {a.ref} ({len(commits)} commits) carried {a.version} "
+              + (f"only with HEAD {head}'s bundle (sha256 {sha256_of(a.code, head_bundle)}…, {same} commits)" if same else "nowhere"))
+        return EXIT_PASS
+    nxt = next_patch(a.version, seen | {a.version})
+    print(f"release-guard: {a.version} refused: {a.ref} already carried {a.version} with another Claude Code bundle "
+          f"than HEAD {head}'s (sha256 {sha256_of(a.code, head_bundle)}…), in {len(bad)} commit(s):")
+    for c, b in bad:
+        line = git(a.code, "log", "-1", "--format=%h %cI %s", c)[1].strip()
+        print(f"  {line[:140]}  (bundle sha256 {sha256_of(a.code, b)}…)")
+    print(f"A Claude Code that took one of them keeps that bundle under {a.version} (claude plugin update compares the "
+          f"version only; Unife Pages holds the page script by version). Take the next patch number"
+          + (f", {nxt}," if nxt else "") + " for this release: bump package.json, package-lock.json, hosts/claude/.claude-plugin/plugin.json"
+          " and src/declaration.ts, name its CHANGELOG section, and have that commit reviewed.")
+    return EXIT_FAIL
+
+
+if __name__ == "__main__":
+    sys.exit(main())

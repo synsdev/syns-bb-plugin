@@ -174,10 +174,10 @@ texts on standard input. A page's path, pattern or text is never read as a flag.
 
 ## Design
 
-The specification, every decision with its reasoning, the measured facts about
-bb, Thread Pages and the CLI that the code rests on, the build plan, and the live
-verification fixture and its log live in the Syns repository `bartsoj/syns`,
-under `products/syns-plugins/pages/`.
+The verification tools, the live fixture page among them, are in
+[`verify/`](./verify/README.md). The specification, every decision with its
+reasoning, and the measured facts about bb, Thread Pages and the CLI that the
+code rests on live in the Syns repository `bartsoj/syns`, under `products/pages/`.
 
 ## Licence
 

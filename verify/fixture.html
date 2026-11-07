@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Syns bb plugin — fixture</title>
+<!--
+  Self-testing page for the Syns bb plugin (the acceptance rows marked F).
+  Place it as the page of a session whose folder is a checkout of a THROWAWAY
+  Syns repository. It WRITES to that repository: files under fixture/.
+  Read PASS or FAIL off the screen. The last line of #verdict is machine-readable.
+-->
+<style>
+  :root { --bg:#f7f7f4; --ink:#1b1b19; --soft:#66645c; --line:#dcdad0; --ok:#0b6e4f; --okbg:#e2f1ea; --bad:#a3271f; --badbg:#fbe4e1; --wait:#ecebe3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#151614; --ink:#ecebe4; --soft:#a3a196; --line:#30322d; --ok:#5fd0a5; --okbg:#17312a; --bad:#ff8a80; --badbg:#3a1c19; --wait:#262823; } }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 ui-sans-serif,system-ui,sans-serif; }
+  main { max-width:860px; margin:0 auto; padding:22px 16px 60px; }
+  h1 { font-size:1.3rem; margin:0 0 4px; } h2 { font-size:1rem; margin:26px 0 6px; color:var(--soft); text-transform:uppercase; letter-spacing:.08em; font-size:.78rem; }
+  #verdict { font:600 1rem ui-monospace,monospace; padding:10px 12px; border-radius:8px; background:var(--wait); margin:12px 0; white-space:pre-wrap; }
+  #verdict.pass { background:var(--okbg); color:var(--ok); } #verdict.fail { background:var(--badbg); color:var(--bad); }
+  .row { display:grid; grid-template-columns:58px 46px 1fr; gap:4px 10px; padding:7px 0; border-bottom:1px solid var(--line); align-items:start; }
+  .pill { font:600 .68rem ui-monospace,monospace; text-align:center; padding:2px 0; border-radius:99px; background:var(--wait); color:var(--soft); }
+  .pill.pass { background:var(--okbg); color:var(--ok); } .pill.fail { background:var(--badbg); color:var(--bad); }
+  .id { font:600 .78rem ui-monospace,monospace; color:var(--soft); }
+  .got { display:block; font:.78rem ui-monospace,monospace; color:var(--soft); word-break:break-all; }
+  button { font:600 .9rem inherit; padding:9px 14px; border-radius:8px; border:1px solid var(--line); background:transparent; color:var(--ink); cursor:pointer; margin:6px 8px 0 0; }
+  p { margin:0 0 8px; } .soft { color:var(--soft); font-size:.9rem; }
+</style>
+</head>
+<body>
+<main>
+<h1>Syns bb plugin — fixture</h1>
+<p class="soft">Calls the installed plugin through the real bridge. <b>It writes</b> to this session's repository, under <code>fixture/</code>. Run it only on a throwaway repository.</p>
+<div id="verdict">running…</div>
+<div>
+  <button id="rerun" type="button">Run the main rows again</button>
+  <button id="dirty" type="button">Run the dirty-checkout rows (A29)</button>
+  <button id="pictures" type="button">Run the picture rows (A47–A53)</button>
+</div>
+<p class="soft">A29 needs an unpublished edit in the session's folder, made from outside this page, before its button is pressed.</p>
+<h2>Main rows</h2><div id="main"></div>
+<h2>Dirty-checkout rows</h2><div id="dirtyRows"></div>
+<h2>Picture rows</h2><div id="pictureRows"></div>
+</main>
+<script>
+(function () {
+  var SHA = /^[0-9a-f]{40}$/;
+  // The methods the code registers (its METHODS table): verify/run writes them here from --code. Run by hand, the
+  // row checks every listed method's shape and says the set was not compared.
+  var EXPECTED_METHODS = null; // EXPECTED-METHODS
+  var tp = window.threadPage, counts = { pass: 0, fail: 0 }, verdict = document.getElementById("verdict");
+  function row(host, id, title) {
+    var el = document.createElement("div"); el.className = "row";
+    var pill = document.createElement("span"); pill.className = "pill"; pill.textContent = "…";
+    var idEl = document.createElement("span"); idEl.className = "id"; idEl.textContent = id;
+    var what = document.createElement("div"); what.textContent = title;
+    var got = document.createElement("span"); got.className = "got"; what.appendChild(got);
+    el.appendChild(pill); el.appendChild(idEl); el.appendChild(what); host.appendChild(el);
+    return function (ok, text) { pill.className = "pill " + (ok ? "pass" : "fail"); pill.textContent = ok ? "PASS" : "FAIL"; pill.dataset.row = id; got.textContent = text || ""; counts[ok ? "pass" : "fail"]++; };
+  }
+  function msg(e) { return [e && e.code, e && e.reason, e && e.detail && JSON.stringify(e.detail), e && e.message].filter(Boolean).join(" · "); }
+  function expectError(promise) { return promise.then(function (v) { return { ok: true, value: v }; }, function (e) { return { ok: false, error: e }; }); }
+  function finish(label) {
+    var failed = Array.prototype.map.call(document.querySelectorAll(".pill.fail"), function (p) { return p.dataset.row; });
+    verdict.className = counts.fail ? "fail" : "pass";
+    verdict.textContent = label + ": " + counts.pass + " pass, " + counts.fail + " fail\nFIXTURE-RESULT " + JSON.stringify({ suite: label, pass: counts.pass, fail: counts.fail, failed: failed, at: new Date().toISOString() });
+  }
+
+  async function main() {
+    var host = document.getElementById("main"); host.textContent = ""; counts = { pass: 0, fail: 0 }; verdict.className = ""; verdict.textContent = "running…";
+    if (!tp || !tp.invoke) { row(host, "—", "the bridge")(false, "window.threadPage.invoke is not available"); return finish("main"); }
+    var inv = tp.invoke, stamp = Date.now().toString(36), r;
+
+    r = row(host, "A6", "the roster lists the syns methods, each with contributor, version, description, bounds and reasons");
+    var ctx = null;
+    try {
+      ctx = await inv("context.get", {});
+      var m = ctx.capabilities.filter(function (c) { return c.method.indexOf("syns.") === 0; });
+      var names = m.map(function (c) { return c.method; }).sort();
+      var same = EXPECTED_METHODS ? JSON.stringify(names) === JSON.stringify(EXPECTED_METHODS.slice().sort()) : true;
+      var good = m.length > 0 && same && m.every(function (c) { return c.contributor && c.contributor.id === "syns" && c.contributor.version && c.description && c.maxRequestBytes > 0 && c.maxResponseBytes > 0 && Array.isArray(c.reasons) && c.confirmation === "none"; });
+      r(good, m.length + " methods" + (EXPECTED_METHODS ? (same ? " = the code's " + EXPECTED_METHODS.length : " ≠ the code's " + EXPECTED_METHODS.length + ": missing " + EXPECTED_METHODS.filter(function (n) { return names.indexOf(n) < 0; }).join(" ") + ", extra " + names.filter(function (n) { return EXPECTED_METHODS.indexOf(n) < 0; }).join(" ")) : " (set not compared: run by hand)") + " · v" + (m[0] && m[0].contributor.version) + " · " + m.map(function (c) { return c.method.slice(5); }).join(" "));
+    } catch (e) { r(false, msg(e)); }
+    var me = ctx && ctx.session && ctx.session.id;
+
+    r = row(host, "A11", "syns.repo returns owner, name and the head");
+    var v0 = null;
+    try { var repo = await inv("syns.repo", {}); v0 = repo.version; r(SHA.test(v0) && !!repo.owner && !!repo.name, repo.owner + "/" + repo.name + " @ " + v0); } catch (e) { r(false, msg(e)); }
+
+    r = row(host, "A13", "syns.whoami returns the CLI's fields, username among them");
+    try { var who = await inv("syns.whoami", {}); r(!!who.username && "email" in who, who.username + " · " + Object.keys(who).length + " fields"); } catch (e) { r(false, msg(e)); }
+
+    r = row(host, "A14a", "syns.ls recursive lists every file with a blob");
+    var before = null;
+    try {
+      before = await inv("syns.ls", { recursive: true, version: v0 });
+      var files = before.entries.filter(function (x) { return x.type === "file"; });
+      r(files.length > 0 && files.every(function (x) { return SHA.test(x.blob); }) && before.version === v0 && before.total >= before.entries.length, files.length + " files of " + before.total + " entries · nextOffset " + before.nextOffset);
+    } catch (e) { r(false, msg(e)); }
+
+    r = row(host, "A15", "syns.readMany of up to 30 paths: all texts, one version, in order, under 5 s");
+    try {
+      var paths = before.entries.filter(function (x) { return x.type === "file" && x.size < 65536 && !/\.(png|jpe?g|gif|webp|bin)$/i.test(x.path); }).slice(0, 30).map(function (x) { return x.path; });
+      var t0 = performance.now(); var many = await inv("syns.readMany", { paths: paths, version: v0 }); var ms = Math.round(performance.now() - t0);
+      var inOrder = many.files.every(function (f, i) { return f.path === paths[i] && typeof f.text === "string"; });
+      r(many.version === v0 && many.files.length + many.deferred.length === paths.length && many.deferred.length === 0 && inOrder && ms < 5000, paths.length + " paths in " + ms + " ms");
+    } catch (e) { r(false, msg(e)); }
+
+    r = row(host, "A16", "syns.readMany with one missing path returns the others and not_found for that one");
+    try {
+      var mixed = await inv("syns.readMany", { paths: ["README.md", "fixture/never-" + stamp + ".md"], version: v0 });
+      r(typeof mixed.files[0].text === "string" && mixed.files[1].error === "not_found", JSON.stringify(mixed.files.map(function (f) { return f.error || "text"; })));
+    } catch (e) { r(false, msg(e)); }
+
+    var a = "fixture/a-" + stamp + ".md", b = "fixture/b-" + stamp + ".md", flagText = "--force\n--parent=0\nthis line begins with two dashes on purpose\n";
+    r = row(host, "A1", "a page commits a file through syns.commit");
+    var v1 = null, n1 = null;
+    try { var c1 = await inv("syns.commit", { base: v0, message: "--message that looks like a flag (fixture " + stamp + ")", files: [{ path: a, text: flagText }, { path: b, text: "# b\n" }] }); v1 = c1.version; n1 = c1.number; r(SHA.test(v1) && v1 !== v0 && c1.changed === 2, "→ #" + n1 + " " + v1.slice(0, 10) + " · changed " + c1.changed); } catch (e) { r(false, msg(e)); }
+
+    r = row(host, "A32", "a text and a message beginning with -- are stored as text");
+    try {
+      var back = await inv("syns.readMany", { paths: [a], version: v1 }); var h1 = await inv("syns.history", { limit: 1 });
+      r(back.files[0].text === flagText && h1.entries[0].message.indexOf("--message that looks like a flag") === 0, JSON.stringify(h1.entries[0].message));
+    } catch (e) { r(false, msg(e)); }
+
+    r = row(host, "A2·A19", "the commit is in syns.history with integration syns-pages, trigger page, run = this session");
+    try { var h = await inv("syns.history", { limit: 3 }); var top = h.entries[0]; r(top.version === v1 && top.by.integration === "syns-pages" && top.by.trigger === "page" && !!me && top.by.run === me && top.paths.indexOf(a) >= 0, JSON.stringify(top.by) + " · me " + me); } catch (e) { r(false, msg(e)); }
+
+    r = row(host, "A14b", "after the write, only the written files' blobs differ");
+    try {
+      var after = await inv("syns.ls", { recursive: true, version: v1 }), old = {}, changed = [];
+      before.entries.forEach(function (x) { old[x.path] = x.blob; });
+      after.entries.forEach(function (x) { if (x.type === "file" && old[x.path] !== x.blob) changed.push(x.path); });
+      r(changed.sort().join() === [a, b].sort().join(), "differ: " + changed.join(", "));
+    } catch (e) { r(false, msg(e)); }
+
+    r = row(host, "A3", "a commit against the stale base is conflict / stale_head with the current version, and publishes nothing");
+    try {
+      var stale = await expectError(inv("syns.commit", { base: v0, files: [{ path: "fixture/stale-" + stamp + ".md", text: "must never land\n" }] }));
+      var now = await inv("syns.repo", {});
+      r(!stale.ok && stale.error.code === "conflict" && stale.error.reason === "stale_head" && stale.error.detail && stale.error.detail.current === v1 && now.version === v1, stale.ok ? "it was accepted" : msg(stale.error));
+    } catch (e) { r(false, msg(e)); }
+
+    r = row(host, "A23", "two files and one deletion are exactly one new version changing three paths");
+    var v2 = null;
+    try {
+      var c2 = await inv("syns.commit", { base: v1, files: [{ path: a, text: "# a, second text\n" }, { path: "fixture/c-" + stamp + ".md", text: "# c\n" }], deletions: [b] });
+      v2 = c2.version; r(c2.changed === 3 && c2.number === n1 + 1, "→ #" + c2.number + " · changed " + c2.changed);
+    } catch (e) { r(false, msg(e)); }
+
+    r = row(host, "A12", "watch on syns.repo reports the change after a write from this page");
+    try {
+      var seen = await new Promise(function (resolve) {
+        var stop, timer = setTimeout(function () { if (stop) stop(); resolve(null); }, 20000);
+        stop = tp.watch("syns.repo", {}, function (value) { if (value && value.version === v2) { clearTimeout(timer); if (stop) stop(); resolve(value.version); } }, { intervalMs: 2000 });
+      });
+      r(seen === v2, seen ? "watch saw " + seen.slice(0, 10) : "watch never reported the new version within 20 s");
+    } catch (e) { r(false, msg(e)); }
+
+    r = row(host, "S1.17", "a commit that changes nothing is success with the unchanged version and changed: 0");
+    try { var same = await inv("syns.commit", { base: v2, files: [{ path: a, text: "# a, second text\n" }] }); r(same.version === v2 && same.changed === 0, "changed " + same.changed); } catch (e) { r(false, msg(e)); }
+
+    // ---- slice 2 ----
+    var d = "fixture/d-" + stamp + ".md", dText = "line 1\nline 2\nline 3\nneedle alpha\nneedle beta\n--force stays text\n";
+    r = row(host, "A25b", "syns.write with create: true on a new path makes it");
+    var v3 = null;
+    try { var w1 = await inv("syns.write", { path: d, text: dText, base: v2, create: true }); v3 = w1.version; r(SHA.test(v3) && v3 !== v2 && typeof w1.number === "number", "→ #" + w1.number + " " + v3.slice(0, 10)); } catch (e) { r(false, msg(e)); }
+
+    r = row(host, "A25a", "syns.write with create: true on an existing path is conflict / exists, and publishes nothing");
+    try {
+      var w2 = await expectError(inv("syns.write", { path: d, text: "must never land\n", base: v3, create: true }));
+      var head3 = await inv("syns.repo", {}); var kept = await inv("syns.readMany", { paths: [d], version: head3.version });
+      r(!w2.ok && w2.error.code === "conflict" && w2.error.reason === "exists" && head3.version === v3 && kept.files[0].text === dText, w2.ok ? "it was accepted" : msg(w2.error));
+    } catch (e) { r(false, msg(e)); }
+
+    r = row(host, "A20", "syns.read returns the requested window and totalLines");
+    try {
+      var win = await inv("syns.read", { path: d, offset: 2, limit: 2, version: v3 });
+      r(win.text === "line 2\nline 3" && win.offset === 2 && win.limit === 2 && win.totalLines === 6 && win.version === v3 && win.path === d && SHA.test(win.blob) && win.size === dText.length, JSON.stringify(win.text) + " · totalLines " + win.totalLines + " · #" + win.number);
+    } catch (e) { r(false, msg(e)); }
+
+    r = row(host, "A21a", "syns.glob returns the matching files, each with a blob");
+    try {
+      var gl = await inv("syns.glob", { pattern: "fixture/*-" + stamp + ".md", version: v3 });
+      var glPaths = gl.matches.map(function (x) { return x.path; }).sort();
+      r(gl.version === v3 && gl.truncated === false && glPaths.join() === [a, "fixture/c-" + stamp + ".md", d].sort().join() && gl.matches.every(function (x) { return SHA.test(x.blob) && x.size > 0; }), glPaths.join(", "));
+    } catch (e) { r(false, msg(e)); }
+
+    r = row(host, "A21b", "syns.grep, output content: matches with line numbers and context");
+    try {
+      var gc = await inv("syns.grep", { pattern: "needle", glob: [d], context: 1, version: v3 });
+      var first = gc.matches[0];
+      r(gc.output === "content" && gc.version === v3 && gc.matches.length === 2 && first.path === d && first.line === 4 && first.text === "needle alpha" && Array.isArray(first.context) && first.context.length >= 1 && typeof first.context[0].line === "number" && Array.isArray(gc.skipped), JSON.stringify(gc.matches.map(function (x) { return x.line + ":" + x.text + " (+" + x.context.length + ")"; })));
+    } catch (e) { r(false, msg(e)); }
+
+    r = row(host, "A21c", "syns.grep, output files: the paths that match");
+    try { var gf = await inv("syns.grep", { pattern: "needle", glob: [d], output: "files", version: v3 }); r(gf.output === "files" && gf.files.join() === d && !("matches" in gf), JSON.stringify(gf.files)); } catch (e) { r(false, msg(e)); }
+
+    r = row(host, "A21d", "syns.grep, output count: how many matches in each path");
+    try { var gn = await inv("syns.grep", { pattern: "NEEDLE", ignoreCase: true, glob: [d], output: "count", version: v3 }); r(gn.output === "count" && gn.counts.length === 1 && gn.counts[0].path === d && gn.counts[0].count === 2, JSON.stringify(gn.counts)); } catch (e) { r(false, msg(e)); }
+
+    r = row(host, "R8", "a pattern that does not parse is invalid_params / bad_pattern, from grep and from glob");
+    try {
+      var bp = await Promise.all([expectError(inv("syns.grep", { pattern: "(" })), expectError(inv("syns.glob", { pattern: "[" }))]);
+      r(bp.every(function (x) { return !x.ok && x.error.code === "invalid_params" && x.error.reason === "bad_pattern"; }), bp.map(function (x) { return x.ok ? "accepted" : msg(x.error); }).join(" | "));
+    } catch (e) { r(false, msg(e)); }
+
+    r = row(host, "A21e", "syns.diff without to compares against the head, and without patch returns no patch text");
+    try {
+      var d1 = await inv("syns.diff", { from: v2 });
+      r(d1.from.version === v2 && d1.to.version === v3 && d1.files.length === 1 && d1.files[0].path === d && d1.files[0].status === "added" && !("patch" in d1.files[0]), "#" + d1.from.number + " → #" + d1.to.number + " · " + JSON.stringify(d1.files));
+    } catch (e) { r(false, msg(e)); }
+
+    r = row(host, "A21f", "syns.diff with patch returns each file's patch; a file added and deleted in between does not appear");
+    try {
+      var d2 = await inv("syns.diff", { from: v0, to: v3, patch: true });
+      var d2Paths = d2.files.map(function (x) { return x.path; }).sort();
+      r(d2.from.version === v0 && d2.to.version === v3 && d2Paths.join() === [a, "fixture/c-" + stamp + ".md", d].sort().join() && d2.files.every(function (x) { return x.status === "added" && typeof x.patch === "string" && x.patch.indexOf("+") >= 0; }), d2.files.map(function (x) { return x.status + " " + x.path; }).join(", "));
+    } catch (e) { r(false, msg(e)); }
+
+    r = row(host, "A26a", "syns.edit whose old occurs nowhere is invalid_params / no_match");
+    try { var e1 = await expectError(inv("syns.edit", { path: d, old: "absent-" + stamp, new: "x", base: v3 })); r(!e1.ok && e1.error.code === "invalid_params" && e1.error.reason === "no_match", e1.ok ? "it was accepted" : msg(e1.error)); } catch (e) { r(false, msg(e)); }
+
+    r = row(host, "A26b", "syns.edit whose old occurs twice, without replaceAll, is many_matches with the count, and publishes nothing");
+    try {
+      var e2 = await expectError(inv("syns.edit", { path: d, old: "needle", new: "pin", base: v3 }));
+      var head3b = await inv("syns.repo", {});
+      r(!e2.ok && e2.error.code === "invalid_params" && e2.error.reason === "many_matches" && e2.error.detail && e2.error.detail.count === 2 && head3b.version === v3, e2.ok ? "it was accepted" : msg(e2.error));
+    } catch (e) { r(false, msg(e)); }
+
+    r = row(host, "A26c", "a successful syns.edit is a new version");
+    var v4 = null, newLine = "--parent=0 is text too";
+    try { var e3 = await inv("syns.edit", { path: d, old: "--force stays text", new: newLine, base: v3, message: "--replace-all as a message (fixture " + stamp + ")" }); v4 = e3.version; r(SHA.test(v4) && v4 !== v3, "→ #" + e3.number + " " + v4.slice(0, 10)); } catch (e) { r(false, msg(e)); }
+
+    r = row(host, "A32x", "an old and a new beginning with -- are taken as text and change no flag");
+    try {
+      var edited = await inv("syns.readMany", { paths: [d], version: v4 }); var h4 = await inv("syns.history", { limit: 1 });
+      r(edited.files[0].text === dText.replace("--force stays text", newLine) && h4.entries[0].version === v4 && h4.entries[0].message.indexOf("--replace-all as a message") === 0 && h4.entries[0].by.run === me, JSON.stringify(edited.files[0].text.split("\n")[5]) + " · " + JSON.stringify(h4.entries[0].message));
+    } catch (e) { r(false, msg(e)); }
+
+    r = row(host, "A28", "syns.revert restores the earlier text as a new version against base, under the page's provenance; a stale base is stale_head");
+    var v5 = null;
+    try {
+      var stale = await expectError(inv("syns.revert", { path: d, to: v3, base: v3 }));
+      var rv = await inv("syns.revert", { path: d, to: v3, base: v4 }); v5 = rv.version;
+      var restored = await inv("syns.readMany", { paths: [d], version: v5 }); var h5 = await inv("syns.history", { limit: 1 });
+      r(!stale.ok && stale.error.reason === "stale_head" && SHA.test(v5) && v5 !== v4 && v5 !== v3 && restored.files[0].text === dText && h5.entries[0].version === v5 && h5.entries[0].by.integration === "syns-pages" && h5.entries[0].by.run === me, "stale: " + (stale.ok ? "accepted" : stale.error.reason || stale.error.code) + " · → #" + rv.number + " " + v5.slice(0, 10) + " · by " + JSON.stringify(h5.entries[0].by));
+    } catch (e) { r(false, msg(e)); }
+
+    r = row(host, "A27a", "syns.rm of a missing path is success with the unchanged version and changed: 0");
+    try { var rm0 = await inv("syns.rm", { path: "fixture/never-" + stamp + ".md", base: v5 }); r(rm0.version === v5 && rm0.changed === 0, "changed " + rm0.changed + " · " + rm0.version.slice(0, 10)); } catch (e) { r(false, msg(e)); }
+
+    r = row(host, "A27b", "syns.rm of an existing path is a new version, and the path is gone");
+    try {
+      var rm1 = await inv("syns.rm", { path: d, base: v5 });
+      var gone = await inv("syns.readMany", { paths: [d], version: rm1.version });
+      r(SHA.test(rm1.version) && rm1.version !== v5 && rm1.changed === 1 && gone.files[0].error === "not_found", "→ #" + rm1.number + " · changed " + rm1.changed + " · then " + (gone.files[0].error || "still there"));
+    } catch (e) { r(false, msg(e)); }
+
+    r = row(host, "A30", "syns.write, syns.edit, syns.rm, syns.commit and syns.revert without base are invalid_params");
+    try {
+      var nobase = await Promise.all([["syns.write", { path: d, text: "x" }], ["syns.edit", { path: d, old: "x", new: "y" }], ["syns.rm", { path: d }], ["syns.commit", { deletions: [d] }], ["syns.revert", { path: d, to: v3 }]].map(function (c) { return expectError(inv(c[0], c[1])); }));
+      r(nobase.every(function (x) { return !x.ok && x.error.code === "invalid_params"; }), nobase.map(function (x) { return x.ok ? "accepted" : x.error.code; }).join(" "));
+    } catch (e) { r(false, msg(e)); }
+
+    r = row(host, "A31", "a path of --force, ../x or /etc/passwd is invalid_params");
+    try {
+      var bad = await Promise.all(["--force", "../x", "/etc/passwd"].map(function (p) { return expectError(inv("syns.readMany", { paths: [p] })); }));
+      r(bad.every(function (x) { return !x.ok && x.error.code === "invalid_params"; }), bad.map(function (x) { return x.ok ? "accepted" : x.error.code; }).join(" "));
+    } catch (e) { r(false, msg(e)); }
+
+    r = row(host, "A34", "a repo, cwd or sessionId parameter is refused");
+    try {
+      var extra = await Promise.all([{ repo: "a/b" }, { cwd: "/tmp" }, { sessionId: "thr_x" }].map(function (p) { return expectError(inv("syns.repo", p)); }));
+      r(extra.every(function (x) { return !x.ok && x.error.code === "invalid_params"; }), extra.map(function (x) { return x.ok ? "accepted" : x.error.code; }).join(" "));
+    } catch (e) { r(false, msg(e)); }
+
+    r = row(host, "A22", "a version that does not exist is not_found");
+    try { var ghost = await expectError(inv("syns.ls", { version: "0123456789abcdef0123456789abcdef01234567" })); r(!ghost.ok && ghost.error.code === "not_found", ghost.ok ? "accepted" : msg(ghost.error)); } catch (e) { r(false, msg(e)); }
+
+    r = row(host, "A22b", "syns.read, syns.glob, syns.grep and syns.diff given a version that does not exist are not_found");
+    try {
+      var nowhere = "0123456789abcdef0123456789abcdef01234567";
+      var ghosts = await Promise.all([["syns.read", { path: "README.md", version: nowhere }], ["syns.glob", { pattern: "*", version: nowhere }], ["syns.grep", { pattern: "x", version: nowhere }], ["syns.diff", { from: nowhere }]].map(function (c) { return expectError(inv(c[0], c[1])); }));
+      r(ghosts.every(function (x) { return !x.ok && x.error.code === "not_found"; }), ghosts.map(function (x) { return x.ok ? "accepted" : x.error.code; }).join(" "));
+    } catch (e) { r(false, msg(e)); }
+
+    // ---- round two, 2026-09-27 ----
+    var hd = null;
+    try { hd = (await inv("syns.repo", {})).version; } catch (e) { /* the rows below say so */ }
+
+    r = row(host, "A41", "syns.edit with old equal to new: the head with changed 0, nothing published; against a moved base, stale_head");
+    try {
+      var same1 = await inv("syns.edit", { path: d, old: "line 1", new: "line 1", base: hd });
+      var after1 = await inv("syns.repo", {});
+      var same2 = await expectError(inv("syns.edit", { path: d, old: "line 1", new: "line 1", base: v2 }));
+      r(same1.version === hd && same1.changed === 0 && after1.version === hd && !same2.ok && same2.error.reason === "stale_head" && same2.error.detail && same2.error.detail.current === hd,
+        "changed " + same1.changed + " · moved base: " + (same2.ok ? "accepted" : msg(same2.error)));
+    } catch (e) { r(false, msg(e)); }
+
+    var big = "fixture/big-" + stamp + ".txt", bigSize = 0, vb = null;
+    r = row(host, "A42", "syns.read of a window too large for one answer returns the lines that fit, limit saying how many");
+    try {
+      var w3 = await inv("syns.write", { path: big, text: ["@".repeat(20), "@".repeat(20), "@".repeat(20)].join("\n"), base: hd });
+      var grown = await inv("syns.edit", { path: big, old: "@", new: "x".repeat(20000), replaceAll: true, base: w3.version });
+      vb = grown.version; bigSize = 3 * 400000 + 2;
+      var cut = await inv("syns.read", { path: big, limit: 3, version: vb, fit: true });
+      var plain = await expectError(inv("syns.read", { path: big, limit: 3, version: vb }));
+      var rest = await inv("syns.read", { path: big, offset: cut.offset + cut.limit, limit: 3, version: vb, fit: true });
+      r(!plain.ok && plain.error.code === "response_too_large" && cut.limit === 2 && cut.text.length === 800001 && cut.totalLines === 3 && rest.text.length === 400000,
+        "first window " + cut.limit + " lines · the rest " + rest.limit);
+    } catch (e) { r(false, msg(e)); }
+
+    // since 0.9.0: a first path that alone passes the answer's room is too_large with no size or blob
+    r = row(host, "A43", "syns.readMany's too_large on a first path the CLI deferred carries no size or blob");
+    try {
+      var many = await inv("syns.readMany", { paths: [big], version: vb });
+      var e0 = many.files[0];
+      r(e0.path === big && e0.error === "too_large" && !("size" in e0) && !("blob" in e0) && e0.text === undefined, JSON.stringify(e0));
+    } catch (e) { r(false, msg(e)); }
+
+    r = row(host, "A44", "syns.history accepts limit 100 and refuses 101");
+    try {
+      var h100 = await inv("syns.history", { limit: 100 });
+      var h101 = await expectError(inv("syns.history", { limit: 101 }));
+      r(Array.isArray(h100.entries) && !h101.ok && h101.error.code === "invalid_params", h100.entries.length + " entries · 101: " + (h101.ok ? "accepted" : h101.error.code));
+    } catch (e) { r(false, msg(e)); }
+
+    r = row(host, "A45", "syns.revert declares stale_head and checkout_dirty, as syns.write does");
+    try {
+      var caps = (ctx && ctx.capabilities) || [];
+      var rv = caps.filter(function (c) { return c.method === "syns.revert"; })[0], wr = caps.filter(function (c) { return c.method === "syns.write"; })[0];
+      var names = function (c) { return (c.reasons || []).map(function (x) { return typeof x === "string" ? x : x.reason || x.name; }); };
+      r(rv && wr && names(rv).indexOf("stale_head") >= 0 && names(rv).indexOf("checkout_dirty") >= 0 && names(wr).indexOf("stale_head") >= 0, rv ? "revert: " + names(rv).join(" ") : "no syns.revert in the roster");
+    } catch (e) { r(false, msg(e)); }
+
+    finish("main");
+  }
+
+  async function dirty() {
+    var host = document.getElementById("dirtyRows"); host.textContent = ""; counts = { pass: 0, fail: 0 };
+    var inv = tp.invoke, r = row(host, "A29a", "with an unpublished edit in the folder, a write is conflict / checkout_dirty");
+    try {
+      var repo = await inv("syns.repo", {});
+      var w = await expectError(inv("syns.commit", { base: repo.version, files: [{ path: "fixture/dirty-" + Date.now().toString(36) + ".md", text: "must never land\n" }] }));
+      r(!w.ok && w.error.code === "conflict" && w.error.reason === "checkout_dirty", w.ok ? "it was accepted — is there really an unpublished edit?" : msg(w.error));
+      var r2 = row(host, "A29b", "reads still work, and nothing was published");
+      var again = await inv("syns.repo", {}); var ls = await inv("syns.ls", {});
+      r2(again.version === repo.version && ls.entries.length > 0, "head unchanged " + again.version.slice(0, 10));
+      var r3 = row(host, "A29c", "syns.write, syns.edit, syns.rm, syns.writeBinary and syns.revert are refused the same way, and nothing was published");
+      var none = "fixture/dirty-" + Date.now().toString(36) + ".md";
+      var others = [];
+      // One after another, each chosen to land nothing even if the guard did not fire.
+      var tries = [["syns.write", { path: none, text: "must never land\n", base: repo.version, create: true }], ["syns.edit", { path: "README.md", old: "absent-" + none, new: "x", base: repo.version }], ["syns.rm", { path: none, base: repo.version }], ["syns.writeBinary", { path: none + ".png", base64: "iVBORw0KGgo=", base: repo.version }], ["syns.revert", { path: "README.md", to: repo.version, base: repo.version }]];
+      for (var i = 0; i < tries.length; i++) others.push(await expectError(inv(tries[i][0], tries[i][1])));
+      var last = await inv("syns.repo", {});
+      r3(others.every(function (x) { return !x.ok && x.error.code === "conflict" && x.error.reason === "checkout_dirty"; }) && last.version === repo.version, others.map(function (x, i) { return tries[i][0].slice(5) + ": " + (x.ok ? "accepted" : x.error.reason || x.error.code); }).join(" · "));
+    } catch (e) { r(false, msg(e)); }
+    finish("dirty");
+  }
+
+
+  // ---- pictures, 0.2.0 ----
+  var PIECE = 737280;
+  function b64(bytes) { var s = ""; for (var i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); return btoa(s); }
+  function unb64(text) { var s = atob(text), out = new Uint8Array(s.length); for (var i = 0; i < s.length; i++) out[i] = s.charCodeAt(i); return out; }
+  async function sha256(bytes) { var d = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)); return Array.prototype.map.call(d, function (x) { return x.toString(16).padStart(2, "0"); }).join(""); }
+  function jpeg(size) { var b = new Uint8Array(size); for (var i = 0; i < size; i += 65536) crypto.getRandomValues(b.subarray(i, Math.min(size, i + 65536))); b[0] = 0xff; b[1] = 0xd8; b[2] = 0xff; b[3] = 0xe0; b[size - 2] = 0xff; b[size - 1] = 0xd9; return b; }
+  async function store(inv, path, bytes, base, extra) {
+    var sha = await sha256(bytes), last = null;
+    for (var offset = 0; offset < bytes.length; offset += PIECE) last = await inv("syns.writeBinary", Object.assign({ path: path, base: base, size: bytes.length, sha256: sha, offset: offset, base64: b64(bytes.subarray(offset, offset + PIECE)) }, extra || {}));
+    return { answer: last, sha: sha };
+  }
+  async function fetchBytes(inv, path, version) {
+    var first = await inv("syns.readBinary", { path: path, version: version }), parts = [unb64(first.base64)], next = first.nextOffset, calls = 1;
+    while (next !== null) { var p = await inv("syns.readBinary", { path: path, version: first.version, offset: next }); parts.push(unb64(p.base64)); next = p.nextOffset; calls++; }
+    var all = new Uint8Array(parts.reduce(function (n, p) { return n + p.length; }, 0)), at = 0; parts.forEach(function (p) { all.set(p, at); at += p.length; });
+    return { first: first, bytes: all, calls: calls };
+  }
+
+  async function pictures() {
+    var host = document.getElementById("pictureRows"); host.textContent = ""; counts = { pass: 0, fail: 0 }; verdict.className = ""; verdict.textContent = "running the picture rows…";
+    var inv = tp.invoke, stamp = Date.now().toString(36), r, me = null, head = null;
+    try { me = (await inv("context.get", {})).session.id; head = (await inv("syns.repo", {})).version; } catch (e) { /* the rows say so */ }
+
+    r = row(host, "A47", "an 8 MiB JPEG stored at parent V, read back at the version published: equal SHA-256, that version, image/jpeg, the plugin's provenance");
+    var photo = "fixture/photo-" + stamp + ".jpg";
+    try {
+      var bytes = jpeg(8 * 1024 * 1024), t0 = performance.now();
+      var put = await store(inv, photo, bytes, head); var tw = Math.round(performance.now() - t0);
+      var t1 = performance.now(); var got = await fetchBytes(inv, photo, put.answer.version); var tr = Math.round(performance.now() - t1);
+      var back = await sha256(got.bytes);
+      var hist = await inv("syns.history", { limit: 1 }); var by = hist.entries[0].by;
+      r(put.answer.complete === true && back === put.sha && got.first.version === put.answer.version && got.first.mediaType === "image/jpeg" && got.first.sha256 === put.sha && hist.entries[0].version === put.answer.version && by.integration === "syns-pages" && by.trigger === "page" && by.run === me,
+        "write " + Math.ceil(bytes.length / PIECE) + " calls " + tw + " ms · read " + got.calls + " calls " + tr + " ms · " + back.slice(0, 12) + " · " + got.first.mediaType);
+      head = put.answer.version;
+    } catch (e) { r(false, msg(e)); }
+
+    r = row(host, "A48", "a small picture in one call, as the Docs page sends it: { path, base64, base }");
+    var small = "fixture/small-" + stamp + ".png";
+    try {
+      var sb = jpeg(5000); sb[0] = 0x89; sb[1] = 0x50; sb[2] = 0x4e; sb[3] = 0x47;
+      var one = await inv("syns.writeBinary", { path: small, base64: b64(sb), base: head, message: "Add image from the fixture" });
+      var sback = await fetchBytes(inv, small, one.version);
+      r(one.complete && one.changed === 1 && (await sha256(sback.bytes)) === (await sha256(sb)) && sback.calls === 1, "→ #" + one.number + " · read in " + sback.calls + " call");
+      head = one.version;
+    } catch (e) { r(false, msg(e)); }
+
+    r = row(host, "A49", "a piece at the wrong offset is conflict / bad_offset with the offset expected, and nothing is published");
+    try {
+      var pb = jpeg(2 * PIECE), psha = await sha256(pb), pp = "fixture/partial-" + stamp + ".jpg";
+      await inv("syns.writeBinary", { path: pp, base: head, size: pb.length, sha256: psha, offset: 0, base64: b64(pb.subarray(0, PIECE)) });
+      var bad = await expectError(inv("syns.writeBinary", { path: pp, base: head, size: pb.length, sha256: psha, offset: 12, base64: "AAAA" }));
+      var still = await inv("syns.repo", {});
+      r(!bad.ok && bad.error.code === "conflict" && bad.error.reason === "bad_offset" && bad.error.detail.expected === PIECE && still.version === head, bad.ok ? "accepted" : msg(bad.error));
+    } catch (e) { r(false, msg(e)); }
+
+    r = row(host, "A50", "bytes that do not match sha256 are invalid_params / bad_hash, and nothing is published");
+    try {
+      var hb = await expectError(inv("syns.writeBinary", { path: "fixture/hash-" + stamp + ".png", base: head, size: 3, sha256: "0".repeat(64), offset: 0, base64: "AAAA" }));
+      r(!hb.ok && hb.error.reason === "bad_hash" && (await inv("syns.repo", {})).version === head, hb.ok ? "accepted" : msg(hb.error));
+    } catch (e) { r(false, msg(e)); }
+
+    r = row(host, "A51", "a picture declared past 25 MiB is invalid_params / too_large, naming the most");
+    try {
+      var tb = await expectError(inv("syns.writeBinary", { path: "fixture/huge-" + stamp + ".tif", base: head, size: 26214401, sha256: "0".repeat(64), offset: 0, base64: "AAAA" }));
+      r(!tb.ok && tb.error.reason === "too_large" && tb.error.detail.max === 26214400, tb.ok ? "accepted" : msg(tb.error));
+    } catch (e) { r(false, msg(e)); }
+
+    r = row(host, "A52", "a picture beside a text in one version: inline base64, and a gathered upload named in syns.commit");
+    try {
+      var cb = jpeg(PIECE + 1000), csha = (await store(inv, "fixture/held-" + stamp + ".jpg", cb, head, { hold: true })).sha;
+      var ib = jpeg(900);
+      var c = await inv("syns.commit", { base: head, files: [{ path: "fixture/trip-" + stamp + ".md", text: "![](held.jpg)\n" }, { path: "fixture/held-" + stamp + ".jpg", upload: csha }, { path: "fixture/inline-" + stamp + ".jpg", base64: b64(ib) }] });
+      var cback = await fetchBytes(inv, "fixture/held-" + stamp + ".jpg", c.version);
+      var again = await expectError(inv("syns.commit", { base: c.version, files: [{ path: "fixture/again-" + stamp + ".jpg", upload: csha }] }));
+      r(c.changed === 3 && (await sha256(cback.bytes)) === csha && !again.ok && again.error.reason === "bad_offset", "changed " + c.changed + " · the upload once only: " + (again.ok ? "accepted twice" : again.error.reason));
+      head = c.version;
+    } catch (e) { r(false, msg(e)); }
+
+    r = row(host, "A53", "syns.readMany on a picture answers not_text with its size and blob, and no bytes");
+    try {
+      var nm = await inv("syns.readMany", { paths: [small], version: head });
+      r(nm.files[0].error === "not_text" && nm.files[0].size === 5000 && SHA.test(nm.files[0].blob) && nm.files[0].text === undefined, JSON.stringify(nm.files[0]));
+    } catch (e) { r(false, msg(e)); }
+
+    finish("pictures");
+  }
+
+  document.getElementById("rerun").addEventListener("click", main);
+  document.getElementById("pictures").addEventListener("click", pictures);
+  document.getElementById("dirty").addEventListener("click", dirty);
+  main();
+})();
+</script>
+</body>
+</html>

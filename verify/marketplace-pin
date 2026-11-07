@@ -1,0 +1,129 @@
+#!/usr/bin/env python3
+"""marketplace-pin — point the Claude Code marketplace's syns-pages at the release commit, and push it.
+
+What it does: clones the marketplace (synsdev/syns-claude-plugins) into a folder `mktemp -d` makes, sets the
+syns-pages entry's `source.sha` in `.claude-plugin/marketplace.json` to the release commit, commits
+"syns-pages <version>: pin to <sha>" and pushes main; the folder is removed after, whatever happened. Before it
+pushes, the plugin's own repository (the entry's `source.url`) must hold the version's tag at that commit, so the pin
+never names a commit Claude Code cannot fetch. Already pinned to that commit: it says so, and pushes nothing.
+`--dry-run` (the step's check) does everything but the push and the tag test, and asks the remote with
+`git push --dry-run` whether the push would be taken, so a marketplace that moved or a missing right is seen before
+the release pushes anything.
+
+Why: the entry named no `ref` or `sha`, so Claude Code installed the tip of syns-bb-plugin main, and every push to
+main reached Claude Code at once, a release or not (eb3cc58, b61203d). Pinned, only a release moves it.
+
+When it pays: at every release of the plugin, right after main and the tag are pushed, with its `--dry-run` as that
+step's check.
+When it does not: anything that is not a release; a hand pin bypasses the release's gate.
+
+How to run (python3, standard library; calls `git`), in the release's checkout of synsdev/syns-bb-plugin:
+  python3 verify/marketplace-pin --version 0.11.1 [--sha <commit, default HEAD of --code>] [--code .]
+          [--marketplace <git url, default https://github.com/synsdev/syns-claude-plugins.git>] [--plugin syns-pages]
+          [--dry-run]
+Exit codes: 0 pinned and pushed, already pinned, or (--dry-run) the push would be taken · 1 a step failed (named:
+clone, the entry, the tag, the commit, the push) · 5 usage error.
+"""
+import argparse
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+
+MARKETPLACE = "https://github.com/synsdev/syns-claude-plugins.git"
+FILE = ".claude-plugin/marketplace.json"
+EXIT_OK, EXIT_FAIL, EXIT_USAGE = 0, 1, 5
+
+
+def git(*args, cwd=None):
+    p = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, timeout=180)
+    return p.returncode, p.stdout, p.stderr
+
+
+class Fail(Exception):
+    pass
+
+
+def must(*args, cwd=None, what):
+    rc, out, err = git(*args, cwd=cwd)
+    if rc:
+        raise Fail(f"{what}: {(err or out).strip()[:300]}")
+    return out
+
+
+def tagged_commit(url, tag):
+    """The commit the remote's tag names (peeled), or None."""
+    out = must("ls-remote", url, f"refs/tags/{tag}", f"refs/tags/{tag}^{{}}", what=f"git ls-remote {url}")
+    refs = dict(reversed(l.split("\t", 1)) for l in out.splitlines() if "\t" in l)
+    return refs.get(f"refs/tags/{tag}^{{}}") or refs.get(f"refs/tags/{tag}")
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--version", required=True, help="the version released")
+    ap.add_argument("--code", default=".", help="the release's checkout of synsdev/syns-bb-plugin (default .)")
+    ap.add_argument("--sha", help="the release commit (default: HEAD of --code, the tagged commit)")
+    ap.add_argument("--marketplace", default=MARKETPLACE, help="the marketplace's git url (a local bare one in tests)")
+    ap.add_argument("--plugin", default="syns-pages")
+    ap.add_argument("--tag", help="the tag that must name --sha on the plugin's repository (default v<version>)")
+    ap.add_argument("--dry-run", action="store_true", help="all but the push: `git push --dry-run`, no tag test")
+    a = ap.parse_args()
+    rc, full, _ = git("rev-parse", "--verify", "-q", f"{a.sha or 'HEAD'}^{{commit}}", cwd=a.code)
+    if rc:
+        print(f"marketplace-pin: {a.code} holds no commit {a.sha or 'HEAD'}", file=sys.stderr)
+        return EXIT_USAGE
+    sha = full.strip()
+    tmp = tempfile.mkdtemp(prefix="marketplace-pin-")
+    try:
+        where = os.path.join(tmp, "m")
+        must("clone", "-q", a.marketplace, where, what=f"clone {a.marketplace}")
+        path = os.path.join(where, FILE)
+        text = open(path, encoding="utf-8").read()
+        data = json.loads(text)
+        if json.dumps(data, indent=2, ensure_ascii=False) + "\n" != text:
+            raise Fail(f"the entry: {FILE} is not formatted as json.dumps(indent=2) writes it; pin it by hand once")
+        entry = next((p for p in data.get("plugins", []) if p.get("name") == a.plugin), None)
+        src = entry.get("source") if entry else None
+        if not isinstance(src, dict) or src.get("source") != "git-subdir" or not src.get("url"):
+            raise Fail(f"the entry: {FILE} has no {a.plugin} with a git-subdir source and a url: {json.dumps(src)}")
+        if src.get("ref"):
+            raise Fail(f"the entry: {a.plugin} names ref {src['ref']!r} beside the pin; remove it by a reviewed change")
+        if src.get("sha") == sha:
+            print(f"marketplace-pin: {a.plugin} already pinned to {sha[:12]} in {a.marketplace}; nothing pushed")
+            return EXIT_OK
+        before = src["sha"][:12] if src.get("sha") else "main (unpinned)"
+        if not a.dry_run:
+            tag = a.tag or f"v{a.version}"
+            at = tagged_commit(src["url"], tag)
+            if at != sha:
+                raise Fail(f"the tag: {src['url']} has {tag} at {at or 'nothing'}, not {sha[:12]}: push main and the "
+                           f"tag first, so Claude Code can fetch the commit the pin names")
+        src["sha"] = sha
+        open(path, "w", encoding="utf-8").write(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
+        msg = f"{a.plugin} {a.version}: pin to {sha}"
+        must("add", FILE, cwd=where, what="the commit (git add)")
+        must("commit", "-q", "-m", msg, cwd=where, what="the commit")
+        push = ["push", "-q", "origin", "HEAD:refs/heads/main"]
+        if a.dry_run:
+            must(*push[:1], "--dry-run", *push[1:], cwd=where, what="the push (--dry-run)")
+            print(f"marketplace-pin: dry run: {a.plugin} {before} -> {sha[:12]} would be pushed to "
+                  f"{a.marketplace} main (\"{msg}\")")
+            return EXIT_OK
+        must(*push, cwd=where, what="the push")
+        new = must("rev-parse", "--short", "HEAD", cwd=where, what="rev-parse").strip()
+        print(f"marketplace-pin: {a.plugin} {before} -> {sha[:12]}: pushed {new} to {a.marketplace} main")
+        return EXIT_OK
+    except Fail as e:
+        print(f"marketplace-pin: failed at {e}", file=sys.stderr)
+        return EXIT_FAIL
+    except (OSError, ValueError, subprocess.TimeoutExpired) as e:
+        print(f"marketplace-pin: failed: {type(e).__name__}: {e}", file=sys.stderr)
+        return EXIT_FAIL
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

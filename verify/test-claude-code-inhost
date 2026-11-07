@@ -1,0 +1,405 @@
+#!/usr/bin/env python3
+"""test-claude-code-inhost — offline tests of `claude-code-inhost`'s release read and its page.
+
+What it does: runs `claude-code-inhost --version …` against a probe state of its own (a `mktemp -d` home holding
+`state.json` and a page root) with a stand-in `syns` first on PATH that answers `syns cat verdicts/<marker>.json` from
+a verdict the test writes, and checks the line, the exit code and the page revision written to the root. Then it
+composes the three pages (release, scope-dropped, waiting) from this folder's `fixture.html` and checks the reporter
+was placed and the fixture no longer runs on load, and runs the page's reporter in node against a stand-in
+repository. Nothing leaves the temp folder; it is removed after. The tool's PATH holds the stand-in and the system's
+programs but those `syspath.py` hides, so neither `claude`, a real `syns`, bb, a browser nor the Unife daemon is
+reached.
+
+When it pays: whenever `claude-code-inhost` or `fixture.html`'s last lines change.
+When it does not: the page in the owner's open tab: that is the release step itself.
+
+How to run (python3, standard library; node for the reporter's tests, skipped without it):
+  python3 verify/test-claude-code-inhost [-v]
+Exit codes: 0 every test passed · 1 a test failed.
+"""
+import json
+import os
+import re
+import runpy
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import syspath  # noqa: E402
+
+TOOL = os.path.join(HERE, "claude-code-inhost")
+FAKE_SYNS = "#!" + sys.executable + """
+import os, sys
+v = os.environ.get("FAKE_VERDICT", "")
+blip = os.environ.get("FAKE_SYNS_BLIP")       # the first read answers, every later one fails
+if blip:
+    if os.path.exists(blip):
+        sys.stderr.write("error: could not reach the server"); sys.exit(1)
+    open(blip, "w").close()
+if os.environ.get("FAKE_SYNS_DOWN"):
+    sys.stderr.write("error: could not reach the server"); sys.exit(1)
+if sys.argv[1:2] == ["cat"] and sys.argv[2].startswith("verdicts/") and v and os.path.exists(v):
+    sys.stdout.write(open(v).read()); sys.exit(0)
+sys.stderr.write("error: file not found: " + sys.argv[2]); sys.exit(1)
+"""
+def read(path):
+    with open(path) as f:
+        return f.read()
+
+
+def verdict(**over):
+    v = {"state": "done", "version": "0.11.1", "served": "0.11.1", "at": "2026-10-29T06:52:00.000Z",
+         "fixture": {"suite": "main", "pass": 40, "fail": 1, "failed": ["A27a"]},
+         "probe": {"ok": True, "header": "diff --git a/a.json b/old/a.json"}}
+    v.update(over)
+    return v
+
+
+class Release(unittest.TestCase):
+    def setUp(self):
+        self.t = tempfile.mkdtemp(prefix="test-cc-inhost-")
+        self.home, self.root, self.bin = (os.path.join(self.t, x) for x in ("home", "root", "bin"))
+        for d in (self.home, self.root, self.bin):
+            os.makedirs(d)
+        with open(os.path.join(self.bin, "syns"), "w") as f:
+            f.write(FAKE_SYNS)
+        os.chmod(os.path.join(self.bin, "syns"), 0o755)
+        self.state = {"session": "0000-probe", "url": "http://host.invalid/page?session=0000-probe", "root": self.root,
+                      "folder": self.t, "repo": "o/probe", "started_at": "2026-10-29T07:00:00Z", "last_read": None}
+        self.verdict = os.path.join(self.t, "verdict.json")
+
+    def tearDown(self):
+        shutil.rmtree(self.t, ignore_errors=True)
+
+    def run_tool(self, v=None, state=True, extra=(), env=None):
+        if state:
+            with open(os.path.join(self.home, "state.json"), "w") as f:
+                json.dump(self.state, f)
+        if v is not None:
+            with open(self.verdict, "w") as f:
+                json.dump(v, f)
+        env = dict(os.environ, PATH=self.bin + os.pathsep + syspath.system_path(), FAKE_VERDICT=self.verdict,
+                   **(env or {}))
+        p = subprocess.run([sys.executable, TOOL, "--version", "0.11.1", "--home", self.home, "--poll", "1",
+                            "--wait-start", "2", "--wait", "4", *extra], capture_output=True, text=True, env=env)
+        return p.returncode, p.stdout.strip()
+
+    def page(self):
+        return read(os.path.join(self.root, "index.html"))
+
+    def test_pass_with_known_row(self):
+        rc, out = self.run_tool(verdict(), extra=("--known", "A27a"))
+        self.assertEqual(rc, 0, out)
+        self.assertRegex(out, r"^claude-code in-host: probe a/a\.json ✓ · E1 40/41 \(A27a known\) · read by your browser \d\d:\d\d$")
+        self.assertTrue('VERSION = "0.11.1"' in self.page(), "the page carries no VERSION")
+        st = json.loads(read(os.path.join(self.home, "state.json")))
+        self.assertEqual(st["last_read"], "2026-10-29T06:52:00.000Z")
+
+    def test_row_not_named_known_fails(self):
+        rc, out = self.run_tool(verdict())
+        self.assertEqual(rc, 1, out)
+        self.assertIn("E1 40/41 (A27a ✗)", out)
+        self.assertTrue("KNOWN = []" in self.page(), "the page is told no row is known")
+
+    def test_page_is_told_the_known_rows(self):
+        self.run_tool(verdict(), extra=("--known", "A27a", "--known", "A27a"))
+        self.assertTrue('KNOWN = ["A27a"]' in self.page(), "the page is not told A27a is known")
+
+    def test_new_row_fails(self):
+        rc, out = self.run_tool(verdict(fixture={"pass": 39, "fail": 2, "failed": ["A27a", "A1"]}), extra=("--known", "A27a"))
+        self.assertEqual(rc, 1, out)
+        self.assertIn("E1 39/41 (A27a known, A1 ✗)", out)
+
+    def test_a12_hidden_is_not_covered(self):
+        rc, out = self.run_tool(verdict(visibility=["visible", "hidden"],
+                                        fixture={"pass": 39, "fail": 2, "failed": ["A12", "A27a"]}), extra=("--known", "A27a"))
+        self.assertEqual(rc, 0, out)
+        self.assertIn("E1 39/41 (A27a known, A12 not covered (tab hidden))", out)
+
+    def test_a12_visible_fails(self):
+        for vis in (["visible", "visible"], None):
+            rc, out = self.run_tool(verdict(visibility=vis, fixture={"pass": 39, "fail": 2, "failed": ["A12", "A27a"]}),
+                                    extra=("--known", "A27a"))
+            self.assertEqual(rc, 1, out)
+            self.assertIn("E1 39/41 (A27a known, A12 ✗)", out)
+
+    def test_probe_cross_fails(self):
+        rc, out = self.run_tool(verdict(probe={"ok": False, "header": "diff --git a/probe/x/a.json b/probe/x/old/a.json"}),
+                                extra=("--known", "A27a"))
+        self.assertEqual(rc, 1, out)
+        self.assertIn("probe ✗ diff --git a/probe/x/a.json", out)
+
+    def test_other_contributor_fails(self):
+        rc, out = self.run_tool(verdict(served="0.11.0"), extra=("--known", "A27a"))
+        self.assertEqual(rc, 1, out)
+        self.assertIn("contributor 0.11.0 ≠ 0.11.1 ✗", out)
+
+    def test_page_error_fails(self):
+        rc, out = self.run_tool({"state": "error", "error": "unavailable · mock"})
+        self.assertEqual(rc, 1, out)
+        self.assertIn("✗ the page failed: unavailable · mock", out)
+
+    def test_running_without_verdict_fails(self):
+        rc, out = self.run_tool({"state": "running", "startedAt": "2026-10-29T06:50:00Z"})
+        self.assertEqual(rc, 1, out)
+        self.assertIn("wrote no verdict in 4 s", out)
+
+    def test_tab_closed_is_not_covered(self):
+        rc, out = self.run_tool()
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(out, "claude-code in-host: not covered — no verdict from the probe page in 2 s (last read: never; "
+                              "started 2026-10-29T07:00:00Z); the tab is closed or its page cannot answer "
+                              f"(reopen and pin it; the link: {self.home}/state.json)")
+
+    def test_one_read_blip_is_not_a_failure(self):
+        rc, out = self.run_tool(env={"FAKE_SYNS_BLIP": os.path.join(self.t, "blipped")})
+        self.assertEqual(rc, 0, out)
+        self.assertIn("not covered — no verdict from the probe page", out)
+
+    def test_no_line_carries_the_link(self):
+        for v in (None, {"state": "running", "startedAt": "x"}):
+            rc, out = self.run_tool(v)
+            self.assertNotIn("host.invalid", out)
+
+    def test_unreadable_repository_fails(self):
+        rc, out = self.run_tool(env={"FAKE_SYNS_DOWN": "1"})
+        self.assertEqual(rc, 1, out)
+        self.assertIn("✗ cannot read o/probe: error: could not reach the server", out)
+
+    def test_no_state_is_not_covered(self):
+        rc, out = self.run_tool(state=False)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("not covered — no probe session on this machine", out)
+
+    def test_root_gone_fails(self):
+        shutil.rmtree(self.root)
+        rc, out = self.run_tool(verdict())
+        self.assertEqual(rc, 1, out)
+        self.assertIn("page root", out)
+
+    def test_drop_scope_variant_marks_the_page(self):
+        self.run_tool(extra=("--probe-variant", "drop-scope"))
+        self.assertTrue('VARIANT = "drop-scope"' in self.page(), "the page carries no VARIANT")
+        self.assertTrue(re.search(r'var MARKER = "0\.11\.1-\d{8}T\d{6}Z-drop-scope"', self.page()), "no marker")
+
+
+class Compose(unittest.TestCase):
+    def setUp(self):
+        self.m = runpy.run_path(TOOL, run_name="test")
+
+    def test_release_page(self):
+        html = self.m["compose"]("0.11.1", "0.11.1-x", None, None)
+        self.assertIn("window.__inhostSuites = { main: main", html)
+        self.assertNotIn("  main();\n})();", html)
+        self.assertIn('<div id="inhost">', html)
+        self.assertEqual(html.count("<script>"), 2)
+        self.assertLess(html.index("window.__inhostSuites"), html.index("var MARKER"))
+
+    def test_waiting_page_runs_nothing(self):
+        html = self.m["compose"](None, None, None, None)
+        self.assertIn("var MARKER = null", html)
+        self.assertIn("waiting for the next release", html)
+
+    def test_fixture_tail_missing_is_named(self):
+        fixture = os.path.join(tempfile.mkdtemp(prefix="test-cc-inhost-"), "fixture.html")
+        try:
+            with open(fixture, "w") as f:
+                f.write("<html><body>var EXPECTED_METHODS = null; // EXPECTED-METHODS</body></html>")
+            with self.assertRaisesRegex(RuntimeError, "fixture.html lacks"):
+                self.m["compose"].__globals__["FIXTURE"] = fixture
+                self.m["compose"]("0.11.1", "m", None, None)
+        finally:
+            shutil.rmtree(os.path.dirname(fixture), ignore_errors=True)
+
+# the page's reporter, run in node against one shared stand-in repository: the claim, two tabs, a stale claim, a reload
+HARNESS = r"""
+const fs = require("fs"), vm = require("vm");
+const html = fs.readFileSync(process.argv[2], "utf8"), scenario = process.argv[3];
+const reporter = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1])[1];
+const PATH = "verdicts/" + html.match(/var MARKER = "([^"]+)"/)[1] + ".json";
+const STALE = Number(html.match(/STALE_MS = (\d+)/)[1]);
+const tick = () => new Promise((r) => setImmediate(r));
+const err = (code, reason) => Object.assign(new Error(code), { code, reason });
+function world() {       // one stand-in repository: every version's files kept, a commit only on the head
+  let n = 0; const sha = () => (++n).toString(16).padStart(40, "0");
+  const w = { head: sha(), versions: {}, history: [] };
+  w.versions[w.head] = {};
+  w.files = () => w.versions[w.head];
+  w.set = (path, text) => { w.versions[w.head] = Object.assign({}, w.files(), { [path]: text }); };
+  w.invoke = async (m, p) => {
+    await tick();
+    switch (m) {
+      case "syns.repo": return { owner: "o", name: "probe", version: w.head };
+      case "syns.readMany": { const at = w.versions[p.version || w.head];
+        return { files: p.paths.map((x) => (x in at ? { path: x, text: at[x] } : { path: x, error: "not_found" })) }; }
+      case "syns.commit": {
+        if (p.base !== w.head) throw err("conflict", "stale_head");
+        const next = Object.assign({}, w.files());
+        p.files.forEach((f) => { next[f.path] = f.text; if (f.path === PATH) w.history.push(JSON.parse(f.text).state); });
+        w.head = sha(); w.versions[w.head] = next; return { version: w.head, number: n, changed: p.files.length }; }
+      case "syns.rm": return { version: w.head, number: n, changed: 0 };
+      case "syns.move": { if (p.base !== w.head) throw err("conflict", "stale_head");
+        const next = Object.assign({}, w.files()); w.head = sha(); w.versions[w.head] = next; return { version: w.head }; }
+      case "syns.diff": { const sc = p.scope ? "" : "probe/x/";
+        return { files: [{ path: sc + "old/a.json", oldPath: sc + "a.json", status: "renamed", patch: "diff --git a/" + sc + "a.json b/" + sc + "old/a.json\n" }] }; }
+      case "context.get": return { session: { id: "s" }, capabilities: [{ method: "syns.repo", contributor: { id: "syns", version: "0.11.1" } }] };
+    }
+    throw err("unavailable", m);
+  };
+  return w;
+}
+function tab(w, opt) {
+  opt = opt || {}; const failed = opt.failed || ["A27a"];
+  const els = { inhost: { textContent: "", className: "" }, verdict: { textContent: "" } }, timers = [];
+  const pills = failed.map((r) => { const got = { textContent: "got " + r };   // the failing rows, as fixture.html's row() makes them
+    return { dataset: { row: r }, textContent: "FAIL", style: {}, got, parentNode: { querySelector: () => got } }; });
+  els.pill = pills[0]; els.got = pills[0].got; els.pills = pills;
+  const main = async () => { for (let i = 0; i < 10; i++) await tick();
+    if (opt.blink && els.onvis) { ctx.document.visibilityState = "hidden"; els.onvis(); ctx.document.visibilityState = "visible"; els.onvis(); }
+    for (let i = 0; i < 10; i++) await tick();
+    els.verdict.textContent = "main: " + (41 - failed.length) + " pass, " + failed.length + " fail\nFIXTURE-RESULT " +
+      JSON.stringify({ suite: "main", pass: 41 - failed.length, fail: failed.length, failed: failed }); };
+  const ctx = { window: { threadPage: { invoke: w.invoke }, __inhostSuites: { main } }, document: { getElementById: (id) => els[id],
+                querySelectorAll: (sel) => (sel === ".pill.fail[data-row]" && els.verdict.textContent ? pills : []),
+                visibilityState: opt.hidden ? "hidden" : "visible",
+                addEventListener: (ev, f) => { if (ev === "visibilitychange") els.onvis = f; }, removeEventListener: () => {} },
+                navigator: { userAgent: "node" }, setTimeout: (f, ms) => timers.push({ f, ms }), console, Math };
+  vm.createContext(ctx); vm.runInContext(reporter, ctx);
+  return { els, timers };
+}
+const settle = async () => { for (let i = 0; i < 400; i++) await tick(); };
+const claim = (ago) => JSON.stringify({ state: "running", tab: "other", startedAt: new Date(Date.now() - ago).toISOString() });
+const view = (t) => ({ text: t.els.inhost.textContent, cls: t.els.inhost.className, timers: t.timers.length,
+  pill: t.els.pill.textContent, got: t.els.got.textContent, pills: t.els.pills.map((p) => p.textContent + " " + p.got.textContent) });
+(async () => {
+  const out = {}; let w = world();
+  if (scenario === "two") {
+    const a = tab(w), b = tab(w); await settle(); out.tabs = [a, b].map(view);
+  } else if (scenario === "sweep") {          // tab B starts 0..60 ticks after tab A: one run, whatever the offset
+    out.histories = [];
+    for (let k = 0; k <= 60; k++) {
+      w = world(); tab(w); for (let i = 0; i < k; i++) await tick(); tab(w); await settle();
+      out.histories.push(w.history.join(","));
+    }
+  } else if (scenario === "readback-fails") {   // the read after the claim fails once: the tab still runs
+    let commits = 0; const inner = w.invoke;
+    w.invoke = async (m, p) => { if (m === "syns.commit") commits++;
+      if (m === "syns.readMany" && commits === 1 && !p.version && !w.failed) { w.failed = true; await tick(); throw err("unavailable", "blip"); }
+      return inner(m, p); };
+    const a = tab(w); await settle(); out.tabs = [view(a)];
+  } else if (scenario === "rm-missing") {      // the first run: nothing to remove, and syns.rm answers not_found
+    const inner = w.invoke;
+    w.invoke = async (m, p) => { if (m === "syns.rm") { await tick(); throw err("not_found", "missing"); } return inner(m, p); };
+    const a = tab(w); await settle(); out.tabs = [view(a)]; out.verdict = JSON.parse(w.files()[PATH]);
+  } else if (scenario === "hidden" || scenario === "visible-a12" || scenario === "blink") {   // A12 fails: in a hidden tab,
+    // a visible one, and one hidden for a moment mid-run (both samples visible)
+    const a = tab(w, { hidden: scenario === "hidden", blink: scenario === "blink", failed: ["A12", "A27a"] }); await settle();
+    out.tabs = [view(a)]; out.verdict = JSON.parse(w.files()[PATH]);
+  } else if (scenario === "stale") {
+    w.set(PATH, claim(STALE + 1000)); const a = tab(w); await settle(); out.tabs = [view(a)];
+  } else if (scenario === "recent") {
+    w.set(PATH, claim(0)); const a = tab(w); await settle();
+    out.before = { text: a.els.inhost.textContent, timers: a.timers.length, ms: a.timers[0] && a.timers[0].ms };
+    w.set(PATH, claim(STALE + 1000)); a.timers[0].f(); await settle(); out.tabs = [view(a)];
+  } else if (scenario === "done") {
+    w.set(PATH, JSON.stringify({ state: "done", version: "0.11.1", served: "0.11.1", at: "t", probe: { ok: true },
+      fixture: { pass: 40, fail: 1, failed: ["A27a"] } }));
+    const a = tab(w); await settle(); out.tabs = [view(a)];
+  }
+  out.history = w.history;
+  process.stdout.write(JSON.stringify(out));
+})();
+"""
+
+
+@unittest.skipUnless(shutil.which("node"), "node is not on PATH")
+class Reporter(unittest.TestCase):
+    def setUp(self):
+        self.t = tempfile.mkdtemp(prefix="test-cc-inhost-")
+        m = runpy.run_path(TOOL, run_name="test")
+        with open(os.path.join(self.t, "page.html"), "w") as f:
+            f.write(m["compose"]("0.11.1", "0.11.1-x", None, None, ["A27a"], 60000))
+        with open(os.path.join(self.t, "harness.js"), "w") as f:
+            f.write(HARNESS)
+
+    def tearDown(self):
+        shutil.rmtree(self.t, ignore_errors=True)
+
+    def scenario(self, name):
+        p = subprocess.run(["node", os.path.join(self.t, "harness.js"), os.path.join(self.t, "page.html"), name],
+                           capture_output=True, text=True, timeout=60)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        return json.loads(p.stdout)
+
+    def test_two_tabs_one_run_no_error(self):
+        out = self.scenario("two")
+        self.assertEqual(out["history"], ["running", "done"])
+        texts = [t["text"] for t in out["tabs"]]
+        self.assertEqual(sum("another tab is running this probe" in t for t in texts), 1, texts)
+        self.assertEqual(sum("probe a/a.json ✓ · E1 40/41 (failed A27a (known))" in t for t in texts), 1, texts)
+        self.assertEqual(sorted(t["timers"] for t in out["tabs"]), [0, 1], "the tab that stood down looks again")
+
+    def test_two_tabs_at_any_offset_one_run(self):
+        out = self.scenario("sweep")
+        self.assertEqual(set(out["histories"]), {"running,done"}, out["histories"])
+
+    def test_failed_read_back_still_runs(self):
+        out = self.scenario("readback-fails")
+        self.assertEqual(out["history"], ["running", "done"])
+
+    def test_known_row_shows_green(self):
+        out = self.scenario("two")
+        self.assertIn("pass", [t["cls"] for t in out["tabs"]])
+
+    def test_known_row_is_marked_known(self):
+        tabs = self.scenario("two")["tabs"]
+        ran = [t for t in tabs if "probe a/a.json" in t["text"]][0]
+        self.assertEqual(ran["pill"], "KNOWN")
+        self.assertIn("(known: an open item names it;", ran["got"])
+
+    def test_missing_path_at_reseed_is_absent_not_a_fault(self):
+        out = self.scenario("rm-missing")
+        self.assertEqual(out["verdict"]["state"], "done")
+        self.assertEqual(out["verdict"]["cleanup"], ["fixture absent", "probe absent"])
+
+    def test_a12_in_a_hidden_tab_is_not_covered_and_green(self):
+        out = self.scenario("hidden")
+        self.assertEqual(out["verdict"]["visibility"], ["hidden", "hidden"])
+        self.assertEqual(out["tabs"][0]["cls"], "pass", out["tabs"][0]["text"])
+        self.assertIn("A12 (not covered: tab hidden)", out["tabs"][0]["text"])
+        self.assertTrue(out["tabs"][0]["pills"][0].startswith("HIDDEN got A12 (not covered: Unife's watch"), out["tabs"][0]["pills"])
+        self.assertTrue(out["tabs"][0]["pills"][1].startswith("KNOWN"), out["tabs"][0]["pills"])
+
+    def test_a12_in_a_tab_hidden_mid_run_is_not_covered(self):
+        out = self.scenario("blink")
+        self.assertEqual(out["verdict"]["visibility"], ["visible", "hidden", "visible", "visible"])
+        self.assertEqual(out["tabs"][0]["cls"], "pass", out["tabs"][0]["text"])
+
+    def test_a12_in_a_visible_tab_is_red(self):
+        out = self.scenario("visible-a12")
+        self.assertEqual(out["tabs"][0]["cls"], "fail")
+        self.assertEqual(out["tabs"][0]["pills"][0], "FAIL got A12")
+
+    def test_stale_claim_is_taken_over(self):
+        out = self.scenario("stale")
+        self.assertEqual(out["history"], ["running", "done"])
+        self.assertEqual(out["tabs"][0]["cls"], "pass")
+
+    def test_recent_claim_stands_down_then_takes_over(self):
+        out = self.scenario("recent")
+        self.assertIn("another tab is running", out["before"]["text"])
+        self.assertGreater(out["before"]["ms"], 59000)
+        self.assertEqual(out["history"], ["running", "done"])
+
+    def test_reload_after_done_runs_nothing(self):
+        out = self.scenario("done")
+        self.assertEqual(out["history"], [])
+        self.assertEqual(out["tabs"][0]["cls"], "pass")
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2 if "-v" in sys.argv else 1, argv=[sys.argv[0]], warnings="ignore")

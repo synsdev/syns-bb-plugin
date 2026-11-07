@@ -1,0 +1,507 @@
+#!/usr/bin/env python3
+"""claude-code-inhost — what a page in the owner's own Claude Code actually sees, read by the owner's own browser.
+
+Why: no agent can read a page in the owner's Claude Code. The unife-pages hook keeps sign-in the person's ("sign-in
+is the person's; the agent never holds the reader's credential"), so `claude-code-check` covers Claude Code only by
+its bundle bytes. This route keeps the hook as it is: the reader is the owner's browser, already signed in, in one tab
+opened once and kept pinned. No agent or script here signs in, mints a link, or touches the daemon's private folder or
+control socket: it writes only a probe session's page root, which the hook leaves to agents, and reads the probe
+repository through `syns`.
+
+What it does:
+  start    once per machine: a private Syns repository meant to stay (`syns-pages-cc-inhost-probe`, made here, not by
+           `verify/scratch.py`, whose repositories are throwaway), checked out in --home; one plain `claude -p` there
+           in this machine's Claude Code config, with no BB_* variable (under bb, init answers SKIP), that runs only
+           `unife-pages init` and ends; the session's id, page root and link kept in --home/state.json; and a waiting
+           page written to the root. Prints the link the owner opens once and pins. Run again, it reuses what stands.
+  (default) at every release, after `claude-code-check`: writes a new revision of the probe page into that root, with
+           the release's version and a fresh marker; the owner's open tab takes it and the page, by itself:
+             1. claims the run: writes `verdicts/<marker>.json` as `running`. A second tab that sees a claim, or whose
+                claim is refused as stale_head, stands down and looks again once the claim is 4 min old (a reload
+                mid-run leaves one nobody finishes);
+             2. removes the last run's `fixture/` and `probe/` (the re-seed);
+             3. runs `verify/fixture.html`'s main rows (E1), the code's methods filled in as `verify/run` does;
+             4. runs the scoped-diff probe: in a new folder `probe/<stamp>/` it moves `a.json` to `old/a.json` under
+                that scope, and the scoped `syns.diff { patch: true }` must read `diff --git a/a.json b/old/a.json`;
+             5. writes the verdict, with the syns contributor's version as the page saw it.
+           The step waits (bounded) for that file and prints one line:
+             claude-code in-host: probe a/a.json ✓ · E1 40/41 (A27a known) · read by your browser 06:52
+           With no verdict, `not covered — no verdict from the probe page in 240 s (last read: …); the tab is closed or
+           its page cannot answer (reopen and pin it; the link: <home>/state.json)`, exit 0: the release is not held;
+           whoever runs the release asks the owner to reopen the tab, never with the link itself.
+  status   the state, the link and the last verdict read.
+
+A failing E1 row named with --known (a row an open item already names) does not fail the step, and the page shows it
+as known; nor does A12 when the page ran in a hidden tab (HIDDEN_PAUSED below), which the line names as not covered;
+any other failing row, a probe ✗, a page error, a contributor version other than --version, a claim with no verdict in
+--wait, or a repository `syns cat` cannot read does.
+
+When it pays: after every release of the plugin, right after `claude-code-check`.
+When it does not: on a machine where nobody keeps the probe tab open (it says so and passes); to check another
+version than the installed one (the page sees what the daemon's contributor runs).
+
+How to run (python3, standard library; calls `syns`, and for `start` `claude`), from a clone of synsdev/syns-bb-plugin:
+  python3 verify/claude-code-inhost start [--home DIR] [--model M]
+  python3 verify/claude-code-inhost --version 0.11.1 [--code .] [--home DIR] [--wait-start 240] [--wait 900] [--json]
+                                    [--known A27a]...             # a failing row an open item already names
+                                    [--probe-variant drop-scope]   # the check that a ✗ is seen
+  python3 verify/claude-code-inhost status [--home DIR] [--json]
+  --home  default ~/.syns-agents/claude-code-inhost (or SYNS_CC_INHOST_HOME)
+Exit codes: 0 covered and passing, or not covered (said) · 1 a failure not named with --known, or a step failed
+(named) · 5 usage error.
+"""
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+from datetime import datetime, timezone
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+FIXTURE = os.path.join(HERE, "fixture.html")
+REPO_NAME = "syns-pages-cc-inhost-probe"
+EXIT_PASS, EXIT_FAIL, EXIT_USAGE = 0, 1, 5
+# E1 rows a hidden tab cannot answer: not covered, said, when the page ran hidden (a pinned tab mostly is).
+# Unife's watch stops polling while the document is hidden, by design (unife-pages 0.5.4 bin/daemon.js line 15514)
+HIDDEN_PAUSED = {"A12": "Unife's watch does not poll in a hidden tab"}
+# a claim older than this is taken over by the next tab that looks (a run takes one to two minutes; the step waits 15)
+STALE_MS = 4 * 60 * 1000
+HOME = "~/.syns-agents/claude-code-inhost"
+METHODS_MARK = "var EXPECTED_METHODS = null; // EXPECTED-METHODS"
+RUN_ON_LOAD = "  main();\n})();\n</script>"
+SUITES = "  window.__inhostSuites = { main: main, pictures: pictures, dirty: dirty };\n})();\n</script>"
+INIT_PROMPT = ("Run exactly one Bash command, `node {cli} init`, and reply with its output verbatim. Write no page, "
+               "edit no file, and run nothing else: this session exists only so its page can be written from outside.")
+
+
+def sh(cmd, cwd=None, env=None, timeout=120, stdin=None):
+    try:
+        p = subprocess.run(cmd, cwd=cwd, env=env, capture_output=True, text=True, timeout=timeout, input=stdin)
+    except subprocess.TimeoutExpired:
+        return 124, "", f"timed out after {timeout} s"
+    except OSError as e:
+        return 127, "", str(e)
+    return p.returncode, p.stdout, p.stderr
+
+
+def utc(fmt="%Y-%m-%dT%H:%M:%SZ"):
+    return datetime.now(timezone.utc).strftime(fmt)
+
+
+def local_hm(iso):
+    try:
+        return datetime.strptime(iso[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc).astimezone().strftime("%H:%M")
+    except (TypeError, ValueError):
+        return iso or "?"
+
+
+def home_arg(a):
+    return a.home or os.environ.get("SYNS_CC_INHOST_HOME") or HOME
+
+
+def home_dir(a):
+    return os.path.expanduser(home_arg(a))
+
+
+def link(a):
+    """Where the probe page's link is: the link itself is never printed, so no release record or question carries
+    it (it reaches the owner only through the owner's own agent); the hook also refuses any command that names it."""
+    return f"the link: {home_arg(a).rstrip('/')}/state.json"
+
+
+def load_state(home):
+    try:
+        return json.load(open(os.path.join(home, "state.json")))
+    except (OSError, ValueError):
+        return None
+
+
+def save_state(home, state):
+    tmp = os.path.join(home, "state.json.tmp")
+    with open(tmp, "w") as f:
+        json.dump(state, f, indent=1)
+        f.write("\n")
+    os.replace(tmp, os.path.join(home, "state.json"))
+
+
+# ---- the page ------------------------------------------------------------------------------------------------------
+def code_methods(code):
+    """The method names the code registers, as `verify/run` reads them (its code_methods, imported so the two agree)."""
+    import runpy
+    return runpy.run_path(os.path.join(HERE, "run"), run_name="verify_run")["code_methods"](code)
+
+
+REPORTER = r"""<style>
+  #inhost { font:600 .95rem ui-monospace,monospace; padding:12px 14px; border-radius:8px; background:var(--wait); margin:0 0 6px; white-space:pre-wrap; }
+  #inhost.pass { background:var(--okbg); color:var(--ok); } #inhost.fail { background:var(--badbg); color:var(--bad); }
+</style>
+<script>
+(function () {
+  var MARKER = %MARKER%, VERSION = %VERSION%, VARIANT = %VARIANT%, KNOWN = %KNOWN%, STALE_MS = %STALE_MS%;
+  var PAUSED = %PAUSED%;
+  var PATH = MARKER ? "verdicts/" + MARKER + ".json" : null;
+  var tp = window.threadPage, box = document.getElementById("inhost");
+  function say(text, cls) { box.textContent = text; box.className = cls || ""; }
+  function msg(e) { return [e && e.code, e && e.reason, e && e.detail && JSON.stringify(e.detail), e && e.message].filter(Boolean).join(" · ") || String(e); }
+  function conflict(e) { return !!e && e.code === "conflict"; }
+  function inv(m, p) { return tp.invoke(m, p); }
+  async function head() { return (await inv("syns.repo", {})).version; }
+  var TAB = Math.random().toString(36).slice(2, 10);
+  async function seen(version) {
+    var r = await inv("syns.readMany", version ? { paths: [PATH], version: version } : { paths: [PATH] }), f = r.files[0];
+    try { return typeof f.text === "string" ? JSON.parse(f.text) : null; } catch (e) { return null; }
+  }
+  async function put(obj, tries, base) {
+    for (var i = 1; ; i++) {
+      try {
+        return await inv("syns.commit", { base: base || await head(), message: "in-host probe " + MARKER + ": " + obj.state,
+          files: [{ path: PATH, text: JSON.stringify(obj, null, 1) + "\n" }] });
+      } catch (e) { if (!conflict(e) || i >= tries) throw e; }
+    }
+  }
+  // green only as the release step judges: the probe passes, every failing row is one an open item names, the
+  // contributor is the release's (one rule for a fresh run and for a reload)
+  function hiddenRow(v, r) { return r in PAUSED && (v.visibility || []).indexOf("hidden") >= 0; }
+  function good(v) {
+    var f = v.fixture || {};
+    return v.state === "done" && !!(v.probe && v.probe.ok) && v.served === VERSION &&
+      (f.failed || []).every(function (r) { return KNOWN.indexOf(r) >= 0 || hiddenRow(v, r); });
+  }
+  function line(v) {
+    if (v.state === "error") return "error: " + v.error;
+    var f = v.fixture || {}, p = v.probe || {};
+    return "probe " + (p.ok ? "a/a.json ✓" : "✗ " + (p.header || p.error || "no patch header")) + " · E1 " + f.pass + "/" + (f.pass + f.fail) +
+      (f.failed && f.failed.length ? " (failed " + f.failed.map(function (r) { return KNOWN.indexOf(r) >= 0 ? r + " (known)" : hiddenRow(v, r) ? r + " (not covered: tab hidden)" : r; }).join(" ") + ")" : "") + " · syns " + v.served;
+  }
+  function show(v) { say("syns-pages " + VERSION + " in this Claude Code (read " + v.at + "):\n" + line(v), good(v) ? "pass" : "fail"); }
+  // another tab holds a recent claim: stand down, and look again once that claim would be stale (a reload or a
+  // discarded tab mid-run leaves a claim nobody finishes)
+  function later(v) {
+    var wait = Math.max(5000, Date.parse(v.startedAt) + STALE_MS - Date.now() + 5000);
+    say("syns-pages " + VERSION + ": another tab is running this probe (since " + v.startedAt + "); this one looks again in " + Math.round(wait / 1000) + " s.");
+    setTimeout(run, wait);
+  }
+  // a failing row an open item names is shown as known, so the tab reads as the step judges
+  function markKnown(hidden) {
+    document.querySelectorAll(".pill.fail[data-row]").forEach(function (pill) {
+      var r = pill.dataset.row, known = KNOWN.indexOf(r) >= 0, why = hidden && PAUSED[r];
+      if (!known && !why) return;
+      pill.textContent = known ? "KNOWN" : "HIDDEN"; pill.style.background = "var(--wait)"; pill.style.color = "inherit";
+      var got = pill.parentNode.querySelector(".got");
+      if (got) got.textContent += known ? " (known: an open item names it; not this route's finding)"
+                                        : " (not covered: " + why + ")";
+    });
+  }
+  async function probe() {
+    var dir = "probe/" + Date.now().toString(36), out = { variant: VARIANT || "scoped", scope: dir };
+    try {
+      var seed = await inv("syns.commit", { base: await head(), message: "in-host probe seed " + MARKER,
+        files: [{ path: dir + "/a.json", text: "{\"a\": 1}\n" }, { path: dir + "/inner.md", text: "# inner\n" }] });
+      await inv("syns.move", { from: "a.json", to: "old/a.json", base: seed.version, scope: dir });
+      var params = { from: seed.version, patch: true };
+      if (VARIANT !== "drop-scope") params.scope = dir;
+      var d = await inv("syns.diff", params);
+      var patch = d.files.map(function (f) { return f.patch || ""; }).join("\n");
+      out.header = (patch.match(/^diff --git .*$/m) || [""])[0];
+      out.paths = d.files.map(function (f) { return f.path + (f.oldPath ? " <- " + f.oldPath : ""); });
+      out.ok = out.header === "diff --git a/a.json b/old/a.json";
+    } catch (e) { out.ok = false; out.error = msg(e); }
+    return out;
+  }
+  async function run() {
+    if (!MARKER) { say("Claude Code in-host probe of syns-pages: waiting for the next release.\nKeep this tab open (pinned); nothing to do here."); return; }
+    if (!tp || !tp.invoke) { say("window.threadPage.invoke is not available: no probe", "fail"); return; }
+    var startedAt = new Date().toISOString(), v;
+    try {
+      // the claim, on the head the marker was read at: a claim another tab made since is a stale_head, and one made
+      // before is read here. Refused, it stands down and never writes an error verdict
+      var base = await head();
+      v = await seen(base);
+      if (v && v.state !== "running") return show(v);
+      if (v && Date.now() - Date.parse(v.startedAt) < STALE_MS) return later(v);
+      try { await put({ state: "running", marker: MARKER, version: VERSION, startedAt: startedAt, tab: TAB }, 1, base); }
+      catch (e) {
+        if (!conflict(e)) throw e;
+        v = await seen();
+        if (v && v.state !== "running") return show(v);
+        if (v) return later(v);
+        throw e;
+      }
+      // and the claim read back is this tab's: narrows a server that took two commits on one parent to the window
+      // between them; a read-back that fails counts as this tab's, so the claim it made is never left unrun
+      try { v = await seen(); } catch (e) { v = null; }
+      if (v && v.tab !== TAB) return v.state !== "running" ? show(v) : later(v);
+    } catch (e) { say("could not claim the probe: " + msg(e), "fail"); return; }
+    say("syns-pages " + VERSION + ": running the probe and E1…");
+    // every visibility the tab had during the run: Unife's watch, which A12 waits on, does not poll while the tab
+    // is hidden
+    var shown = [document.visibilityState];
+    function seenAs() { shown.push(document.visibilityState); }
+    if (document.addEventListener) document.addEventListener("visibilitychange", seenAs);
+    try {
+      var cleanup = [];
+      for (var path of ["fixture", "probe"]) {
+        try { var rm = await inv("syns.rm", { path: path, base: await head(), message: "in-host probe re-seed " + MARKER }); cleanup.push(path + " " + rm.changed); }
+        // nothing to remove (the first run, or a run that stopped early): not a fault of the re-seed
+        catch (e) { cleanup.push(path + (e && e.code === "not_found" ? " absent" : " ✗ " + msg(e))); }
+      }
+      var ctx = await inv("context.get", {});
+      var syns = ctx.capabilities.filter(function (c) { return c.method.indexOf("syns.") === 0; });
+      var repo = await inv("syns.repo", {});
+      await window.__inhostSuites.main();
+      var text = document.getElementById("verdict").textContent, m = text.match(/FIXTURE-RESULT (\{.*\})/);
+      var fixture = m ? JSON.parse(m[1]) : { pass: 0, fail: 1, failed: ["no FIXTURE-RESULT"] };
+      var p = await probe();
+      seenAs();
+      if (document.removeEventListener) document.removeEventListener("visibilitychange", seenAs);
+      markKnown(shown.indexOf("hidden") >= 0);
+      v = { state: "done", marker: MARKER, version: VERSION, tab: TAB, served: syns[0] && syns[0].contributor ? syns[0].contributor.version : "none",
+        methods: syns.length, repo: repo.owner + "/" + repo.name, session: ctx.session && ctx.session.id, cleanup: cleanup, visibility: shown,
+        fixture: fixture, probe: p, startedAt: startedAt, at: new Date().toISOString(), agent: navigator.userAgent };
+    } catch (e) {
+      v = { state: "error", marker: MARKER, version: VERSION, error: msg(e), startedAt: startedAt, at: new Date().toISOString() };
+    }
+    try { await put(v, 3); } catch (e) { say("could not write the verdict: " + msg(e) + "\n" + line(v), "fail"); return; }
+    show(v);
+  }
+  run();
+})();
+</script>
+"""
+
+BANNER = ('<main style="padding-bottom:0"><h1>Claude Code in-host probe · syns-pages</h1><p class="soft">This tab is the '
+          'reader of a release check: keep it open and pinned. At each release a new revision of this page '
+          'arrives here by itself, runs the scoped-diff probe and the fixture\'s main rows, and writes its verdict to '
+          'the probe repository. It writes only to that repository.</p><div id="inhost">…</div></main>')
+
+
+def compose(version, marker, variant, code, known=(), stale_ms=STALE_MS):
+    """The probe page: the fixture with its methods filled in and its run-on-load turned into a call the reporter
+    makes, then the reporter. version None: the waiting page (no suite runs). `known`: the failing rows an open item
+    already names."""
+    with open(FIXTURE, encoding="utf-8") as f:
+        data = f.read()
+    for mark in (METHODS_MARK, RUN_ON_LOAD):
+        if mark not in data:
+            raise RuntimeError(f"fixture.html lacks {mark.strip().splitlines()[0]!r}: compose cannot place the reporter")
+    if code:
+        data = data.replace(METHODS_MARK, "var EXPECTED_METHODS = " + json.dumps(code_methods(code)) + "; // EXPECTED-METHODS")
+    data = data.replace(RUN_ON_LOAD, SUITES)
+    data = data.replace("<body>\n", "<body>\n" + BANNER + "\n", 1)
+    rep = (REPORTER.replace("%MARKER%", json.dumps(marker)).replace("%VERSION%", json.dumps(version))
+           .replace("%VARIANT%", json.dumps(variant)).replace("%KNOWN%", json.dumps(sorted(set(known))))
+           .replace("%PAUSED%", json.dumps(HIDDEN_PAUSED, sort_keys=True))
+           .replace("%STALE_MS%", str(int(stale_ms))))
+    return data.replace("</body>", rep + "</body>", 1)
+
+
+def write_page(root, html):
+    if not os.path.isdir(root):
+        raise RuntimeError(f"the probe session's page root {root} is gone (session forgotten?): run `start` again")
+    tmp = os.path.join(root, ".index.html.tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(html)
+    os.replace(tmp, os.path.join(root, "index.html"))
+
+
+# ---- start ---------------------------------------------------------------------------------------------------------
+def claude_config():
+    return os.path.expanduser(os.environ.get("CLAUDE_CONFIG_DIR") or "~/.claude")
+
+
+def unife_cli():
+    p = os.path.join(claude_config(), "plugins", "installed_plugins.json")
+    entries = json.load(open(p)).get("plugins", {}).get("unife-pages@syns") or []
+    pick = [e for e in entries if e.get("scope") == "user"] or entries
+    if not pick:
+        raise RuntimeError(f"unife-pages@syns is not installed in {p}")
+    return os.path.join(pick[0]["installPath"], "bin", "unife-pages.js")
+
+
+def plain_env():
+    """This machine's environment without bb's or a calling Claude Code session's variables: under bb, init answers
+    SKIP and the session is no page of its own."""
+    drop = ("BB_", "CLAUDE_CODE_", "CLAUDE_AGENT_")
+    return {k: v for k, v in os.environ.items() if not k.startswith(drop) and k not in ("CLAUDECODE", "CLAUDE_PID", "CLAUDE_EFFORT")}
+
+
+def ensure_repo(home):
+    folder = os.path.join(home, "repo")
+    if os.path.exists(os.path.join(folder, ".syns.yaml")):
+        return folder
+    os.makedirs(folder, exist_ok=True)
+    open(os.path.join(folder, "README.md"), "w").write(
+        "# syns-pages Claude Code in-host probe\n\nThe repository the probe page in the owner's pinned Claude Code tab "
+        "works on (`verify/claude-code-inhost` in synsdev/syns-bb-plugin). Keep it: each release's verdict lands in "
+        "`verdicts/`; `fixture/` and `probe/` are re-made at every run.\n")
+    open(os.path.join(folder, ".synsignore"), "w").write(".DS_Store\n.claude/\n")
+    rc, out, err = sh(["syns", "push", "-n", REPO_NAME, "--visibility", "private", "-m", "The in-host probe repository",
+                       "--description", "syns-pages: the Claude Code in-host probe's repository; kept"], cwd=folder)
+    if rc:
+        raise RuntimeError(f"syns push -n {REPO_NAME} failed: {(err or out).strip()[:300]}")
+    return folder
+
+
+def repo_of(folder):
+    """owner/name from the folder's `.syns.yaml`."""
+    text = open(os.path.join(folder, ".syns.yaml")).read()
+    owner, name = (re.search(rf"^{k}:\s*(\S+)", text, re.M) for k in ("owner", "name"))
+    if not (owner and name):
+        raise RuntimeError(f"cannot read owner and name from {folder}/.syns.yaml")
+    return f"{owner.group(1)}/{name.group(1)}"
+
+
+def start(a):
+    home = home_dir(a)
+    os.makedirs(home, exist_ok=True)
+    state = load_state(home) or {}
+    if state.get("root") and os.path.isdir(state["root"]):
+        print(f"claude-code in-host: probe session {state['session']} stands; open and pin: {state['url']}")
+        return EXIT_PASS
+    folder = ensure_repo(home)
+    cli = unife_cli()
+    cmd = ["claude", "-p", "--output-format", "json", "--permission-mode", "default", "--model", a.model,
+           INIT_PROMPT.format(cli=cli)]
+    rc, out, err = sh(cmd, cwd=folder, env=plain_env(), timeout=600)
+    try:
+        res = json.loads(out)
+    except ValueError:
+        raise RuntimeError(f"claude -p gave no JSON (exit {rc}): {(err or out).strip()[-300:]}")
+    session, text = res.get("session_id"), res.get("result") or ""
+    url = re.search(r"^URL: (\S+)", text, re.M)
+    root = re.search(r"^Root: (.+?)\s*$", text, re.M)
+    if not (session and url and root):
+        raise RuntimeError(f"init's URL and Root not in the session's answer (session {session}): {text[:400]!r}")
+    root = root.group(1).rstrip("/")
+    if session not in root:
+        raise RuntimeError(f"the page root {root} is not session {session}'s")
+    state = {"session": session, "url": url.group(1), "root": root, "folder": folder, "repo": repo_of(folder),
+             "started_at": utc(), "cli": cli, "last_read": None, "last_version": None}
+    write_page(root, compose(None, None, None, None))
+    save_state(home, state)
+    print(f"claude-code in-host: probe session {session} in {state['repo']}; open and pin: {state['url']}")
+    return EXIT_PASS
+
+
+# ---- a release's read ----------------------------------------------------------------------------------------------
+def read_verdict(repo, marker):
+    """(verdict, None), (None, None) while the file is not there, or (None, why) when the repository cannot be read."""
+    rc, out, err = sh(["syns", "cat", f"verdicts/{marker}.json", "--repo", repo], timeout=60)
+    if rc:
+        why = (err or out).strip()
+        return None, (None if "file not found" in why else why[:200] or f"syns cat exit {rc}")
+    try:
+        return json.loads(out), None
+    except ValueError:
+        return None, None
+
+
+def judge(v, version, known=()):
+    """(ok, words) of a verdict the page wrote; `known`, the failing rows an open item already names."""
+    if v.get("state") == "error":
+        return False, f"✗ the page failed: {v.get('error')}"
+    f, p = v.get("fixture") or {}, v.get("probe") or {}
+    failed = f.get("failed") or []
+    known = [r for r in failed if r in known]
+    hidden = [r for r in failed if r in HIDDEN_PAUSED and r not in known and "hidden" in (v.get("visibility") or [])]
+    new = [r for r in failed if r not in known and r not in hidden]
+    probe = "probe a/a.json ✓" if p.get("ok") else f"probe ✗ {p.get('header') or p.get('error') or 'no patch header'}"
+    e1 = f"E1 {f.get('pass')}/{(f.get('pass') or 0) + (f.get('fail') or 0)}"
+    notes = [f"{r} known" for r in known] + [f"{r} not covered (tab hidden)" for r in hidden] + [f"{r} ✗" for r in new]
+    if notes:
+        e1 += " (" + ", ".join(notes) + ")"
+    served = v.get("served")
+    ver = "" if served == version else f" · contributor {served} ≠ {version} ✗"
+    words = f"{probe} · {e1}{ver} · read by your browser {local_hm(v.get('at'))}"
+    return bool(p.get("ok")) and not new and served == version, words
+
+
+def release(a):
+    home = home_dir(a)
+    state = load_state(home)
+    if not state:
+        return EXIT_PASS, {"covered": False}, ("claude-code in-host: not covered — no probe session on this machine (run "
+                                               "`verify/claude-code-inhost start` once)")
+    since = state.get("last_read") or f"never; started {state.get('started_at')}"
+    marker = f"{a.version}-{utc('%Y%m%dT%H%M%SZ')}" + (f"-{a.probe_variant}" if a.probe_variant else "")
+    write_page(state["root"], compose(a.version, marker, a.probe_variant, a.code, a.known))
+    t0, verdict, running, why, answered = time.time(), None, False, None, False
+    while True:
+        v, err = read_verdict(state["repo"], marker)
+        if err:
+            why = err
+        else:
+            answered = True
+        if v:
+            running = True
+            if v.get("state") in ("done", "error"):
+                verdict = v
+                break
+        waited = time.time() - t0
+        if (not running and waited >= a.wait_start) or waited >= a.wait:
+            break
+        time.sleep(a.poll)
+    info = {"marker": marker, "repo": state["repo"], "session": state["session"], "verdict": verdict}
+    if not verdict:
+        if why and not answered:      # one blip among answered polls is no failure
+            return EXIT_FAIL, dict(info, covered=False), f"claude-code in-host: ✗ cannot read {state['repo']}: {why}"
+        if running:
+            return EXIT_FAIL, dict(info, covered=False), (f"claude-code in-host: ✗ the probe page started {marker} but wrote no verdict in "
+                                                          f"{a.wait} s ({link(a)})")
+        words = (f"claude-code in-host: not covered — no verdict from the probe page in {a.wait_start} s (last read: {since}); "
+                 f"the tab is closed or its page cannot answer (reopen and pin it; {link(a)})")
+        return EXIT_PASS, dict(info, covered=False), words
+    ok, words = judge(verdict, a.version, a.known)
+    state["last_read"], state["last_version"] = verdict.get("at"), a.version
+    save_state(home, state)
+    return (EXIT_PASS if ok else EXIT_FAIL), dict(info, covered=True, ok=ok), f"claude-code in-host: {words}"
+
+
+def status(a):
+    home = home_dir(a)
+    state = load_state(home)
+    if a.json:
+        print(json.dumps(state, indent=1))
+    elif not state:
+        print(f"claude-code in-host: no probe session (state in {home})")
+    else:
+        print(f"claude-code in-host: session {state['session']} · {state['repo']} · last read {state.get('last_read') or 'never'}"
+              f" ({state.get('last_version') or '-'}) · open and pin: {state['url']}")
+    return EXIT_PASS
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description="Claude Code in-host probe of syns-pages, read by the owner's own tab")
+    ap.add_argument("command", nargs="?", choices=["start", "status"], help="start once; status; none: a release's read")
+    ap.add_argument("--version", help="the release's version, e.g. 0.11.1")
+    ap.add_argument("--code", help="the release's checkout of synsdev/syns-bb-plugin, for the methods E1 expects")
+    ap.add_argument("--home", help="the probe's state and repository folder (default ~/.syns-agents/claude-code-inhost)")
+    ap.add_argument("--model", default="claude-opus-5-5[1m]", help="the model of the one init session (start)")
+    ap.add_argument("--wait-start", type=int, default=240, help="seconds for the open tab to start the new revision")
+    ap.add_argument("--wait", type=int, default=900, help="seconds in all for its verdict")
+    ap.add_argument("--poll", type=int, default=10, help=argparse.SUPPRESS)
+    ap.add_argument("--known", action="append", default=[], metavar="ROW",
+                    help="a failing E1 row an open item already names: it does not fail the step (repeatable)")
+    ap.add_argument("--probe-variant", choices=["drop-scope"], help="the probe with its diff's scope left out: must read ✗")
+    ap.add_argument("--json", action="store_true")
+    a = ap.parse_args(argv)
+    try:
+        if a.command == "start":
+            return start(a)
+        if a.command == "status":
+            return status(a)
+        if not a.version:
+            ap.print_usage(sys.stderr)
+            return EXIT_USAGE
+        rc, info, words = release(a)
+    except (RuntimeError, OSError, ValueError, KeyError) as e:
+        print(f"claude-code in-host: ✗ {e}")
+        return EXIT_FAIL
+    print(json.dumps(dict(info, line=words), indent=1) if a.json else words)
+    return rc
+
+
+if __name__ == "__main__":
+    sys.exit(main())

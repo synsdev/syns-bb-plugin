@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Syns bb plugin — 0.6.1 live check</title>
+<!--
+  Live check for 0.6.1 (a placed folder's own people, CLI 0.3.14). Copy it
+  byte for byte as BOTH index.html and folder.html of a session whose folder
+  is the root of a THROWAWAY repository; open folder.html#<placed folder>.
+  Every step is a button. It shares the folder, adds, changes and removes one
+  person, tries admin, and unshares. STEP-RESULT ends each step.
+-->
+<style>
+  :root { --bg:#f7f7f4; --ink:#1b1b19; --soft:#66645c; --line:#dcdad0; --ok:#0b6e4f; --okbg:#e2f1ea; --bad:#a3271f; --badbg:#fbe4e1; --wait:#ecebe3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#151614; --ink:#ecebe4; --soft:#a3a196; --line:#30322d; --ok:#5fd0a5; --okbg:#17312a; --bad:#ff8a80; --badbg:#3a1c19; --wait:#262823; } }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 ui-sans-serif,system-ui,sans-serif; }
+  main { max-width:860px; margin:0 auto; padding:22px 16px 60px; }
+  h1 { font-size:1.3rem; margin:0 0 6px; }
+  #where { color:var(--soft); }
+  #verdict { font:600 .9rem ui-monospace,monospace; padding:10px 12px; border-radius:8px; background:var(--wait); margin:12px 0; white-space:pre-wrap; word-break:break-all; }
+  #verdict.pass { background:var(--okbg); color:var(--ok); } #verdict.fail { background:var(--badbg); color:var(--bad); }
+  .row { display:grid; grid-template-columns:52px 52px 1fr; gap:4px 10px; padding:7px 0; border-bottom:1px solid var(--line); }
+  .pill { font:600 .68rem ui-monospace,monospace; text-align:center; padding:2px 0; border-radius:99px; background:var(--wait); color:var(--soft); }
+  .pill.pass { background:var(--okbg); color:var(--ok); } .pill.fail { background:var(--badbg); color:var(--bad); }
+  .id { font:600 .78rem ui-monospace,monospace; color:var(--soft); }
+  .got { display:block; font:.75rem ui-monospace,monospace; color:var(--soft); word-break:break-all; }
+  input, button { font:inherit; padding:8px 12px; border-radius:8px; border:1px solid var(--line); background:transparent; color:var(--ink); }
+  button { font-weight:600; cursor:pointer; margin:6px 8px 0 0; }
+  .public { border-color:var(--bad); color:var(--bad); }
+</style>
+</head>
+<body>
+<main>
+  <h1>0.6.1 live check</h1>
+  <p id="where">…</p>
+  <div id="root" hidden>
+    <p><a href="folder.html#people-live">Open the placed folder people-live as its own document</a></p>
+    <button id="p9">P9 root: the repository's own people</button>
+  </div>
+  <div id="folder" hidden>
+    <label>Person <input id="who" placeholder="Syns username"></label><br>
+    <button id="p1">P1 people before sharing</button>
+    <button id="p2">P2 share</button>
+    <button id="p3">P3 people right after sharing</button>
+    <button id="p4">P4 add as read</button>
+    <button id="p5">P5 role to write</button>
+    <button id="p6">P6 admin refused</button>
+    <button id="p7">P7 remove</button>
+    <button id="p8">P8 unshare</button>
+  </div>
+  <div id="verdict">no step run</div>
+  <div id="rows"></div>
+</main>
+<script>
+(function () {
+  var tp = window.threadPage, verdict = document.getElementById("verdict"), host = document.getElementById("rows"), counts, heldId = null;
+  var folder = decodeURIComponent(location.hash.slice(1)).replace(/\/+$/, "");
+  var SHARE_FIRST = "This folder is not shared yet: share it first, then add people to it.";
+  function row(id, text) {
+    var el = document.createElement("div"); el.className = "row";
+    el.innerHTML = '<span class="pill" data-row="' + id + '">…</span><span class="id">' + id + '</span><span></span>';
+    el.lastChild.textContent = text; host.appendChild(el);
+    return function (ok, got) {
+      var pill = el.firstChild; pill.className = "pill " + (ok ? "pass" : "fail"); pill.textContent = ok ? "PASS" : "FAIL";
+      counts[ok ? "pass" : "fail"] += 1;
+      var g = document.createElement("span"); g.className = "got"; g.textContent = typeof got === "string" ? got : JSON.stringify(got); el.lastChild.appendChild(g);
+    };
+  }
+  async function call(method, params) {
+    try { return { ok: true, value: await tp.invoke(method, params || {}) }; }
+    catch (e) { return { ok: false, error: { code: e.code, reason: e.reason, detail: e.detail, message: e.message } }; }
+  }
+  var shown = function (a) { return a.ok ? a.value : a.error; };
+  var who = function () { return document.getElementById("who").value.trim(); };
+  async function step(name, body) {
+    host.textContent = ""; counts = { pass: 0, fail: 0 }; verdict.className = ""; verdict.textContent = name + ": running…";
+    try { await body(); } catch (e) { row(name, "the step threw")(false, String(e && e.message || e)); }
+    var failed = Array.prototype.map.call(document.querySelectorAll(".pill.fail"), function (p) { return p.dataset.row; });
+    verdict.className = counts.fail ? "fail" : "pass";
+    verdict.textContent = name + ": " + counts.pass + " pass, " + counts.fail + " fail\nSTEP-RESULT " + JSON.stringify({ step: name, scope: folder || null, pass: counts.pass, fail: counts.fail, failed: failed, at: new Date().toISOString() });
+  }
+  function on(id, name, body) { document.getElementById(id).addEventListener("click", function () { step(name, body); }); }
+  async function listed() {
+    var l = await call("syns.collaborators", {});
+    var found = l.ok ? l.value.data.filter(function (c) { return c.user.username === who(); })[0] : null;
+    if (found) heldId = found.user.id;
+    return { l: l, found: found };
+  }
+
+  on("p1", "P1", async function () {
+    var a = await call("syns.collaborators", {});
+    row("P1a", "collaborators before sharing: bad_scope, saying to share first")(!a.ok && a.error.reason === "bad_scope" && a.error.message === SHARE_FIRST, shown(a));
+    a = await call("syns.collaboratorAdd", { user: who(), role: "read" });
+    row("P1b", "collaboratorAdd before sharing: the same, nobody added")(!a.ok && a.error.reason === "bad_scope" && a.error.message === SHARE_FIRST, shown(a));
+  });
+  on("p2", "P2", async function () {
+    var a = await call("syns.share", { name: "r61-people-live" });
+    row("P2", "share { r61-people-live }: created")(a.ok && a.value.created === true && a.value.name === "r61-people-live", shown(a));
+  });
+  on("p3", "P3", async function () {
+    var a = await call("syns.collaborators", {});
+    row("P3", "collaborators right after sharing, no sync: the folder's own, total 0")(a.ok && a.value.total === 0, shown(a));
+  });
+  on("p4", "P4", async function () {
+    var a = await call("syns.collaboratorAdd", { user: who(), role: "read" });
+    row("P4a", "collaboratorAdd { " + who() + ", read }: added")(a.ok && a.value.added === true && a.value.role === "read", shown(a));
+    var r = await listed();
+    row("P4b", "listed with read")(!!r.found && r.found.role === "read", r.found || shown(r.l));
+  });
+  on("p5", "P5", async function () {
+    if (!heldId) await listed();
+    var a = await call("syns.collaboratorRole", { id: heldId, role: "write" });
+    row("P5a", "collaboratorRole { id, write }")(a.ok && a.value.role === "write", shown(a));
+    var r = await listed();
+    row("P5b", "listed with write")(!!r.found && r.found.role === "write", r.found || shown(r.l));
+  });
+  on("p6", "P6", async function () {
+    if (!heldId) await listed();
+    var a = await call("syns.collaboratorRole", { id: heldId, role: "admin" });
+    row("P6a", "collaboratorRole { id, admin } on a shared folder: refused, in the CLI's words")(!a.ok && a.error.code === "handler_error" && /422/.test(a.error.message), shown(a));
+    var r = await listed();
+    row("P6b", "still write")(!!r.found && r.found.role === "write", r.found || shown(r.l));
+  });
+  on("p7", "P7", async function () {
+    if (!heldId) await listed();
+    var a = await call("syns.collaboratorRemove", { id: heldId });
+    row("P7a", "collaboratorRemove { id }: removed")(a.ok && a.value.removed === true, shown(a));
+    var l = await call("syns.collaborators", {});
+    row("P7b", "gone: total 0")(l.ok && l.value.total === 0, shown(l));
+  });
+  on("p8", "P8", async function () {
+    var a = await call("syns.unshare", {});
+    row("P8", "unshare: unshared, retired (no visibility of its own)")(a.ok && a.value.unshared === true && a.value.retired === true, shown(a));
+  });
+  on("p9", "P9", async function () {
+    var a = await call("syns.collaborators", {});
+    row("P9", "root: the repository's own people, total 0: nobody was given the whole repository")(a.ok && a.value.total === 0, shown(a));
+  });
+
+  (async function () {
+    if (folder) {
+      try { await tp.setScope(folder); document.getElementById("where").textContent = "This document's scope: " + folder + "."; document.getElementById("folder").hidden = false; }
+      catch (e) { document.getElementById("where").textContent = "Could not set the scope: " + (e.message || e); }
+    } else { document.getElementById("where").textContent = "The root page: the session's folder, no scope."; document.getElementById("root").hidden = false; }
+  })();
+})();
+</script>
+</body>
+</html>

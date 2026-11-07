@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Syns bb plugin — 0.6.0 live check</title>
+<!--
+  Live check for 0.6.0's page surface, run by hand. Copy it byte
+  for byte as BOTH index.html and folder.html of a session whose folder is the
+  root of a THROWAWAY repository. index.html is the root page; folder.html,
+  opened as folder.html#<placed folder>, sets that folder as its scope. Nothing
+  runs on load: every step is a button, as the plugin asks of pages. It shares,
+  changes visibility, adds and removes a person, and turns on checks. Read
+  PASS or FAIL off the screen; each step ends with a STEP-RESULT line.
+-->
+<style>
+  :root { --bg:#f7f7f4; --ink:#1b1b19; --soft:#66645c; --line:#dcdad0; --ok:#0b6e4f; --okbg:#e2f1ea; --bad:#a3271f; --badbg:#fbe4e1; --wait:#ecebe3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#151614; --ink:#ecebe4; --soft:#a3a196; --line:#30322d; --ok:#5fd0a5; --okbg:#17312a; --bad:#ff8a80; --badbg:#3a1c19; --wait:#262823; } }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 ui-sans-serif,system-ui,sans-serif; }
+  main { max-width:860px; margin:0 auto; padding:22px 16px 60px; }
+  h1 { font-size:1.3rem; margin:0 0 6px; }
+  #where { color:var(--soft); }
+  #verdict { font:600 .9rem ui-monospace,monospace; padding:10px 12px; border-radius:8px; background:var(--wait); margin:12px 0; white-space:pre-wrap; word-break:break-all; }
+  #verdict.pass { background:var(--okbg); color:var(--ok); } #verdict.fail { background:var(--badbg); color:var(--bad); }
+  .row { display:grid; grid-template-columns:52px 52px 1fr; gap:4px 10px; padding:7px 0; border-bottom:1px solid var(--line); }
+  .pill { font:600 .68rem ui-monospace,monospace; text-align:center; padding:2px 0; border-radius:99px; background:var(--wait); color:var(--soft); }
+  .pill.pass { background:var(--okbg); color:var(--ok); } .pill.fail { background:var(--badbg); color:var(--bad); }
+  .id { font:600 .78rem ui-monospace,monospace; color:var(--soft); }
+  .got { display:block; font:.75rem ui-monospace,monospace; color:var(--soft); word-break:break-all; }
+  input, button { font:inherit; padding:8px 12px; border-radius:8px; border:1px solid var(--line); background:transparent; color:var(--ink); }
+  button { font-weight:600; cursor:pointer; margin:6px 8px 0 0; }
+  .public { border-color:var(--bad); color:var(--bad); }
+</style>
+</head>
+<body>
+<main>
+  <h1>0.6.0 live check</h1>
+  <p id="where">…</p>
+  <div id="root" hidden>
+    <p><a href="folder.html#share-check">Open the placed folder share-check as its own document</a></p>
+    <label>Person to add, change and remove <input id="who" placeholder="Syns username"></label><br>
+    <button id="r1">R1 explore, users, whoami</button>
+    <button id="r2">R2 root refusals, collaborators, repoVisibility private</button>
+    <button id="r7">R7 add as read</button>
+    <button id="r8">R8 role to write</button>
+    <button id="r9">R9 remove</button>
+    <button id="r10">R10 refusals</button>
+  </div>
+  <div id="folder" hidden>
+    <button id="r3">R3 shareInfo before; bad_name</button>
+    <button id="r4">R4 share, twice</button>
+    <button id="r5">R5 shareInfo after</button>
+    <button id="r6">R6 collaborators, repoVisibility here</button>
+    <button id="r11pub" class="public">R11 make this folder public: anyone, signed in or not, can find and read it</button>
+    <button id="r11priv">R11 make this folder private</button>
+    <button id="r12">R12 unshare</button>
+    <button id="r13">R13 enableChecks</button>
+  </div>
+  <div id="verdict">no step run</div>
+  <div id="rows"></div>
+</main>
+<script>
+(function () {
+  var tp = window.threadPage, verdict = document.getElementById("verdict"), host = document.getElementById("rows"), counts;
+  var folder = decodeURIComponent(location.hash.slice(1)).replace(/\/+$/, "");
+  var heldId = null;
+  // The person's id: held from R7, or found again by username (the page may have reloaded).
+  async function idOf(name) {
+    if (heldId) return heldId;
+    var l = await call("syns.collaborators", {});
+    var found = l.ok ? l.value.data.filter(function (c) { return c.user.username === name; })[0] : null;
+    return (heldId = found ? found.user.id : null);
+  }
+
+  function row(id, text) {
+    var el = document.createElement("div"); el.className = "row";
+    el.innerHTML = '<span class="pill" data-row="' + id + '">…</span><span class="id">' + id + '</span><span></span>';
+    el.lastChild.textContent = text; host.appendChild(el);
+    return function (ok, got) {
+      var pill = el.firstChild; pill.className = "pill " + (ok ? "pass" : "fail"); pill.textContent = ok ? "PASS" : "FAIL";
+      counts[ok ? "pass" : "fail"] += 1;
+      var g = document.createElement("span"); g.className = "got"; g.textContent = typeof got === "string" ? got : JSON.stringify(got); el.lastChild.appendChild(g);
+    };
+  }
+  async function call(method, params) {
+    try { return { ok: true, value: await tp.invoke(method, params || {}) }; }
+    catch (e) { return { ok: false, error: { code: e.code, reason: e.reason, detail: e.detail, message: e.message } }; }
+  }
+  var shown = function (a) { return a.ok ? a.value : a.error; };
+  var refused = function (a, reason) { return !a.ok && a.error.reason === reason; };
+
+  async function step(name, body) {
+    host.textContent = ""; counts = { pass: 0, fail: 0 }; verdict.className = ""; verdict.textContent = name + ": running…";
+    try { await body(); } catch (e) { row(name, "the step threw")(false, String(e && e.message || e)); }
+    var failed = Array.prototype.map.call(document.querySelectorAll(".pill.fail"), function (p) { return p.dataset.row; });
+    verdict.className = counts.fail ? "fail" : "pass";
+    verdict.textContent = name + ": " + counts.pass + " pass, " + counts.fail + " fail\nSTEP-RESULT " + JSON.stringify({ step: name, scope: folder || null, pass: counts.pass, fail: counts.fail, failed: failed, at: new Date().toISOString() });
+  }
+  function on(id, name, body) { document.getElementById(id).addEventListener("click", function () { step(name, body); }); }
+  var who = function () { return document.getElementById("who").value.trim(); };
+
+  // ---- the root page ----
+  on("r1", "R1", async function () {
+    var a = await call("syns.explore", { tags: ["syns-app"], query: "board", limit: 20 });
+    row("R1a", "explore { tags: [syns-app], query: board }: only syns-app rows")(a.ok && a.value.data.length > 0 && a.value.data.every(function (r) { return (r.tags || []).indexOf("syns-app") >= 0; }), a.ok ? { total: a.value.total, names: a.value.data.map(function (r) { return r.owner + "/" + r.name; }) } : a.error);
+    a = await call("syns.users", { query: who(), limit: 5 });
+    row("R1b", "users { query: " + who() + " }: rows of id, username, name, image")(a.ok && a.value.data.length > 0 && a.value.data.every(function (u) { return typeof u.id === "string" && typeof u.username === "string" && "name" in u && "image" in u; }), shown(a));
+    a = await call("syns.whoami", {});
+    row("R1c", "whoami answers")(a.ok && typeof a.value.username === "string", a.ok ? { username: a.value.username } : a.error);
+  });
+  on("r2", "R2", async function () {
+    var before = await call("syns.repo", {});
+    var probes = [["syns.shareInfo", {}], ["syns.share", { name: "r6-root-must-not" }], ["syns.folderVisibility", { visibility: "private" }], ["syns.unshare", {}], ["syns.enableChecks", {}]];
+    for (var i = 0; i < probes.length; i += 1) {
+      var a = await call(probes[i][0], probes[i][1]);
+      row("R2." + (i + 1), probes[i][0] + " at the root: invalid_params / bad_scope")(!a.ok && a.error.code === "invalid_params" && a.error.reason === "bad_scope", shown(a));
+    }
+    var after = await call("syns.repo", {});
+    row("R2.6", "nothing changed: the root's version is the same")(before.ok && after.ok && before.value.version === after.value.version, { before: shown(before).version, after: shown(after).version });
+    a = await call("syns.collaborators", {});
+    row("R2.7", "collaborators at the root: the repository's own, total 0")(a.ok && a.value.total === 0 && a.value.data.length === 0, shown(a));
+    a = await call("syns.repoVisibility", { visibility: "private" });
+    row("R2.8", "repoVisibility { private } at the root: the record, visibility private")(a.ok && a.value.visibility === "private" && a.value.name === "syns-bb-plugin-scratch", shown(a));
+  });
+  on("r7", "R7", async function () {
+    var a = await call("syns.collaboratorAdd", { user: who(), role: "read" });
+    row("R7a", "collaboratorAdd { " + who() + ", read }: added")(a.ok && a.value.added === true && a.value.role === "read", shown(a));
+    var l = await call("syns.collaborators", {});
+    var found = l.ok ? l.value.data.filter(function (c) { return c.user.username === who(); })[0] : null;
+    if (found) heldId = found.user.id;
+    row("R7b", "the row appears, role read")(!!found && found.role === "read", found || shown(l));
+  });
+  on("r8", "R8", async function () {
+    var id = await idOf(who());
+    var a = await call("syns.collaboratorRole", { id: id, role: "write" });
+    row("R8a", "collaboratorRole { id, write }")(a.ok && a.value.role === "write" && a.value.user.id === id, shown(a));
+    var l = await call("syns.collaborators", {});
+    var found = l.ok ? l.value.data.filter(function (c) { return c.user.id === id; })[0] : null;
+    row("R8b", "the listing says write")(!!found && found.role === "write", found || shown(l));
+  });
+  on("r9", "R9", async function () {
+    var id = await idOf(who());
+    var a = await call("syns.collaboratorRemove", { id: id });
+    row("R9a", "collaboratorRemove { id }: removed")(a.ok && a.value.removed === true && a.value.userId === id, shown(a));
+    var l = await call("syns.collaborators", {});
+    row("R9b", "gone from the listing")(l.ok && l.value.total === 0 && !l.value.data.some(function (c) { return c.user.id === id; }), shown(l));
+  });
+  on("r10", "R10", async function () {
+    var a = await call("syns.collaboratorAdd", { user: "r6-nobody-" + Date.now().toString(36), role: "read" });
+    row("R10a", "add of an invented user: no_such_user")(refused(a, "no_such_user"), shown(a));
+    a = await call("syns.collaboratorRemove", { id: "usr_r6_nobody" });
+    row("R10b", "remove of an invented id: not_found, or the CLI's own words")(!a.ok && (a.error.code === "not_found" || a.error.code === "handler_error"), shown(a));
+    a = await call("syns.collaboratorRemove", { id: ".." });
+    row("R10c", "remove of id ..: invalid_params before anything runs")(!a.ok && a.error.code === "invalid_params", shown(a));
+  });
+
+  // ---- the placed folder's document ----
+  on("r3", "R3", async function () {
+    var a = await call("syns.shareInfo", {});
+    row("R3a", "shareInfo: not shared, holderRole owner, a name offered")(a.ok && a.value.shared === false && a.value.holderRole === "owner" && typeof a.value.offeredName === "string", shown(a));
+    a = await call("syns.share", { name: "Bad Name" });
+    row("R3b", "share { Bad Name }: bad_name, nothing shared")(refused(a, "bad_name"), shown(a));
+  });
+  on("r4", "R4", async function () {
+    var a = await call("syns.share", { name: "r6-docs-check" });
+    row("R4a", "share { r6-docs-check }: created, the record")(a.ok && a.value.created === true && a.value.name === "r6-docs-check" && a.value.sharedFolder === true, shown(a));
+    a = await call("syns.share", { name: "r6-other-name" });
+    row("R4b", "again: created false, the first name kept")(a.ok && a.value.created === false && a.value.name === "r6-docs-check", shown(a));
+  });
+  on("r5", "R5", async function () {
+    var a = await call("syns.shareInfo", {});
+    row("R5", "shareInfo: shared, the record")(a.ok && a.value.shared === true && a.value.name === "r6-docs-check", shown(a));
+  });
+  on("r6", "R6", async function () {
+    var a = await call("syns.collaborators", {});
+    row("R6a", "collaborators from the placed folder: bad_scope (a known gap)")(refused(a, "bad_scope"), shown(a));
+    a = await call("syns.repoVisibility", { visibility: "private" });
+    row("R6b", "repoVisibility from the placed folder: bad_scope")(refused(a, "bad_scope"), shown(a));
+  });
+  on("r11pub", "R11-public", async function () {
+    var a = await call("syns.folderVisibility", { visibility: "public" });
+    row("R11a", "folderVisibility { public }")(a.ok && a.value.visibility === "public", shown(a));
+  });
+  on("r11priv", "R11-private", async function () {
+    var a = await call("syns.folderVisibility", { visibility: "private" });
+    row("R11b", "folderVisibility { private }")(a.ok && a.value.visibility === "private", shown(a));
+  });
+  on("r12", "R12", async function () {
+    var a = await call("syns.unshare", {});
+    row("R12", "unshare: unshared, retired false (a visibility of its own)")(a.ok && a.value.unshared === true && a.value.retired === false, shown(a));
+  });
+  on("r13", "R13", async function () {
+    var a = await call("syns.enableChecks", {});
+    row("R13", "enableChecks: shown as answered; the agent judges it against the checkout's state")(true, shown(a));
+  });
+
+  (async function () {
+    if (folder) {
+      try {
+        if (typeof tp.setScope !== "function") throw new Error("this bb's Thread Pages has no setScope");
+        await tp.setScope(folder);
+        document.getElementById("where").textContent = "This document's scope: " + folder + ".";
+        document.getElementById("folder").hidden = false;
+      } catch (e) { document.getElementById("where").textContent = "Could not set the scope: " + (e.message || e); }
+    } else {
+      document.getElementById("where").textContent = "The root page: the session's folder, no scope.";
+      document.getElementById("root").hidden = false;
+    }
+  })();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,149 @@
+#!/usr/bin/env python3
+"""connect-probe — a session's page as a remote reader gets it, through this bb's Connect origin (cell E2).
+
+What it does: finds this bb's Connect origin (`bb connect status`) and the session's page address on it (PAGE_PATH).
+Without a reader credential it checks what anyone on the internet gets: the page address answers, asks for sign-in,
+and shows nothing of the page. With a reader credential (`--cookie-file`, the Set-Cookie value of a signed-in reader,
+exported by the owner) it also loads the page in a browser engine through the origin (Playwright, resolved from
+--playwright-from, a folder whose node_modules hold it).
+
+When it pays: whenever a change touches serving, own files, the shell or sign-in, and before a tag. The first major
+release passed every loopback check and failed for remote readers on its own files within a day; loopback cannot see
+an authenticated origin. Without a credential the probe still catches an origin that is down or leaks a page.
+When it does not: to test the page's logic; the fixture on loopback does that for less.
+
+How to run (python3, standard library; calls bb, and node with Playwright for the signed-in half):
+  python3 verify/connect-probe [--session <scratch session>] [--cookie-file F --playwright-from DIR] [--json]
+Exit: 0 clean (coverage says how much ran) · 1 the gate leaked, the origin failed, or the signed-in load failed ·
+2 setup.
+"""
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+
+PAGE_PATH = "/api/v1/plugins/thread-pages/http/page?session={session}"   # a Thread Pages session's page, as verify/run reads it
+
+BROWSER = r"""
+import { createRequire } from "node:module";
+const job = JSON.parse(process.argv[1]);
+const pw = createRequire(job.from + "/package.json")("playwright");
+const browser = await pw.chromium.launch();
+const ctx = await browser.newContext();
+await ctx.addCookies([{ ...job.cookie, domain: new URL(job.url).hostname, path: "/" }]);
+const page = await ctx.newPage();
+const r = { status: null, rows: null, errors: [] };
+try {
+  const resp = await page.goto(job.url, { waitUntil: "load", timeout: 30000 });
+  r.status = resp ? resp.status() : null;
+  const start = Date.now(); let last = null, at = Date.now();
+  while (Date.now() - start < 30000) {
+    let res = null;
+    for (const f of page.frames()) { try { const v = await f.evaluate(() => (window.verify ? window.verify.results() : null)); if (v) { res = v; break; } } catch {} }
+    const k = res ? JSON.stringify(res) : null;
+    if (k !== last) { last = k; at = Date.now(); } else if (res && Date.now() - at > 2500) break;
+    await new Promise((x) => setTimeout(x, 250));
+  }
+  r.rows = last ? JSON.parse(last) : null;
+} catch (e) { r.errors.push(String(e.message || e)); }
+await browser.close();
+process.stdout.write(JSON.stringify(r));
+"""
+
+
+class Setup(Exception):
+    pass
+
+
+def sh(cmd, timeout=600):
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except OSError as e:
+        return 127, "", str(e)
+    return p.returncode, p.stdout, p.stderr
+
+
+def origin():
+    rc, out, err = sh(["bb", "connect", "status"])
+    m = re.search(r"^\S+\s+(https://\S+)\s+connected", out, re.M)
+    if rc or not m:
+        raise Setup(f"bb Connect is not connected: {(out or err).strip()[:200]}")
+    return m.group(1).rstrip("/")
+
+
+def anonymous(url):
+    """What anyone gets: a sign-in answer, nothing of the page."""
+    req = urllib.request.Request(url, headers={"User-Agent": "connect-probe"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            status, body = r.status, r.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        status, body = e.code, e.read().decode("utf-8", "replace")
+    except (urllib.error.URLError, TimeoutError) as e:
+        return False, f"origin unreachable: {e}"
+    leaked = "tp-frame-host" in body or "window.threadPage" in body
+    gated = status in (401, 403) or (status in (302, 303) and "sign" in body.lower())
+    ok = gated and not leaked
+    return ok, f"anonymous GET {status}{', sign-in page' if 'sign' in body.lower() or 'bb connect' in body else ''}" \
+               f"{', PAGE CONTENT LEAKED' if leaked else ', no page content'}"
+
+
+def signed_in(url, cookie, code_from):
+    job = {"from": code_from, "url": url, "cookie": cookie}
+    rc, out, err = sh(["node", "--input-type=module", "-e", BROWSER, json.dumps(job)], timeout=300)
+    if rc:
+        raise Setup(f"browser: {(err or out).strip()[-300:]}")
+    return json.loads(out)
+
+
+def parse_cookie(text):
+    first = text.strip().split(";")[0]
+    name, _, value = first.partition("=")
+    if not name or not value:
+        raise Setup("--cookie-file holds no Set-Cookie value (name=value; attributes…)")
+    return {"name": name.strip(), "value": value.strip(), "secure": True, "httpOnly": True, "sameSite": "Lax"}
+
+
+def main():
+    ap = argparse.ArgumentParser(description="connect-probe: E2, the page through the bb Connect origin")
+    ap.add_argument("--session", help="the session whose page to read (default $BB_THREAD_ID)")
+    ap.add_argument("--cookie-file", help="a signed-in reader's Set-Cookie value: also load the page signed in")
+    ap.add_argument("--playwright-from", help="a folder whose node_modules hold playwright (with --cookie-file)")
+    ap.add_argument("--json", action="store_true")
+    a = ap.parse_args()
+    notes, ok = [], True
+    try:
+        base = origin()
+        session = a.session or os.environ.get("BB_THREAD_ID")
+        if not session:
+            raise Setup("no session: pass --session or run inside a bb thread")
+        url = base + PAGE_PATH.format(session=session)
+        gate_ok, ev = anonymous(url)
+        ok &= gate_ok
+        notes.append(f"{base}: {ev}")
+        coverage = "partly covered (origin up and its sign-in gate; no signed-in load: no reader credential)"
+        if a.cookie_file:
+            if not a.playwright_from:
+                raise Setup("--cookie-file loads the page in Playwright: pass --playwright-from <folder>")
+            cookie = parse_cookie(open(os.path.expanduser(a.cookie_file)).read())
+            r = signed_in(url, cookie, os.path.abspath(os.path.expanduser(a.playwright_from)))
+            ok &= r["status"] == 200 and not r["errors"]
+            notes.append(f"signed in: HTTP {r['status']}{'; ' + '; '.join(r['errors']) if r['errors'] else ''}")
+            coverage = "partly covered (signed-in load of the page)"
+    except Setup as e:
+        msg = f"connect-probe: {e}"
+        print(json.dumps({"coverage": "not covered", "summary": msg}) if a.json else msg,
+              file=sys.stdout if a.json else sys.stderr)
+        return 2
+    summary = " · ".join(notes)
+    print(json.dumps({"coverage": coverage, "clean": ok, "summary": summary}) if a.json
+          else f"E2 {coverage}: {'clean' if ok else 'FAILED'} — {summary}")
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

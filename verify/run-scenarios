@@ -1,0 +1,476 @@
+#!/usr/bin/env python3
+"""run-scenarios — fresh agents on the current contract in a neutral scratch project, packed for the fixed grader
+(cell E7).
+
+What it does, in three steps:
+  start    makes one private scratch Syns repository and one bb project for the run (never the design tree or the
+           code repo), pushes each scenario's seed, and starts one fresh session per scenario, one at a time: each in
+           a fresh checkout of that repository (`syns pull`) in a new temporary folder, the brief verbatim and nothing
+           else (`bb thread spawn --prompt-file`). It waits for all of them (`bb thread wait`) and packs each session
+           into `<out>/<scenario>/`: `rubric.md` (the scenario file), `seed/`, `chat.md`, `actions.md`, `page/` (the
+           page as saved), `renders/` (wide and narrow, light and dark, over loopback) and `meta.json`.
+  log      after the calling agent has run the scenario grader (scenarios/GRADER.md) once per packet (it writes
+           `grade.md`), appends the counts with the plugin version and the contract hash to the scenario log (--log),
+           newest first.
+  cleanup  deletes the scratch repository (only one `verify/scratch.py` made), the bb project with its threads, and
+           the sessions' checkouts.
+The repository is made and deleted by `verify/scratch.py`; a `start` that fails before every session is running
+deletes it (and the project, and any session it started) itself, so a failed start leaves nothing to clean up.
+Nothing here messages a scenario session, and the grader never does: a coached session proves nothing.
+
+The contract hash is over the spec's `*.md` (--spec, the product's spec folder) and the code's fragment and guide.
+
+When it pays: whenever a contract file changes (the fragment, the guide, the spec), before the release that ships it.
+The agent-facing text is the product's other half; it was tried on fresh agents once in four contract changes, and
+the one run found an instruction that contradicted itself. A run in the product's own folder taught the agent from
+the product's files, so the project is neutral.
+When it does not: a round that touches no contract file and no agent-facing text.
+
+How to run (python3, standard library; calls `syns` and `bb`), from a clone of synsdev/syns-bb-plugin:
+  python3 verify/run-scenarios start <run-id> --code <code checkout> --spec <spec folder> [--only 01,02] [--out DIR]
+                                [--timeout DUR]
+  (the calling agent: for each packet, one fresh subagent briefed with scenarios/GRADER.md and the packet's path, nothing else)
+  python3 verify/run-scenarios render <out-dir> [--only 02]   renders again (then grade again)
+  python3 verify/run-scenarios log <out-dir> --log <scenario log> [--note TEXT]
+  python3 verify/run-scenarios cleanup <out-dir>
+Exit codes: 0 done · 1 a step failed (named) · 3 a session stalled or did not end in --timeout (named) · 5 usage error.
+"""
+import argparse
+import glob
+import hashlib
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import signal
+import time
+import urllib.parse
+from datetime import datetime, timezone
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import scratch                            # noqa: E402  (verify/scratch.py, beside this file)
+SCEN = os.path.join(HERE, "scenarios")
+TAG = "sbp-scn"                           # scratch.py names the repository scratch-sbp-scn-<time>-<hex>
+STAGGER_S = 60                            # between two starts: a burst once parked every session on the pool limit
+RENDERS = [(1280, 800, "light"), (1280, 800, "dark"), (390, 844, "light"), (390, 844, "dark")]
+SYNSIGNORE = ".DS_Store\n.claude/scheduled_tasks.lock\n.claude/settings.local.json\n.claude/.cc-writes/\n"
+EXIT_OK, EXIT_FAIL, EXIT_STALL, EXIT_USAGE = 0, 1, 3, 5
+
+
+def sh(cmd, cwd=None, env=None):
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd, env=env)
+    except OSError as e:
+        return 127, "", str(e)
+    return p.returncode, p.stdout, p.stderr
+
+
+def must(cmd, cwd=None, env=None):
+    rc, out, err = sh(cmd, cwd, env)
+    if rc:
+        raise SystemExit(f"run-scenarios: `{' '.join(cmd)}` failed: {(err or out).strip()[:400]}")
+    return out
+
+
+def now():
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%MZ")
+
+
+# ---- what is under test -------------------------------------------------------------------------------------------
+CODE_CONTRACT = ["src/text/fragment.ts", "src/text/guide.ts"]   # the code repo
+
+
+def contract_hash(code, spec):
+    """sha256 over the contract files: the spec folder's `*.md` and the code's fragment and guide, each path and its
+    bytes, sorted; first 12 hex. A spec file is named `tree:spec/<file>`, as when the spec was this folder's sibling,
+    so a hash in the log stays comparable."""
+    if not os.path.isdir(spec or ""):
+        raise SystemExit(f"run-scenarios: --spec {spec!r} is not a folder (the product's spec, for the contract hash)")
+    h = hashlib.sha256()
+    files = [(f"tree:spec/{os.path.basename(p)}", p) for p in glob.glob(os.path.join(spec, "*.md"))]
+    if not files:
+        raise SystemExit(f"run-scenarios: --spec {spec} holds no *.md")
+    files += [(f"code:{g}", os.path.join(code, g)) for g in CODE_CONTRACT]
+    for name, path in sorted(files):
+        h.update(name.encode() + b"\0" + open(path, "rb").read() + b"\0")
+    return h.hexdigest()[:12]
+
+
+def versions(code):
+    rc, out, _ = sh(["bb", "plugin", "list"])
+    inst = dict(re.findall(r"^(syns|thread-pages)@(\S+)", out, re.M))
+    cli = sh(["syns", "--version"])[1].strip()
+    bbv = sh(["bb", "--version"])[1].strip()
+    git = sh(["git", "-C", code, "rev-parse", "--short", "HEAD"])[1].strip()
+    return {"plugin": json.load(open(os.path.join(code, "package.json")))["version"], "code_head": git,
+            "installed": inst.get("syns"), "thread_pages": inst.get("thread-pages"), "cli": cli, "bb": bbv}
+
+
+def scenarios(only):
+    out = []
+    for p in sorted(glob.glob(os.path.join(SCEN, "[0-9][0-9]-*.md"))):
+        sid = os.path.basename(p)[:-3]
+        if only and sid[:2] not in only:
+            continue
+        text = open(p).read()
+        sec = re.search(r"^## The brief\n(.*?)(?=^## )", text, re.M | re.S)
+        brief = "\n".join(l[2:] if l.startswith("> ") else l[1:] for l in (sec.group(1) if sec else "").splitlines()
+                          if l.startswith(">"))
+        if not brief.strip():
+            raise SystemExit(f"run-scenarios: {p} has no quoted brief under `## The brief`")
+        out.append({"id": sid, "file": p, "brief": brief.strip() + "\n", "seed": os.path.join(SCEN, "seed", sid)})
+    return out
+
+
+# ---- start --------------------------------------------------------------------------------------------------------
+def make_scratch(seeds):
+    """One private scratch repository (scratch.py), seeded; returns (owner/name, folder)."""
+    seed = tempfile.mkdtemp(prefix="run-scenarios-seed-")
+    try:
+        for d in seeds:
+            if os.path.isdir(d):
+                shutil.copytree(d, seed, dirs_exist_ok=True)
+        with open(os.path.join(seed, ".synsignore"), "w") as f:
+            f.write(SYNSIGNORE)
+        return scratch.create(TAG, seed)
+    except scratch.Failed as e:
+        raise SystemExit(f"run-scenarios: {e}")
+    finally:
+        shutil.rmtree(seed, ignore_errors=True)
+
+
+def gone(text):
+    return bool(re.search(r"not found|no such|does not exist|404", text, re.I))
+
+
+def spawn(repo, project, brief, title, checkout):
+    """One fresh session: a checkout of `repo` at a path never used before (syns keeps working-copy state per path,
+    so a reused one can inherit a stale state), then the brief file verbatim as its prompt. Returns the thread id."""
+    must(["syns", "pull", repo, checkout])
+    out = must(["bb", "thread", "spawn", "--json", "--project", project, "--provider", "claude-code",
+                "--permission-mode", "full", "--title", title, "--prompt-file", brief, "--environment", checkout])
+    try:
+        return json.loads(out)["id"]
+    except (ValueError, KeyError, TypeError):
+        raise SystemExit(f"run-scenarios: bb thread spawn named no thread: {out.strip()[:200]}")
+
+
+def thread_state(thr):
+    rc, out, _ = sh(["bb", "thread", "show", thr, "--json"])
+    try:
+        st = json.loads(out or "{}") if rc == 0 else {}
+    except ValueError:
+        st = {}
+    return st.get("thread", st) if isinstance(st, dict) else {}
+
+
+def wait_all(threads, timeout):
+    """Each session until it is idle (`bb thread wait`), within one deadline. A session in error is a failure; one
+    that did not end in time, or ended its turn with background agents still running, a stall. Returns (exit code,
+    words)."""
+    end = time.time() + duration(timeout)
+    for thr in threads:
+        left = max(1, int(end - time.time()))
+        rc, out, err = sh(["bb", "thread", "wait", thr, "--status", "idle", "--timeout", f"{left}s"])
+        st = thread_state(thr)
+        if st.get("status") == "error":
+            return EXIT_FAIL, f"{thr} ended in an error"
+        if rc:
+            return EXIT_STALL, (f"{thr} did not end its turn within {timeout} (status {st.get('status', '?')}): "
+                                f"{(err or out).strip()[:200]}")
+        if st.get("activeBackgroundAgentCount"):
+            return EXIT_STALL, f"{thr} is idle with background agents still running"
+    return EXIT_OK, f"{' '.join(threads)} idle"
+
+
+def duration(text):
+    m = re.fullmatch(r"(\d+(?:\.\d+)?)(s|m|h)?", str(text).strip())
+    if not m:
+        raise SystemExit(f"run-scenarios: --timeout {text}: not a duration (90s, 20m, 1h)")
+    return float(m.group(1)) * {"s": 1, "m": 60, "h": 3600, None: 1}[m.group(2)]
+
+
+def discard(repo, folder, project, threads, checkouts=None):
+    """Undoes what a start made: its sessions and their checkouts, the bb project, the repository (by owner/name, so
+    a purged temp folder does not stop it). Returns one line; "NOT deleted" in it when something is left. One already
+    gone is done."""
+    for t in threads:
+        sh(["bb", "thread", "stop", t])
+    if checkouts and os.path.basename(checkouts).startswith("run-scenarios-checkouts-"):
+        shutil.rmtree(checkouts, ignore_errors=True)
+    parts = []
+    if project:
+        rc, out, err = sh(["bb", "project", "delete", project, "--yes"])
+        ok = rc == 0 or gone(err + out)
+        parts.append(f"bb project {project} {'deleted' if ok else 'NOT deleted: ' + (err or out).strip()[:160]}")
+    rc, words = scratch.delete(repo, folder)
+    parts.append(f"{repo} {'deleted' if rc == 0 else 'NOT deleted: ' + words[:200]}")
+    return "; ".join(parts)
+
+
+def transcript(thread):
+    rc, out, _ = sh(["bb", "thread", "log", thread, "--json", "--all"])
+    ids = {(e.get("data") or {}).get("providerThreadId") for e in (json.loads(out) if rc == 0 else [])} - {None}
+    for i in ids:
+        hits = glob.glob(os.path.expanduser(f"~/.claude/projects/*/{i}.jsonl"))
+        if hits:
+            return hits[0]
+    return None
+
+
+def pack_transcript(jsonl, folder):
+    """chat.md: the brief and what the agent said; actions.md: every tool it ran and file it wrote, in order."""
+    chat, acts = [], []
+    for line in open(jsonl):
+        o = json.loads(line)
+        if o.get("isSidechain"):
+            continue
+        msg = o.get("message") or {}
+        content = msg.get("content")
+        if o.get("type") == "user" and isinstance(content, str):
+            chat.append(f"**person:** {content.strip()}\n")
+        if o.get("type") != "assistant" or not isinstance(content, list):
+            continue
+        for b in content:
+            if b.get("type") == "text" and b.get("text", "").strip():
+                chat.append(f"**agent:** {b['text'].strip()}\n")
+            elif b.get("type") == "tool_use":
+                i = b.get("input") or {}
+                what = i.get("command") or i.get("file_path") or i.get("pattern") or i.get("description") or json.dumps(i)[:300]
+                acts.append(f"- {b.get('name')}: `{str(what).strip()[:600]}`")
+    open(os.path.join(folder, "chat.md"), "w").write("# Chat\n\n" + "\n".join(chat))
+    open(os.path.join(folder, "actions.md"), "w").write("# Actions\n\n" + "\n".join(acts) + "\n")
+
+
+def documents(folder):
+    """The page's documents to render: the entry page, plus every other document the agent linked in chat
+    (`path=` in its page address, query kept) or saved in its page root."""
+    docs = [""]
+    chat = open(os.path.join(folder, "chat.md")).read() if os.path.exists(os.path.join(folder, "chat.md")) else ""
+    for m in re.findall(r"[?&]path=([^\s)\]>&\"']+(?:%3F[^\s)\]>\"']*)?)", chat):
+        d = urllib.parse.unquote(m)
+        if d not in docs:
+            docs.append(d)
+    for p in sorted(glob.glob(os.path.join(folder, "page", "**", "*.html"), recursive=True)):
+        rel = os.path.relpath(p, os.path.join(folder, "page"))
+        if rel != "index.html" and not any(x.startswith("_") for x in rel.split(os.sep)) \
+                and not rel.startswith("uploads") and not any(d.split("?")[0] == rel for d in docs):
+            docs.append(rel)
+    return docs
+
+
+def render(thread, folder):
+    """Each document of the page over loopback in bb's own headless browser: wide and narrow, light and dark."""
+    base = os.environ.get("BB_SERVER_URL", "http://127.0.0.1:38886")
+    machine = json.loads(must(["bb", "machine", "list", "--json"]))
+    host = next((m.get("id") for m in (machine if isinstance(machine, list) else machine.get("machines", []))
+                 if m.get("status") == "connected"), None)     # the loopback URL is this bb's: its own machine
+    sess = json.loads(must(["bb", "browser-automation", "open", "--backend", "local", "--headless", "--machine", host,
+                            "--json"]))["id"]
+    os.makedirs(os.path.join(folder, "renders"), exist_ok=True)
+    made = []
+    try:
+        for doc in documents(folder):
+            url = f"{base}/api/v1/plugins/thread-pages/http/page?session={thread}"
+            if doc:
+                url += "&path=" + urllib.parse.quote(doc, safe="/")
+            tag = re.sub(r"[^a-z0-9]+", "-", doc.split("?")[0].lower()).strip("-")
+            for w, h, scheme in RENDERS:
+                js = (f"const p = await browser.getPage('main'); await p.setViewport({{width:{w},height:{h}}});"
+                      f"await p.emulateMediaFeatures([{{name:'prefers-color-scheme',value:'{scheme}'}}]);"
+                      f"await p.goto({json.dumps(url)}); await new Promise(r=>setTimeout(r,8000));"
+                      f"await p.shot({{type:'jpeg',maxEdge:{max(w, h)},quality:70}}); undefined")
+                rc, out, err = sh(["bb", "browser-automation", "run", sess, "--timeout", "60s", "--json", "--script", js])
+                imgs = (json.loads(out).get("images") or []) if rc == 0 and out.strip().startswith("{") else []
+                if imgs:
+                    dst = os.path.join(folder, "renders", (tag + "-" if tag else "") + f"{w}-{scheme}.jpg")
+                    shutil.copy(imgs[0]["path"], dst)
+                    made.append(os.path.basename(dst))
+    finally:
+        sh(["bb", "browser-automation", "close", sess])
+    return made
+
+
+def cmd_render(a):
+    """Renders the packets again (a render failed, or the renderer changed); the grade must then be done again."""
+    run = json.load(open(os.path.join(a.out, "run.json")))
+    for sid, meta in sorted(run["scenarios"].items()):
+        if a.only and sid[:2] not in a.only.split(","):
+            continue
+        pk = os.path.join(a.out, sid)
+        shutil.rmtree(os.path.join(pk, "renders"), ignore_errors=True)
+        meta["renders"] = render(meta["thread"], pk)
+        json.dump(meta, open(os.path.join(pk, "meta.json"), "w"), indent=1)
+        print(f"rendered {sid}: {', '.join(meta['renders'])}")
+    json.dump(run, open(os.path.join(a.out, "run.json"), "w"), indent=1)
+    return EXIT_OK
+
+
+def cmd_start(a):
+    only = set(a.only.split(",")) if a.only else set()
+    scs = scenarios(only)
+    out = os.path.abspath(a.out or os.path.join(tempfile.gettempdir(), f"run-scenarios-{a.run}"))
+    os.makedirs(out, exist_ok=True)
+    chash = contract_hash(a.code, a.spec)
+    duration(a.timeout)
+    ver = versions(a.code)
+    repo, folder = make_scratch([s["seed"] for s in scs])
+    pid, threads, started, checkouts = None, {}, False, None
+    try:
+        proj = json.loads(must(["bb", "project", "create", "--name", repo.split("/", 1)[1], "--root", folder, "--json"]))
+        pid = proj.get("id") or (proj.get("project") or {}).get("id")
+        # The project is neutral, the machine is not: user-level skills reach every fresh session and can take a
+        # brief away from the contract (the first baseline's 02). The record names them so a grade can be read
+        # against them.
+        skills = sorted(os.path.basename(os.path.dirname(p))
+                        for p in glob.glob(os.path.expanduser("~/.claude/skills/*/SKILL.md")))
+        run = {"run": a.run, "started": now(), "user_skills": skills, "repo": repo, "folder": folder, "project": pid,
+               "contract_hash": chash, **ver, "scenarios": {}}
+        json.dump(run, open(os.path.join(out, "run.json"), "w"), indent=1)
+        print(f"scratch: {repo} at {folder}, bb project {pid}; contract {chash}; plugin {ver['plugin']} "
+              f"(installed {ver['installed']})")
+        checkouts = tempfile.mkdtemp(prefix="run-scenarios-checkouts-")    # outside any checkout, new to this run
+        run["checkouts"] = checkouts
+        for i, s in enumerate(scs):
+            brief = os.path.join(out, "briefs", s["id"] + ".md")
+            os.makedirs(os.path.dirname(brief), exist_ok=True)
+            open(brief, "w").write(s["brief"])
+            if i:
+                time.sleep(STAGGER_S)
+            checkout = os.path.join(checkouts, s["id"])
+            thr = spawn(repo, pid, brief, f"Scenario {s['id']}", checkout)
+            threads[s["id"]] = thr
+            run["scenarios"][s["id"]] = {"thread": thr, "checkout": checkout}
+            json.dump(run, open(os.path.join(out, "run.json"), "w"), indent=1)
+            print(f"spawned {thr} (Scenario {s['id']}) in {checkout}")
+        started = True
+    finally:
+        if not started:                        # nothing of a failed start is left behind
+            line = discard(repo, folder, pid, list(threads.values()), checkouts)
+            print("run-scenarios: start failed: " + line, file=sys.stderr)
+            if "NOT deleted" not in line and os.path.exists(os.path.join(out, "run.json")):
+                run = json.load(open(os.path.join(out, "run.json")))
+                run["discarded"] = now()       # only once everything is gone: cleanup retries otherwise
+                json.dump(run, open(os.path.join(out, "run.json"), "w"), indent=1)
+    rc, words = wait_all(list(threads.values()), a.timeout)
+    print(("" if rc == EXIT_OK else "run-scenarios: ") + words)
+    storage = os.path.dirname(os.environ.get("BB_THREAD_STORAGE", os.path.expanduser("~/.bb/thread-storage/x")))
+    for s in scs:
+        thr = threads[s["id"]]
+        pk = os.path.join(out, s["id"])
+        os.makedirs(pk, exist_ok=True)
+        shutil.copy(s["file"], os.path.join(pk, "rubric.md"))
+        if os.path.isdir(s["seed"]):               # what the folder held before the agent: the grader checks against it
+            shutil.copytree(s["seed"], os.path.join(pk, "seed"), dirs_exist_ok=True)
+        src = os.path.join(storage, thr)
+        if os.path.isdir(src):
+            shutil.copytree(src, os.path.join(pk, "page"), dirs_exist_ok=True)
+        jl = transcript(thr)
+        if jl:
+            pack_transcript(jl, pk)
+        shots = render(thr, pk) if os.path.isdir(src) else []
+        meta = {"scenario": s["id"], "thread": thr, "transcript": jl, "renders": shots, "contract_hash": chash, **ver}
+        json.dump(meta, open(os.path.join(pk, "meta.json"), "w"), indent=1)
+        run["scenarios"][s["id"]] = meta
+        print(f"packed {s['id']}: {thr}, page {'yes' if os.path.isdir(src) else 'none'}, {len(shots)} renders -> {pk}")
+    run["ended"] = now()
+    json.dump(run, open(os.path.join(out, "run.json"), "w"), indent=1)
+    print(f"next: one grader subagent (scenarios/GRADER.md) on each packet in {out}; then: "
+          f"verify/run-scenarios log {out} --log <scenario log>")
+    return rc
+
+
+# ---- log ----------------------------------------------------------------------------------------------------------
+def grade(path):
+    g = {}
+    for line in open(path):
+        m = re.match(r"^(scenario|must|should|red flags|verdict)\s*:\s*(.+)$", line.strip())
+        if m:
+            g[m.group(1)] = m.group(2).strip()
+    return g
+
+
+def cmd_log(a):
+    run = json.load(open(os.path.join(a.out, "run.json")))
+    rows, missing = [], []
+    for sid, meta in sorted(run["scenarios"].items()):
+        gp = os.path.join(a.out, sid, "grade.md")
+        if not os.path.exists(gp):
+            missing.append(sid)
+            continue
+        g = grade(gp)
+        rows.append(f"| {sid} | `{meta['thread']}` | {g.get('must', '?')} | {g.get('should', '?')} | "
+                    f"{g.get('red flags', '?')} | {g.get('verdict', '?')} |")
+    if missing:
+        print("run-scenarios: no grade.md yet for " + ", ".join(missing), file=sys.stderr)
+        return EXIT_FAIL
+    head = (f"## {run['started'][:10]} — scenarios on {run['plugin']} (contract `{run['contract_hash']}`): "
+            f"{sum('| pass |' in r for r in rows)} of {len(rows)} pass\n\n"
+            f"`verify/run-scenarios` run `{run['run']}`: code `{run['code_head']}`, installed syns {run['installed']}, "
+            f"Thread Pages {run['thread_pages']}, {run['cli']}, bb {run['bb']}. Neutral scratch repository "
+            f"`{run['repo']}` and its bb project, one fresh session per scenario, graded by the scenario grader "
+            f"(`scenarios/GRADER.md`) from the packet only.\n\n"
+            "| Scenario | Session | Must | Should | Red flags | Verdict |\n| --- | --- | --- | --- | --- | --- |\n"
+            + "\n".join(rows) + "\n" + (f"\n{a.note.strip()}\n" if a.note else ""))
+    log = a.log
+    if not os.path.isfile(log):
+        raise SystemExit(f"run-scenarios: --log {log}: no such file (the scenario log to append to)")
+    text = open(log).read()
+    m = re.search(r"^## ", text, re.M)
+    text = text[:m.start()] + head + "\n" + text[m.start():] if m else text.rstrip("\n") + "\n\n" + head
+    open(log, "w").write(text)
+    print(head)
+    return EXIT_OK
+
+
+# ---- cleanup ------------------------------------------------------------------------------------------------------
+def cmd_cleanup(a):
+    run = json.load(open(os.path.join(a.out, "run.json")))
+    if run.get("discarded"):
+        print(f"run-scenarios: start already deleted {run['repo']} and its project when it failed")
+        return EXIT_OK
+    folder, repo = run["folder"], run["repo"]
+    if not repo.split("/")[-1].startswith(f"scratch-{TAG}-"):
+        raise SystemExit(f"run-scenarios: refusing to delete {repo}: not a scratch repository of this tool")
+    line = discard(repo, folder, run["project"], [m["thread"] for m in run["scenarios"].values()], run.get("checkouts"))
+    print(line)
+    return EXIT_FAIL if "NOT deleted" in line else EXIT_OK
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    s = sub.add_parser("start")
+    s.add_argument("run")
+    s.add_argument("--code", required=True)
+    s.add_argument("--spec", required=True, help="the product's spec folder (its *.md are contract files)")
+    s.add_argument("--only")
+    s.add_argument("--out")
+    s.add_argument("--timeout", default="1h")
+    lg = sub.add_parser("log")
+    lg.add_argument("out")
+    lg.add_argument("--log", required=True, help="the scenario log to append to")
+    lg.add_argument("--note")
+    r = sub.add_parser("render")
+    r.add_argument("out")
+    r.add_argument("--only")
+    c = sub.add_parser("cleanup")
+    c.add_argument("out")
+    a = ap.parse_args()
+    for sig in (signal.SIGTERM, signal.SIGHUP):    # a killed run still reaches its finally and deletes its scratch
+        signal.signal(sig, lambda n, _f: (_ for _ in ()).throw(KeyboardInterrupt()))
+    try:
+        return {"start": cmd_start, "log": cmd_log, "render": cmd_render, "cleanup": cmd_cleanup}[a.cmd](a)
+    except SystemExit as e:
+        if isinstance(e.code, str):
+            print(e.code, file=sys.stderr)
+            return EXIT_FAIL
+        raise
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,39 @@
+name: ci
+
+# The plugin's own checks and verify/'s offline tests: no network, no login, no bb, no Syns account. verify/'s tools
+# reach only the tests' stand-ins: verify/syspath.py hides the runner's real syns, bb, claude, gh, docker and
+# network programs from them.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
+        with:
+          node-version: lts/*
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm test
+      # Each test file runs in its own process; the runner's python3, standard library only.
+      - name: verify tests
+        run: |
+          python3 --version
+          fail=0
+          for t in verify/test-*; do
+            echo "::group::$t"
+            python3 -B "$t" || { echo "::error file=$t::$t failed"; fail=1; }
+            echo "::endgroup::"
+          done
+          exit $fail

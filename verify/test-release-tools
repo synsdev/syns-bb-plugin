@@ -1,0 +1,309 @@
+#!/usr/bin/env python3
+"""test-release-tools — offline tests of `release-guard` and `marketplace-pin` on synthetic repositories.
+
+What it does: builds throwaway git repositories under one `mktemp -d` folder (a plugin with an `origin` bare, a
+marketplace bare), runs both tools against them as the release's steps do, and checks their exit codes, what they
+print and what reached the bare repositories. The tools' PATH is the system's programs but those `syspath.py` hides,
+git kept, and git may use local paths only (GIT_ALLOW_PROTOCOL=file), so no step reaches GitHub or another real tool.
+Nothing leaves the temp folder; it is removed after.
+
+When it pays: whenever `release-guard` or `marketplace-pin` changes.
+When it does not: the tools against the real repositories: that is the release's own check and step.
+
+How to run (python3, standard library; calls `git`):
+  python3 verify/test-release-tools [-v]
+Exit codes: 0 every test passed · 1 a test failed.
+"""
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import syspath  # noqa: E402
+
+GUARD = os.path.join(HERE, "release-guard")
+PIN = os.path.join(HERE, "marketplace-pin")
+ENV = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@example.invalid", GIT_COMMITTER_NAME="t",
+           GIT_COMMITTER_EMAIL="t@example.invalid", GIT_CONFIG_GLOBAL="/dev/null", GIT_CONFIG_NOSYSTEM="1",
+           GIT_ALLOW_PROTOCOL="file", PATH=syspath.system_path("git"))
+
+
+def git(*args, cwd=None):
+    p = subprocess.run([GIT, *args], cwd=cwd, capture_output=True, text=True, env=ENV)
+    if p.returncode:
+        raise RuntimeError(f"git {' '.join(args)}: {p.stderr}")
+    return p.stdout.strip()
+
+
+GIT = shutil.which("git", path=ENV["PATH"]) or "git"
+
+
+def write(path, text):
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(text)
+
+
+def run(tool, *args, cwd=None):
+    p = subprocess.run([sys.executable, tool, *args], cwd=cwd, capture_output=True, text=True, env=ENV)
+    return p.returncode, p.stdout + p.stderr
+
+
+class Plugin:
+    """A plugin checkout with an origin bare: commit(version, bundle) writes both files and commits."""
+
+    def __init__(self, root):
+        self.origin = os.path.join(root, "origin.git")
+        self.dir = os.path.join(root, "plugin")
+        git("init", "-q", "--bare", "-b", "main", self.origin)
+        git("init", "-q", "-b", "main", self.dir)
+        git("remote", "add", "origin", self.origin, cwd=self.dir)
+
+    def commit(self, version=None, bundle=None, other=None, msg="c"):
+        if version is not None:
+            p = os.path.join(self.dir, "hosts/claude/.claude-plugin/plugin.json")
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            write(p, json.dumps({"name": "syns-pages", "version": version}, indent=2) + "\n")
+        if bundle is not None:
+            p = os.path.join(self.dir, "hosts/claude/bin/syns-pages.mjs")
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            write(p, bundle)
+        if other is not None:
+            write(os.path.join(self.dir, "CHANGELOG.md"), other)
+        git("add", "-A", cwd=self.dir)
+        git("commit", "-q", "--allow-empty", "-m", msg, cwd=self.dir)
+        return git("rev-parse", "HEAD", cwd=self.dir)
+
+    def push(self, ref="HEAD"):
+        git("push", "-q", "origin", f"{ref}:refs/heads/main", cwd=self.dir)
+        git("fetch", "-q", "origin", cwd=self.dir)
+
+    def guard(self, version, *extra):
+        return run(GUARD, "--version", version, "--code", self.dir, *extra)
+
+
+class Guard(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="test-release-tools-")
+        self.p = Plugin(self.tmp)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_new_version_passes(self):
+        self.p.commit("0.1.0", "A")
+        self.p.push()
+        self.p.commit("0.1.1", "B", msg="0.1.1")
+        rc, out = self.p.guard("0.1.1")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("carried 0.1.1 nowhere", out)
+
+    def test_like_0_11_0_prerelease_then_revert_then_release_fails(self):
+        """0.11.0 with bundle X, a revert to 0.10.3, then 0.11.0 with bundle Y: 0.11.0 is refused."""
+        self.p.commit("0.10.3", "old", msg="0.10.3")
+        pre = self.p.commit("0.11.0", "prerelease", msg="0.11.0: the pre-release")
+        self.p.commit("0.10.3", "old", msg="Revert 0.11.0")
+        self.p.push()
+        self.p.commit("0.11.0", "release", msg="0.11.0: the release")
+        rc, out = self.p.guard("0.11.0")
+        self.assertEqual(rc, 1, out)
+        self.assertIn(pre[:7], out)
+        self.assertIn("0.11.1", out)
+        self.p.commit("0.11.1", "release", other="## 0.11.1", msg="0.11.1")
+        rc, out = self.p.guard("0.11.1")
+        self.assertEqual(rc, 0, out)
+
+    def test_same_bundle_under_the_version_passes(self):
+        """A fix round that changed the CHANGELOG but not the bundle, then the release commit."""
+        self.p.commit("0.2.0", "B", other="draft", msg="0.2.0")
+        self.p.push()
+        self.p.commit(other="final", msg="0.2.0 fix round: the changelog")
+        rc, out = self.p.guard("0.2.0")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("only with HEAD", out)
+
+    def test_bundle_changed_later_under_an_unchanged_manifest_fails(self):
+        self.p.commit("0.3.0", "first", msg="0.3.0 manifest and first bundle")
+        mid = self.p.commit(bundle="second", msg="bundle only")
+        self.p.push()
+        self.p.commit(bundle="third", msg="the release")
+        rc, out = self.p.guard("0.3.0")
+        self.assertEqual(rc, 1, out)
+        self.assertIn(mid[:7], out)
+        self.assertIn("2 commit(s)", out)
+        self.assertIn("0.3.1", out)
+
+    def test_retry_with_head_already_on_main_passes(self):
+        self.p.commit("0.4.0", "R", msg="0.4.0")
+        self.p.push()
+        rc, out = self.p.guard("0.4.0")
+        self.assertEqual(rc, 0, out)
+
+    def test_it_fetches_origin_first(self):
+        """A pre-release pushed to origin after this checkout last fetched is found; --no-fetch reads the stale ref."""
+        self.p.commit("0.5.0", "base", msg="base")
+        self.p.push()
+        other = os.path.join(self.tmp, "other")
+        git("clone", "-q", self.p.origin, other)
+        write(os.path.join(other, "hosts/claude/bin/syns-pages.mjs"), "pre")
+        write(os.path.join(other, "hosts/claude/.claude-plugin/plugin.json"), '{"version": "0.5.1"}\n')
+        git("commit", "-qam", "0.5.1 pre-release", cwd=other)
+        git("push", "-q", "origin", "HEAD:main", cwd=other)
+        self.p.commit("0.5.1", "release", msg="0.5.1")
+        self.assertEqual(self.p.guard("0.5.1", "--no-fetch")[0], 0)
+        rc, out = self.p.guard("0.5.1")
+        self.assertEqual(rc, 1, out)
+        self.assertIn("0.5.1 pre-release", out)
+        self.assertIn("0.5.2", out)
+
+    def test_next_number_skips_versions_main_carried(self):
+        self.p.commit("0.6.0", "a", msg="0.6.0 pre")
+        self.p.commit("0.6.1", "b", msg="0.6.1 pre")
+        self.p.push()
+        self.p.commit("0.6.0", "c", msg="0.6.0")
+        rc, out = self.p.guard("0.6.0")
+        self.assertEqual(rc, 1, out)
+        self.assertIn("0.6.2", out)
+
+    def test_shallow_clone_and_no_bundle_are_usage_errors(self):
+        self.p.commit("0.7.0", "a")
+        self.p.commit(other="x")
+        self.p.push()
+        shallow = os.path.join(self.tmp, "shallow")
+        git("clone", "-q", "--depth", "1", "file://" + self.p.origin, shallow)
+        self.assertEqual(run(GUARD, "--version", "0.7.0", "--code", shallow)[0], 5)
+        bare = os.path.join(self.tmp, "nobundle")
+        git("init", "-q", "-b", "main", bare)
+        write(os.path.join(bare, "x"), "x")
+        git("add", "x", cwd=bare)
+        git("commit", "-qm", "x", cwd=bare)
+        git("remote", "add", "origin", self.p.origin, cwd=bare)
+        self.assertEqual(run(GUARD, "--version", "0.7.0", "--code", bare)[0], 5)
+
+
+MARKET = {"name": "syns", "plugins": [
+    {"name": "syns", "source": "./plugins/syns"},
+    {"name": "syns-pages", "source": {"source": "git-subdir", "url": None, "path": "hosts/claude"},
+     "description": "Agent-written pages — read and write"}]}
+
+
+class Pin(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="test-release-tools-")
+        self.p = Plugin(self.tmp)
+        self.p.commit("1.0.0", "bundle", msg="1.0.0")
+        self.p.push()
+        self.sha = git("rev-parse", "HEAD", cwd=self.p.dir)
+        self.market = os.path.join(self.tmp, "market.git")
+        self.write_market(lambda e: None)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def write_market(self, edit, raw=None):
+        work = os.path.join(self.tmp, "mwork")
+        shutil.rmtree(work, ignore_errors=True)
+        shutil.rmtree(self.market, ignore_errors=True)
+        git("init", "-q", "--bare", "-b", "main", self.market)
+        git("init", "-q", "-b", "main", work)
+        data = json.loads(json.dumps(MARKET))
+        data["plugins"][1]["source"]["url"] = "file://" + self.p.origin
+        if edit:
+            edit(data["plugins"][1])
+        os.makedirs(os.path.join(work, ".claude-plugin"))
+        write(os.path.join(work, ".claude-plugin/marketplace.json"),
+              raw if raw is not None else json.dumps(data, indent=2, ensure_ascii=False) + "\n")
+        git("add", "-A", cwd=work)
+        git("commit", "-qm", "market", cwd=work)
+        git("push", "-q", self.market, "HEAD:main", cwd=work)
+
+    def tag(self):
+        git("tag", "-a", "v1.0.0", "-m", "1.0.0", cwd=self.p.dir)
+        git("push", "-q", "origin", "refs/tags/v1.0.0", cwd=self.p.dir)
+
+    def pin(self, *extra):
+        return run(PIN, "--version", "1.0.0", "--code", self.p.dir, "--marketplace", self.market, *extra)
+
+    def main_file(self):
+        return git("show", "main:.claude-plugin/marketplace.json", cwd=self.market) + "\n"
+
+    def test_dry_run_pushes_nothing(self):
+        before = git("rev-parse", "main", cwd=self.market)
+        rc, out = self.pin("--dry-run")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("would be pushed", out)
+        self.assertEqual(git("rev-parse", "main", cwd=self.market), before)
+
+    def test_refuses_before_the_tag_is_pushed(self):
+        rc, out = self.pin()
+        self.assertEqual(rc, 1, out)
+        self.assertIn("failed at the tag", out)
+        git("tag", "v1.0.0", "HEAD", cwd=self.p.dir)       # a tag on another commit
+        self.p.commit(other="later")
+        git("push", "-q", "origin", "refs/tags/v1.0.0", cwd=self.p.dir)
+        rc, out = run(PIN, "--version", "1.0.0", "--code", self.p.dir, "--marketplace", self.market)
+        self.assertEqual(rc, 1, out)
+        self.assertIn("failed at the tag", out)
+
+    def test_pins_then_is_idempotent(self):
+        self.tag()
+        before = self.main_file()
+        rc, out = self.pin()
+        self.assertEqual(rc, 0, out)
+        after = self.main_file()
+        self.assertEqual(json.loads(after)["plugins"][1]["source"]["sha"], self.sha)
+        self.assertEqual(git("log", "-1", "--format=%s", "main", cwd=self.market), f"syns-pages 1.0.0: pin to {self.sha}")
+        changed = [l for l in after.splitlines() if l not in before.splitlines()]
+        self.assertEqual(len(changed), 2, changed)            # the url line gains a comma, the sha line is new
+        self.assertIn("Agent-written pages — read and write", after)   # non-ASCII kept as written
+        head = git("rev-parse", "main", cwd=self.market)
+        rc, out = self.pin()
+        self.assertEqual(rc, 0, out)
+        self.assertIn("already pinned", out)
+        self.assertEqual(git("rev-parse", "main", cwd=self.market), head)
+
+    def test_moves_an_older_pin(self):
+        self.write_market(lambda e: e["source"].update(sha="0" * 40))
+        self.tag()
+        rc, out = self.pin()
+        self.assertEqual(rc, 0, out)
+        self.assertIn("0000000000", out)
+        self.assertEqual(json.loads(self.main_file())["plugins"][1]["source"]["sha"], self.sha)
+
+    def test_refuses_an_entry_it_cannot_pin(self):
+        self.tag()
+        for edit, words in ((lambda e: e["source"].update(ref="main"), "names ref"),
+                            (lambda e: e.update(name="other"), "has no syns-pages"),
+                            (lambda e: e.update(source="./plugins/x"), "has no syns-pages")):
+            self.write_market(edit)
+            rc, out = self.pin()
+            self.assertEqual(rc, 1, out)
+            self.assertIn(words, out)
+        self.write_market(None, raw=json.dumps(MARKET))       # one line: not as json.dumps(indent=2) writes it
+        rc, out = self.pin()
+        self.assertEqual(rc, 1, out)
+        self.assertIn("not formatted", out)
+
+    def test_a_refused_push_fails_at_the_push(self):
+        self.tag()
+        hook = os.path.join(self.market, "hooks", "pre-receive")
+        write(hook, "#!/bin/sh\necho no pushes here >&2\nexit 1\n")
+        os.chmod(hook, 0o755)
+        rc, out = self.pin()
+        self.assertEqual(rc, 1, out)
+        self.assertIn("failed at the push", out)
+
+    def test_no_temp_folder_left(self):
+        self.tag()
+        before = set(os.listdir(tempfile.gettempdir()))
+        self.pin()
+        left = [d for d in set(os.listdir(tempfile.gettempdir())) - before if d.startswith("marketplace-pin-")]
+        self.assertEqual(left, [])
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2 if "-v" in sys.argv else 1, argv=[sys.argv[0]], warnings="ignore")

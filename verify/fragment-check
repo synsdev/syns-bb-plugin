@@ -1,0 +1,177 @@
+#!/usr/bin/env python3
+"""fragment-check — what a fresh session of this bb really received from the Syns plugin (cell E4).
+
+What it does: reads the system prompt a fresh Claude Code session was started with (the `prompt_snapshot` its
+transcript records), finds the plugin's fragment under `## syns <version>`, and compares it with the fragment the
+code declares (`src/text/fragment.ts`). It also reads `bb pages status` (the placement the host reports, per slot and
+cap) and `bb pages guide` (the plugin's section of the guide, its size against the spec's limit, every registered
+method listed). Pass = the fragment arrived whole and byte-equal, the host says it arrives whole, the guide section
+fits and lists every method.
+
+When it pays: whenever the fragment, the guide or the host changes, and on every release. The 0.1.0 fragment was cut
+by the host's instruction cap and nobody saw it for days: the host's own report and the docs said one thing, the
+session received another. Only a fresh session's own prompt shows what an agent was actually told.
+When it does not: a session that was resumed or forked carries an older prompt; give it a fresh one (the session
+`verify/run --fixtures` starts, or a scenario session of `verify/run-scenarios`).
+
+How to run (python3, standard library; calls `bb`):
+  python3 verify/fragment-check --thread <thr_x> --code <checkout of the code repo> [--json]
+  python3 verify/fragment-check --jsonl <transcript.jsonl> --code <path> [--json]
+Exit codes: 0 pass · 1 fail (each failure named) · 5 usage error (no transcript, no snapshot, no fragment source).
+"""
+import argparse
+import glob
+import json
+import os
+import re
+import subprocess
+import sys
+
+GUIDE_LIMIT = 15872      # the surface spec's limit: the plugin's guide stays within 16 KiB less 512 bytes
+EXIT_PASS, EXIT_FAIL, EXIT_USAGE = 0, 1, 5
+
+
+def sh(cmd):
+    p = subprocess.run(cmd, capture_output=True, text=True)
+    return p.returncode, p.stdout, p.stderr
+
+
+def declared(code):
+    """The fragment and version the code declares."""
+    src = open(os.path.join(code, "src/text/fragment.ts")).read()
+    m = re.search(r"export const FRAGMENT = `((?:\\.|[^`\\])*)`;", src, re.S)
+    if not m:
+        raise SystemExit("fragment-check: no `export const FRAGMENT = `...`;` in src/text/fragment.ts")
+    text = m.group(1).replace("\\`", "`").replace("\\${", "${").replace("\\\\", "\\")
+    version = json.load(open(os.path.join(code, "package.json")))["version"]
+    return text, version
+
+
+def transcript_of(thread):
+    rc, out, _ = sh(["bb", "thread", "log", thread, "--json", "--all"])
+    if rc:
+        raise SystemExit(f"fragment-check: bb thread log {thread} failed")
+    ids = {(e.get("data") or {}).get("providerThreadId") for e in json.loads(out)} - {None}
+    for i in ids:
+        hits = glob.glob(os.path.expanduser(f"~/.claude/projects/*/{i}.jsonl"))
+        if hits:
+            return hits[0]
+    raise SystemExit(f"fragment-check: no Claude Code transcript for {thread} on this machine")
+
+
+def system_prompt(jsonl):
+    with open(jsonl) as f:
+        for line in f:
+            if '"prompt_snapshot"' not in line:
+                continue
+            a = json.loads(line).get("attachment") or {}
+            if a.get("type") == "prompt_snapshot":
+                sp = a.get("systemPrompt")
+                return "\n".join(sp) if isinstance(sp, list) else str(sp)
+    raise SystemExit(f"fragment-check: no prompt_snapshot in {jsonl}")
+
+
+def received(prompt):
+    """(version, text) of the `## syns <version>` block: up to the next plugin's block or the next level-1/2 heading
+    that is not inside the fragment."""
+    m = re.search(r"^## syns (\S+)\n\n", prompt, re.M)
+    if not m:
+        return None, ""
+    rest = prompt[m.end():]
+    end = re.search(r"\n\nThe following (dynamic )?instructions come from |\n# |\n## (?!syns )\S", rest)
+    return m.group(1), rest[:end.start()] if end else rest
+
+
+def host_status():
+    rc, out, _ = sh(["bb", "pages", "status"])
+    slots = {}
+    for m in re.finditer(r"^(standing instruction|fragment (\S+) (\S+)) → slot \"(\w+)\": (\d+) characters of (\d+), (.+)$",
+                         out, re.M):
+        slots[m.group(1)] = {"slot": m.group(4), "chars": int(m.group(5)), "cap": int(m.group(6)), "state": m.group(7)}
+    methods = re.findall(r"syns\.(\w+) \(", (re.search(r"^contributors: (.*)$", out, re.M) or [None, ""])[1])
+    return slots, methods
+
+
+def guide_heads(code):
+    """The level-2 headings the plugin's guide declares (src/text/guide.ts): its text ends where the host's resumes."""
+    src = open(os.path.join(code, "src/text/guide.ts")).read()
+    return {h.strip() for h in re.findall(r"(?<![#])## ([^`\\\n]+)", src)}
+
+
+def guide_section(version, heads):
+    """(roster lines the host writes, the plugin's own guide text, whole guide bytes) of the `### syns` section.
+    The plugin's text starts at its own level-1 heading and ends at the first level-2 heading it does not declare."""
+    rc, out, _ = sh(["bb", "pages", "guide"])
+    m = re.search(r"^### syns %s\n" % re.escape(version), out, re.M)
+    if not m:
+        return "", "", len(out.encode())
+    sec = out[m.end():]
+    own = re.search(r"^# ", sec, re.M)
+    if not own:
+        return sec, "", len(out.encode())
+    text = sec[own.start():]
+    for h in re.finditer(r"^## (.+)$", text, re.M):
+        if h.group(1).strip() not in heads:
+            text = text[:h.start()]
+            break
+    return sec[:own.start()], text.rstrip("\n") + "\n", len(out.encode())
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    src = ap.add_mutually_exclusive_group(required=True)
+    src.add_argument("--thread")
+    src.add_argument("--jsonl")
+    ap.add_argument("--code", required=True, help="checkout of the code repo (src/text/fragment.ts, package.json)")
+    ap.add_argument("--json", action="store_true")
+    a = ap.parse_args()
+    try:
+        want, code_version = declared(a.code)
+        jsonl = a.jsonl or transcript_of(a.thread)
+        got_version, got = received(system_prompt(jsonl))
+    except (OSError, SystemExit) as e:
+        print(e if str(e) else "fragment-check: usage error", file=sys.stderr)
+        return EXIT_USAGE
+    slots, methods = host_status()
+    roster, guide, guide_total = guide_section(got_version or code_version, guide_heads(a.code))
+    fails = []
+    if got_version is None:
+        fails.append("the session received no `## syns` block")
+    elif got_version != code_version:
+        fails.append(f"the session received syns {got_version}, the code declares {code_version}")
+    whole = got.strip() == want.strip()
+    if got_version and not whole:
+        fails.append("the received fragment differs from the declared one"
+                     + (" (cut: the declared text starts with the received one)" if want.strip().startswith(got.strip()) else ""))
+    host = slots.get(f"fragment syns {got_version or code_version}")
+    if not host:
+        fails.append("bb pages status reports no placement for the fragment")
+    elif host["state"] != "arrives whole":
+        fails.append(f"bb pages status: {host['state']}")
+    gbytes = len(guide.encode())
+    if not guide:
+        fails.append("the guide's syns section holds no text of the plugin's own")
+    elif gbytes > GUIDE_LIMIT:
+        fails.append(f"the plugin's guide text is {gbytes} bytes, over {GUIDE_LIMIT}")
+    unlisted = [m for m in methods if f"`syns.{m}`" not in roster + guide]
+    if unlisted:
+        fails.append("registered methods missing from the guide section: " + ", ".join(unlisted))
+    res = {"transcript": jsonl, "code_version": code_version, "received_version": got_version,
+           "fragment_chars_declared": len(want.strip()), "fragment_chars_received": len(got.strip()), "whole": whole,
+           "host": host, "standing": slots.get("standing instruction"), "methods": len(methods),
+           "guide_section_bytes": gbytes, "guide_limit": GUIDE_LIMIT, "guide_total_bytes": guide_total,
+           "result": "fail" if fails else "pass", "fails": fails}
+    if a.json:
+        print(json.dumps(res, indent=1))
+    else:
+        h = f"{host['chars']} of {host['cap']} in slot {host['slot']}, {host['state']}" if host else "no placement"
+        print(f"fragment syns {got_version}: received {res['fragment_chars_received']} characters, declared "
+              f"{res['fragment_chars_declared']}, {'whole and equal' if whole else 'NOT equal'}; host: {h}")
+        print(f"guide: the plugin's text {gbytes} bytes of {GUIDE_LIMIT}, {len(methods) - len(unlisted)}/{len(methods)} "
+              f"registered methods listed; whole guide {guide_total} bytes")
+        print("PASS" if not fails else "FAIL: " + "; ".join(fails))
+    return EXIT_FAIL if fails else EXIT_PASS
+
+
+if __name__ == "__main__":
+    sys.exit(main())

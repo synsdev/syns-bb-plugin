@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Syns bb plugin — sharing check</title>
+<!--
+  Live check for the sharing methods, run by hand. Make it the page of a
+  session whose folder is a PLACED folder of a THROWAWAY repository. It SHARES
+  that folder, and with a username given, adds and removes that person. It runs
+  only when pressed, and unshares at the end. Read PASS or FAIL off the screen.
+-->
+<style>
+  :root { --bg:#f7f7f4; --ink:#1b1b19; --soft:#66645c; --line:#dcdad0; --ok:#0b6e4f; --okbg:#e2f1ea; --bad:#a3271f; --badbg:#fbe4e1; --wait:#ecebe3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#151614; --ink:#ecebe4; --soft:#a3a196; --line:#30322d; --ok:#5fd0a5; --okbg:#17312a; --bad:#ff8a80; --badbg:#3a1c19; --wait:#262823; } }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 ui-sans-serif,system-ui,sans-serif; }
+  main { max-width:860px; margin:0 auto; padding:22px 16px 60px; }
+  h1 { font-size:1.3rem; margin:0 0 6px; }
+  #verdict { font:600 1rem ui-monospace,monospace; padding:10px 12px; border-radius:8px; background:var(--wait); margin:12px 0; white-space:pre-wrap; }
+  #verdict.pass { background:var(--okbg); color:var(--ok); } #verdict.fail { background:var(--badbg); color:var(--bad); }
+  .row { display:grid; grid-template-columns:52px 40px 1fr; gap:4px 10px; padding:7px 0; border-bottom:1px solid var(--line); }
+  .pill { font:600 .68rem ui-monospace,monospace; text-align:center; padding:2px 0; border-radius:99px; background:var(--wait); color:var(--soft); }
+  .pill.pass { background:var(--okbg); color:var(--ok); } .pill.fail { background:var(--badbg); color:var(--bad); }
+  .id { font:600 .78rem ui-monospace,monospace; color:var(--soft); }
+  .got { display:block; font:.78rem ui-monospace,monospace; color:var(--soft); word-break:break-all; }
+  input, button { font:inherit; padding:8px 12px; border-radius:8px; border:1px solid var(--line); background:transparent; color:var(--ink); }
+  button { font-weight:600; cursor:pointer; margin:6px 8px 0 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Sharing check</h1>
+  <p>Shares this page's folder, reads it back, optionally adds and removes one collaborator, then unshares.</p>
+  <label>Collaborator to add and remove (optional) <input id="who" placeholder="Syns username"></label><br>
+  <button id="run">Run the sharing rows</button>
+  <div id="verdict">not run</div>
+  <div id="rows"></div>
+</main>
+<script>
+(function () {
+  var tp = window.threadPage, verdict = document.getElementById("verdict"), host = document.getElementById("rows"), counts;
+  function row(id, text) {
+    var el = document.createElement("div"); el.className = "row";
+    el.innerHTML = '<span class="pill" data-row="' + id + '">…</span><span class="id">' + id + '</span><span></span>';
+    el.lastChild.textContent = text; host.appendChild(el);
+    return function (ok, got) {
+      var pill = el.firstChild; pill.className = "pill " + (ok ? "pass" : "fail"); pill.textContent = ok ? "PASS" : "FAIL";
+      counts[ok ? "pass" : "fail"] += 1;
+      var g = document.createElement("span"); g.className = "got"; g.textContent = typeof got === "string" ? got : JSON.stringify(got); el.lastChild.appendChild(g);
+    };
+  }
+  async function attempt(method, params) {
+    try { return { ok: true, value: await tp.invoke(method, params) }; }
+    catch (e) { return { ok: false, error: { code: e.code, reason: e.reason, detail: e.detail, message: e.message } }; }
+  }
+  function finish() {
+    var failed = Array.prototype.map.call(document.querySelectorAll(".pill.fail"), function (p) { return p.dataset.row; });
+    verdict.className = counts.fail ? "fail" : "pass";
+    verdict.textContent = "sharing: " + counts.pass + " pass, " + counts.fail + " fail\nFIXTURE-RESULT " + JSON.stringify({ suite: "sharing", pass: counts.pass, fail: counts.fail, failed: failed, at: new Date().toISOString() });
+  }
+  async function run() {
+    host.textContent = ""; counts = { pass: 0, fail: 0 }; verdict.className = ""; verdict.textContent = "running…";
+    var who = document.getElementById("who").value.trim(), stamp = Date.now().toString(36), r, a, identity;
+
+    r = row("S1", "the roster holds the six sharing methods, reads as read and changes as contributed-write");
+    var ctx = await attempt("context.get", {});
+    var effects = {}; (ctx.ok ? ctx.value.capabilities : []).forEach(function (c) { effects[c.method] = c.effect; });
+    r(effects["syns.shareInfo"] === "read" && effects["syns.collaborators"] === "read" && ["syns.share", "syns.unshare", "syns.collaboratorAdd", "syns.collaboratorRemove"].every(function (m) { return effects[m] === "contributed-write"; }), effects);
+
+    r = row("S2", "syns.repo here is a placed folder: holder and path");
+    a = await attempt("syns.repo", {}); r(a.ok && !!a.value.holder && !!a.value.path, a.ok ? { holder: a.value.holder, path: a.value.path } : a.error);
+
+    r = row("S3", "syns.shareInfo of the page's own folder, before: not shared, a name offered, the reader an owner");
+    a = await attempt("syns.shareInfo", {}); r(a.ok && a.value.shared === false && typeof a.value.offeredName === "string" && a.value.holderRole === "owner", a.ok ? a.value : a.error);
+
+    var name = "sbp-share-" + stamp;
+    r = row("S4", "syns.share { name } shares it: created, identity owner/" + name);
+    a = await attempt("syns.share", { name: name }); r(a.ok && a.value.created === true && /\//.test(a.value.identity) && a.value.identity.split("/")[1] === name, a.ok ? a.value : a.error);
+    identity = a.ok ? a.value.identity : null;
+
+    r = row("S5", "syns.shareInfo, after: shared, as that identity, no name offered");
+    a = await attempt("syns.shareInfo", {}); r(a.ok && a.value.shared === true && a.value.identity === identity && a.value.offeredName === undefined, a.ok ? a.value : a.error);
+
+    r = row("S6", "syns.share again: created false, the same identity, a new name ignored");
+    a = await attempt("syns.share", { name: name + "-x" }); r(a.ok && a.value.created === false && a.value.identity === identity, a.ok ? a.value : a.error);
+
+    r = row("S7", "syns.collaborators right after sharing, before any sync: the identity, nobody yet");
+    a = await attempt("syns.collaborators", {}); r(a.ok && a.value.identity === identity && a.value.total === 0, a.ok ? a.value : a.error);
+
+    r = row("S8", "syns.collaboratorAdd of nobody: not_found / no_such_user");
+    a = await attempt("syns.collaboratorAdd", { user: "no-such-user-" + stamp, role: "read" }); r(!a.ok && a.error.reason === "no_such_user", a.ok ? a.value : a.error);
+
+    r = row("S9", "syns.collaboratorRemove of someone not on the list: not_collaborator");
+    a = await attempt("syns.collaboratorRemove", { user: "no-such-user-" + stamp }); r(!a.ok && a.error.reason === "not_collaborator", a.ok ? a.value : a.error);
+
+    if (who) {
+      r = row("S10", "syns.collaboratorAdd { " + who + ", read }");
+      a = await attempt("syns.collaboratorAdd", { user: who, role: "read" }); r(a.ok && a.value.identity === identity && a.value.role === "read", a.ok ? a.value : a.error);
+      r = row("S11", "syns.collaborators lists " + who + " as read");
+      a = await attempt("syns.collaborators", {}); r(a.ok && a.value.collaborators.some(function (c) { return c.username === who && c.role === "read"; }), a.ok ? a.value : a.error);
+      r = row("S12", "syns.collaboratorAdd again: already_collaborator");
+      a = await attempt("syns.collaboratorAdd", { user: who, role: "read" }); r(!a.ok && a.error.reason === "already_collaborator", a.ok ? a.value : a.error);
+      r = row("S13", "syns.collaboratorRemove { " + who + " }, then the list is empty");
+      a = await attempt("syns.collaboratorRemove", { user: who });
+      var after = await attempt("syns.collaborators", {});
+      r(a.ok && after.ok && after.value.total === 0, { remove: a.ok ? a.value : a.error, after: after.ok ? after.value.total : after.error });
+    }
+
+    r = row("S14", "syns.unshare: unshared, then not shared, then a second unshare is not_shared");
+    a = await attempt("syns.unshare", {});
+    var info = await attempt("syns.shareInfo", {}), again = await attempt("syns.unshare", {});
+    r(a.ok && a.value.unshared === true && a.value.identity === identity && info.ok && info.value.shared === false && !again.ok && again.error.reason === "not_shared", { unshare: a.ok ? a.value : a.error, info: info.ok ? info.value.shared : info.error, again: again.ok ? again.value : again.error });
+
+    finish();
+  }
+  document.getElementById("run").addEventListener("click", function () { run(); });
+})();
+</script>
+</body>
+</html>
