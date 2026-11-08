@@ -104,6 +104,19 @@ describe.skipIf(!present)(`the reference host code (${present ? MONO : `no Unife
     expect(await scripts.scriptsFor("thr_1", "index.html")).toEqual([]);
     expect(warned).toEqual([]);
 
+    // A new-session page (07 R5.88, R5.84b): no session, so the host asks with the workspace its provider named, and
+    // never looks a session up; the plugin answers from that folder alike (S2.27, A102).
+    const newSession = { id: "ws_9f2c4e", path: "/work/fresh", machine: null };
+    const looked: unknown[] = [];
+    const fresh = createPageScripts({ ...host, workspaceOf: async (id: string) => (looked.push(id), workspace) }, { cached: () => ({ contributors: [contributor] }) }, { log: { warn: (line: string) => warned.push(line) } });
+    reply = rec("repo.ok");
+    runs.length = 0;
+    expect(await fresh.scriptsFor(null, "index.html", newSession)).toEqual([{ contributor: "syns", script: PAGEHOST }]);
+    expect(runs).toEqual([expect.objectContaining({ cwd: "/work/fresh", args: ["repo", "--json"] })]);
+    expect(looked).toEqual([]);
+    expect(await fresh.scriptsFor(null, "index.html", null)).toEqual([]);
+    expect(warned).toEqual([]);
+
     const html = injectKernel("<!doctype html><html><head><title>Plan</title></head><body><h1>Plan</h1></body></html>", { kernel: "/*kernel*/", config: {}, baseHref: null, contributorScripts: [{ contributor: "syns", script: PAGEHOST }] });
     expect(html.indexOf('data-thread-page-contributor="syns"')).toBeGreaterThan(html.indexOf("/*kernel*/"));
     expect(html.indexOf('data-thread-page-contributor="syns"')).toBeLessThan(html.indexOf("<title>Plan</title>"));

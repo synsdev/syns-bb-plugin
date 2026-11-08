@@ -6,7 +6,7 @@ import { createHeld, type Held } from "./held.js";
 import { buildArgs, type Where } from "./cli.js";
 import { scopeParams, scopeResult } from "./scoped.js";
 
-/** The session's folder as the host passes it (unife-pages 07 R5.84b, U44): an absolute path on `machine`, null where the host has one. */
+/** The session's folder as the host passes it (unife-pages 07 R5.84b, U44): an absolute path on `machine`, null where the host has one. `id` is the host's opaque id for it. */
 export interface Workspace {
   id: string;
   path: string;
@@ -18,6 +18,7 @@ export interface Call {
   method: string;
   params: unknown;
   /**
+   * `sessionId`: null on the home, and on a new-session page, which has a workspace and no session yet (07 R5.49, S2.33).
    * `scope`: a placed folder inside the session's folder that the calling document set (D43); null for the folder itself.
    * `frame`: present on a call from an `html` frame of the page, an app (Unife Pages 0.5.4, 07 R5.84c), with the folder
    * the page bound it to; such a call's scope is its folder (B-0103).
@@ -36,10 +37,33 @@ const ABSOLUTE = /^(\/|[A-Za-z]:[\\/]|\\\\)/;
 export function sessionWhere(workspace: unknown): Where | null {
   if (workspace === null || workspace === undefined) return null;
   const w = workspace as Partial<Workspace>;
-  if (typeof w.path !== "string" || !ABSOLUTE.test(w.path) || (w.machine !== null && typeof w.machine !== "string")) {
-    throw new SynsError("handler_error", { log: "the host passed a workspace without an absolute path" });
-  }
+  if (typeof w.path !== "string" || !ABSOLUTE.test(w.path)) throw new SynsError("handler_error", { log: "the host passed a workspace without an absolute path" });
+  if (w.machine !== null && typeof w.machine !== "string") throw new SynsError("handler_error", { log: "the host passed a workspace whose machine is neither text nor null" });
   return { hostId: w.machine ?? LOCAL, cwd: w.path };
+}
+
+/**
+ * Who is calling, for a write's `run`, the held-entry keys and the plugin's lines: the session, or on a new-session page
+ * the workspace's id, which stands in for it until the session starts (S2.33, S1.5). Null for no workspace (the home).
+ * A workspace with no session and no id non-empty once trimmed is malformed: a blank `run` would let the CLI fall back
+ * to an inherited SYNS_RUN (S2.2).
+ */
+function runOf(sessionId: string | null, workspace: unknown): string | null {
+  if (sessionId !== null || workspace === null || workspace === undefined) return sessionId;
+  const id = (workspace as Partial<Workspace>).id;
+  if (typeof id !== "string" || id.trim() === "") throw new SynsError("handler_error", { log: "the host passed a workspace with no id and no session" });
+  return id;
+}
+
+/** How the plugin's lines name the caller: `session=<id>`, or with none `session=none`, and `workspace=<id>` on a new-session page (S2.34). */
+function callerTag(sessionId: string | null, workspace: unknown): string {
+  if (sessionId !== null) return `session=${sessionId}`;
+  try {
+    const run = sessionWhere(workspace) && runOf(null, workspace);
+    return run === null ? "session=none" : `session=none workspace=${run}`;
+  } catch {
+    return "session=none";
+  }
 }
 
 export type Answer = { ok: true; result: unknown } | FailureAnswer;
@@ -63,7 +87,7 @@ export const SCOPE_TTL_MS = 60_000;
 /**
  * threadPagesInvoke: look the method up in the table, check its parameters,
  * take the session's folder from the host, run the CLI, map the outcome. It knows no method by name.
- * spec S2.1, S2.2, S2.14, S2.18–S2.22
+ * spec S2.1, S2.2, S2.14, S2.18–S2.22, S2.33, S2.34
  */
 export function createDispatch({ table = METHODS, cli, log, held = createHeld(), now = Date.now }: DispatchDeps): (call: Call) => Promise<Answer> {
   const byName = new Map(table.map((method) => [method.name, method]));
@@ -103,10 +127,11 @@ export function createDispatch({ table = METHODS, cli, log, held = createHeld(),
     // What a schema cannot say is checked on the paths the CLI is given: `../app/a.md` is `a.md` (B-0083).
     method.check?.(scoped?.given ?? params);
 
-    // The session and its folder come from the host and from nowhere else. No session, no folder. S2.1, S2.2; U44
-    if (sessionId === null) throw fail("no_repo");
+    // The folder comes from the host and from nowhere else: the session's, or a new-session page's workspace (S2.1,
+    // S2.2, S2.33; U44). No folder, no_repo: the home, or a session the host has none for.
     const session = sessionWhere(workspace);
     if (!session) throw fail("no_repo");
+    const run = runOf(sessionId, workspace)!;
     // A document's scope narrows the folder the CLI runs in to <session folder>/<scope> (D43). The host
     // refuses a scope that leaves the session's folder; it is checked again here, as a path is. A method
     // that acts on the session's repository as a whole (syns.place) runs at the session's folder.
@@ -123,14 +148,14 @@ export function createDispatch({ table = METHODS, cli, log, held = createHeld(),
     let repoCheck: Promise<RunResult> | undefined = checked && Promise.resolve(checked);
     let whoamiCheck: Promise<RunResult> | undefined;
     const context: Context = {
-      sessionId,
+      sessionId: run,
       limits: cli.limits,
       held,
       redact: (text) => redact(text, { folder: session.cwd }),
       // Counted from the scope, a path outside climbs with one `../` per folder at most (scopeResult); one inside only shrinks.
       pathGrowth: scoped?.reaches ? 3 * folder!.split("/").length : 0,
       async syns(args, stdin, options) {
-        const mark = provenance(sessionId);
+        const mark = provenance(run);
         const env = options?.provenanceEnv ? { SYNS_INTEGRATION: mark.integration!, SYNS_RUN: mark.run!, SYNS_TRIGGER: mark.trigger! } : undefined;
         const isRepo = args.join(" ") === "repo --json" && stdin === undefined && env === undefined;
         const ran = isRepo && checked && folder === null ? checked : await cli.run(at, args, stdin, deadline, env, signal);
@@ -145,7 +170,7 @@ export function createDispatch({ table = METHODS, cli, log, held = createHeld(),
     if ("procedure" in method) {
       result = await method.procedure(given, context);
     } else {
-      const command = method.command(given, sessionId);
+      const command = method.command(given, run);
       const output = await context.syns(command.args, command.stdin, command.provenanceEnv ? { provenanceEnv: true } : undefined);
       if (typeof output !== "object" || output === null || Array.isArray(output)) throw new SynsError("handler_error", { log: "exit=0 output is not a JSON object" });
       if (method.shape) result = method.shape(output as Record<string, unknown>, given);
@@ -153,7 +178,7 @@ export function createDispatch({ table = METHODS, cli, log, held = createHeld(),
         // The CLI's JSON passed on (D59). A named key the CLI gave in another type is dropped; say which, never the value (S2.20).
         const dropped: string[] = [];
         result = pick(method.result, output, "$", dropped);
-        if (dropped.length > 0) log.warn(`${method.name} session=${sessionId} dropped from the CLI's output: ${dropped.join(", ").slice(0, 500)}`);
+        if (dropped.length > 0) log.warn(`${method.name} ${callerTag(sessionId, workspace)} dropped from the CLI's output: ${dropped.join(", ").slice(0, 500)}`);
       }
     }
     if (scoped) {
@@ -214,14 +239,14 @@ export function createDispatch({ table = METHODS, cli, log, held = createHeld(),
     } catch (caught) {
       const error = caught instanceof SynsError ? caught : new SynsError("handler_error", { log: `threw ${caught instanceof Error ? caught.message : String(caught)}`.slice(0, 500) });
       outcome = error.reason ?? error.code;
-      if (error.code === "handler_error") log.warn(`${method.name} session=${sessionId ?? "none"} handler_error ${error.log ?? ""}`.trim());
+      if (error.code === "handler_error") log.warn(`${method.name} ${callerTag(sessionId, call.caller?.workspace)} handler_error ${error.log ?? ""}`.trim());
       return toAnswer(error);
     } finally {
       clearTimeout(timer);
       controller.abort();
       // The plugin's own record of a write: never the text, never the message. S2.19, S2.20
       if (method.effect === "contributed-write") {
-        log.info(`${method.name} session=${sessionId ?? "none"} paths=${pathCount(method, params)} outcome=${outcome}`);
+        log.info(`${method.name} ${callerTag(sessionId, call.caller?.workspace)} paths=${pathCount(method, params)} outcome=${outcome}`);
       }
     }
   };

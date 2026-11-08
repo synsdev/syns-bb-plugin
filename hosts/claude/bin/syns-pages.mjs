@@ -485,10 +485,10 @@ const message = {
 };
 const nullable = (type) => ({ type: [type, "null"] });
 /** The provenance of a page's commit (D6, S1.5). A page can set none of the three. */
-const provenance = (sessionId) => ({
+const provenance = (run) => ({
 	integration: "syns-pages",
 	trigger: "page",
-	run: sessionId
+	run
 });
 const typeMatches = (type, value) => {
 	switch (type) {
@@ -747,7 +747,7 @@ function buildGuide(table) {
 //#endregion
 //#region src/declaration.ts
 /** The plugin's version, as declared to the host. A test holds it equal to package.json's. */
-const VERSION = "0.12.2";
+const VERSION = "0.12.3";
 /** threadPagesContributions, generated from the table. With `agentInstructions` off no fragment is declared (S4.5); the page script is declared either way (S2.27). */
 function buildDeclaration(table, settings) {
 	return {
@@ -3362,16 +3362,39 @@ const ABSOLUTE = /^(\/|[A-Za-z]:[\\/]|\\\\)/;
 function sessionWhere(workspace) {
 	if (workspace === null || workspace === void 0) return null;
 	const w = workspace;
-	if (typeof w.path !== "string" || !ABSOLUTE.test(w.path) || w.machine !== null && typeof w.machine !== "string") throw new SynsError("handler_error", { log: "the host passed a workspace without an absolute path" });
+	if (typeof w.path !== "string" || !ABSOLUTE.test(w.path)) throw new SynsError("handler_error", { log: "the host passed a workspace without an absolute path" });
+	if (w.machine !== null && typeof w.machine !== "string") throw new SynsError("handler_error", { log: "the host passed a workspace whose machine is neither text nor null" });
 	return {
 		hostId: w.machine ?? "local",
 		cwd: w.path
 	};
 }
 /**
+* Who is calling, for a write's `run`, the held-entry keys and the plugin's lines: the session, or on a new-session page
+* the workspace's id, which stands in for it until the session starts (S2.33, S1.5). Null for no workspace (the home).
+* A workspace with no session and no id non-empty once trimmed is malformed: a blank `run` would let the CLI fall back
+* to an inherited SYNS_RUN (S2.2).
+*/
+function runOf(sessionId, workspace) {
+	if (sessionId !== null || workspace === null || workspace === void 0) return sessionId;
+	const id = workspace.id;
+	if (typeof id !== "string" || id.trim() === "") throw new SynsError("handler_error", { log: "the host passed a workspace with no id and no session" });
+	return id;
+}
+/** How the plugin's lines name the caller: `session=<id>`, or with none `session=none`, and `workspace=<id>` on a new-session page (S2.34). */
+function callerTag(sessionId, workspace) {
+	if (sessionId !== null) return `session=${sessionId}`;
+	try {
+		const run = sessionWhere(workspace) && runOf(null, workspace);
+		return run === null ? "session=none" : `session=none workspace=${run}`;
+	} catch {
+		return "session=none";
+	}
+}
+/**
 * threadPagesInvoke: look the method up in the table, check its parameters,
 * take the session's folder from the host, run the CLI, map the outcome. It knows no method by name.
-* spec S2.1, S2.2, S2.14, S2.18–S2.22
+* spec S2.1, S2.2, S2.14, S2.18–S2.22, S2.33, S2.34
 */
 function createDispatch({ table = METHODS, cli, log, held = createHeld(), now = Date.now }) {
 	const byName = new Map(table.map((method) => [method.name, method]));
@@ -3403,9 +3426,9 @@ function createDispatch({ table = METHODS, cli, log, held = createHeld(), now = 
 		const problem = validate(method.params, scoped?.checked ?? params);
 		if (problem) throw new SynsError("invalid_params", { message: `Invalid parameters for ${method.name} at ${problem}` });
 		method.check?.(scoped?.given ?? params);
-		if (sessionId === null) throw fail("no_repo");
 		const session = sessionWhere(workspace);
 		if (!session) throw fail("no_repo");
+		const run = runOf(sessionId, workspace);
 		const where = scope === null || method.atRoot ? session : {
 			hostId: session.hostId,
 			cwd: `${session.cwd.replace(/\/+$/, "")}/${scope}`,
@@ -3421,13 +3444,13 @@ function createDispatch({ table = METHODS, cli, log, held = createHeld(), now = 
 		let repoCheck = checked && Promise.resolve(checked);
 		let whoamiCheck;
 		const context = {
-			sessionId,
+			sessionId: run,
 			limits: cli.limits,
 			held,
 			redact: (text) => redact(text, { folder: session.cwd }),
 			pathGrowth: scoped?.reaches ? 3 * folder.split("/").length : 0,
 			async syns(args, stdin, options) {
-				const mark = provenance(sessionId);
+				const mark = provenance(run);
 				const env = options?.provenanceEnv ? {
 					SYNS_INTEGRATION: mark.integration,
 					SYNS_RUN: mark.run,
@@ -3446,14 +3469,14 @@ function createDispatch({ table = METHODS, cli, log, held = createHeld(), now = 
 		let result;
 		if ("procedure" in method) result = await method.procedure(given, context);
 		else {
-			const command = method.command(given, sessionId);
+			const command = method.command(given, run);
 			const output = await context.syns(command.args, command.stdin, command.provenanceEnv ? { provenanceEnv: true } : void 0);
 			if (typeof output !== "object" || output === null || Array.isArray(output)) throw new SynsError("handler_error", { log: "exit=0 output is not a JSON object" });
 			if (method.shape) result = method.shape(output, given);
 			else {
 				const dropped = [];
 				result = pick(method.result, output, "$", dropped);
-				if (dropped.length > 0) log.warn(`${method.name} session=${sessionId} dropped from the CLI's output: ${dropped.join(", ").slice(0, 500)}`);
+				if (dropped.length > 0) log.warn(`${method.name} ${callerTag(sessionId, workspace)} dropped from the CLI's output: ${dropped.join(", ").slice(0, 500)}`);
 			}
 		}
 		if (scoped) {
@@ -3504,12 +3527,12 @@ function createDispatch({ table = METHODS, cli, log, held = createHeld(), now = 
 		} catch (caught) {
 			const error = caught instanceof SynsError ? caught : new SynsError("handler_error", { log: `threw ${caught instanceof Error ? caught.message : String(caught)}`.slice(0, 500) });
 			outcome = error.reason ?? error.code;
-			if (error.code === "handler_error") log.warn(`${method.name} session=${sessionId ?? "none"} handler_error ${error.log ?? ""}`.trim());
+			if (error.code === "handler_error") log.warn(`${method.name} ${callerTag(sessionId, call.caller?.workspace)} handler_error ${error.log ?? ""}`.trim());
 			return toAnswer(error);
 		} finally {
 			clearTimeout(timer);
 			controller.abort();
-			if (method.effect === "contributed-write") log.info(`${method.name} session=${sessionId ?? "none"} paths=${pathCount(method, params)} outcome=${outcome}`);
+			if (method.effect === "contributed-write") log.info(`${method.name} ${callerTag(sessionId, call.caller?.workspace)} paths=${pathCount(method, params)} outcome=${outcome}`);
 		}
 	};
 }
@@ -3980,7 +4003,7 @@ async function answerPageScript(cli, ask, ms = PAGE_SCRIPT_MS) {
 		clearTimeout(timer);
 		controller.abort();
 	}
-	return ask.have === "0.12.2" ? { version: VERSION } : {
+	return ask.have === "0.12.3" ? { version: VERSION } : {
 		version: VERSION,
 		script: PAGEHOST
 	};

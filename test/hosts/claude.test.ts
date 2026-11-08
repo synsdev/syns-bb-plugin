@@ -202,6 +202,36 @@ describe("Claude Code: the process against a daemon's control socket (R-X5)", ()
     expect(await post(served.endpoint, { kind: "pageScript", caller: { sessionId: null, workspace: null }, documentPath: "index.html", have: null })).toEqual({ status: 200, body: null });
   });
 
+  it("a new-session page (no session, a workspace) is answered in the workspace's folder: its call, its page-script ask, an app's frame with a link out of the folder bad_scope (S2.33, A97, A99, A102)", async () => {
+    const { checkout, synsPath, runs } = machine();
+    const outside = mkdtempSync(join(tmpdir(), "syns-outside-"));
+    symlinkSync(outside, join(checkout, "escape"));
+    daemon = fakeDaemon(join(dir, "control.sock"));
+    await daemon.listen();
+    const lines: string[] = [];
+    served = await serve({ socket: join(dir, "control.sock"), synsPath, agentInstructions: true, log: { info: (l) => lines.push(l), warn: (l) => lines.push(l) }, everyMs: 50 });
+    await vi.waitFor(() => expect(daemon!.seen.registrations).toHaveLength(1));
+    const workspace = { id: "ws_9f2c4e", path: checkout, machine: null };
+
+    const answer = await post(served.endpoint, { method: "syns.repo", params: {}, caller: { sessionId: null, scope: null, workspace }, requestId: "n1" });
+    expect(answer).toMatchObject({ status: 200, body: { ok: true, result: { owner: "acme", name: "crm", version: REPO.commitSha } } });
+    expect(runs()).toEqual([`${realpathSync(checkout)} repo --json`]);
+
+    expect(await post(served.endpoint, { kind: "pageScript", caller: { sessionId: null, workspace }, documentPath: "index.html", have: null })).toEqual({ status: 200, body: { version: VERSION, script: PAGEHOST } });
+    expect(await post(served.endpoint, { kind: "pageScript", caller: { sessionId: null, workspace }, documentPath: "index.html", have: VERSION })).toEqual({ status: 200, body: { version: VERSION } });
+    expect(runs()).toHaveLength(3);
+
+    const fromFrame = await post(served.endpoint, { method: "syns.repo", params: {}, caller: { sessionId: null, scope: "escape", frame: { scope: "escape", title: "app" }, workspace }, requestId: "n2" });
+    expect(fromFrame).toMatchObject({ body: { ok: false, error: { reason: "bad_scope" } } });
+    expect(runs()).toHaveLength(3);
+
+    // A CLI failure the plugin does not know is handler_error; its line names the caller by the workspace's id (S2.34).
+    expect(await post(served.endpoint, { method: "syns.ls", params: {}, caller: { sessionId: null, scope: null, workspace }, requestId: "n3" })).toMatchObject({ body: { ok: false, error: { code: "handler_error" } } });
+    expect(lines.filter((line) => line.includes(" handler_error "))).toEqual([expect.stringMatching(/^syns\.ls session=none workspace=ws_9f2c4e handler_error /)]);
+    expect(lines.join("\n")).not.toContain(checkout);
+    rmSync(outside, { recursive: true, force: true });
+  });
+
   it("no syns executable is cli_missing; anything but POST /invoke is 404", async () => {
     const { checkout } = machine();
     daemon = fakeDaemon(join(dir, "control.sock"));

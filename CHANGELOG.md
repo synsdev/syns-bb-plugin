@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.12.3
+
+- **A new-session page is answered in its workspace's folder.** A host's new-session page (Unife Pages 0.6.29 on
+  Claude Code, `unife-pages open --workspace`) calls with no session and the workspace it will start one in. Until
+  now every such call answered `no_repo`, so the workspace (`.page/index.html`) did not show there. Each method now
+  runs the CLI in that workspace's folder on its machine, as from a session's page in it, with the same scope and
+  frame rules. Before the session starts, a write's `run` (and `SYNS_RUN` for `syns.place` and `syns.enableChecks`)
+  is the workspace's id; once it has started, the same document's writes carry the session's. A picture gathered in
+  pieces, or kept with `hold: true`, across the start answers `bad_offset` `{ expected: 0 }` and is sent again. The
+  home (no session, no workspace) and a session with no folder still answer `no_repo`. With no session, a workspace
+  with no `id` non-empty once trimmed is `handler_error`, as a workspace without an absolute path already was. The
+  plugin's lines name such a caller `session=none workspace=<id>`, never its path (Syns syns-pages-workspace-caller,
+  unife-B-0259). bb offers no new-session page, so nothing changes there. No method, result, reason, fragment or guide
+  text changed.
+
 ## 0.12.2
 
 - **The workspace opens again in the home's view of a session.** 0.12.0's bootstrap did nothing in any embedded

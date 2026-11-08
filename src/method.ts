@@ -24,7 +24,10 @@ export const bytes = (value: unknown): number => Buffer.byteLength(JSON.stringif
 
 /** What a method's own procedure is given. */
 export interface Context {
-  /** The session the host says is calling. The provenance `run` of a write. S1.5 */
+  /**
+   * The provenance `run` of a write, and the key of what is held for the caller: the session the host says is calling,
+   * or on a new-session page, before its session starts, the workspace's id (S1.5, S2.33).
+   */
   readonly sessionId: string;
   readonly limits: Limits;
   /** Runs the CLI in the session's folder and returns its parsed output, or throws a SynsError. Bytes on standard input travel as bytes. */
@@ -84,7 +87,8 @@ interface Common {
 
 /** One CLI process: parameters become arguments and standard input, the parsed output becomes the result. */
 export interface SimpleMethod extends Common {
-  command(params: any, sessionId: string): Command;
+  /** `run`: as Context.sessionId. */
+  command(params: any, run: string): Command;
   /** Absent: the CLI's JSON is passed on as `result` names it, with pick() (D59), and what it drops is logged. */
   shape?(output: Record<string, unknown>, params: any): unknown;
 }
@@ -157,7 +161,7 @@ export const message: Schema = { type: "string", maxLength: 500 };
 export const nullable = (type: "string" | "integer" | "boolean"): Schema => ({ type: [type, "null"] });
 
 /** The provenance of a page's commit (D6, S1.5). A page can set none of the three. */
-export const provenance = (sessionId: string): Record<string, string> => ({ integration: "syns-pages", trigger: "page", run: sessionId });
+export const provenance = (run: string): Record<string, string> => ({ integration: "syns-pages", trigger: "page", run });
 
 // --- checking a value -------------------------------------------------------
 
